@@ -1,0 +1,8 @@
+node_modules
+dist
+.env
+*.Identifier
+data/
+web/node_modules
+web/dist
+web/tsconfig.tsbuildinfo
