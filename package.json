@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "postinstall": "npm run web:install",
     "dev": "concurrently -n bench,web -c blue,green \"tsx watch src/server.ts\" \"npm run web:dev\"",
     "build": "tsc -p tsconfig.json && npm run web:build",
     "start": "node dist/server.js",

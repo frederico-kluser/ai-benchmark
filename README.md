@@ -12,35 +12,40 @@ avalia as respostas com um modelo juiz e exibe placar, heatmap e custo ao vivo.
 - **Frontend:** React 18 + Vite 5 + React Router 6.
 - **Persistência:** arquivos JSON em `data/runs/*.json` (sem banco de dados).
 
-## Variáveis de ambiente
+## Configuração
 
-Copie `.env.example` para `.env` e ajuste:
+Não é preciso nenhum `.env` para rodar — todos os parâmetros têm default.
+A chave do OpenRouter **não** vai em variável de ambiente: você cola ela na
+própria interface (tela de setup), e ela fica no `localStorage` do navegador.
 
-- `OPENROUTER_API_KEY` — chave OpenRouter. Opcional no `.env`: a chave normalmente é
-  fornecida pela própria UI (tela de setup) e guardada no `localStorage` do navegador.
-- `OPENROUTER_APP_URL` (opcional, default `http://localhost:3000`)
-- `OPENROUTER_APP_TITLE` (opcional, default `Benchmark Arena`)
-- `BENCHMARK_PORT` (opcional, default `3001`)
+Variáveis opcionais (veja `.env.example`):
+
+| Variável | Default | Para quê |
+|---|---|---|
+| `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | Apontar para um proxy/gateway |
+| `OPENROUTER_APP_URL` | `http://localhost:3000` | Header `HTTP-Referer` de atribuição |
+| `OPENROUTER_APP_TITLE` | `Benchmark Arena` | Header `X-Title` de atribuição |
+| `BENCHMARK_PORT` | `3001` | Porta do backend |
 
 ## Como rodar
+
+Um único `npm install` instala as dependências do backend **e** do front (`web/`).
 
 ### Desenvolvimento
 
 ```bash
 npm install
-npm run web:install
-npm run dev          # backend (tsx watch) em :3001 + Vite em :5173
+npm run dev      # backend em :3001 + Vite em :5173 (proxy de /v1 e /health)
 ```
 
-Acesse `http://localhost:5173`. O Vite faz proxy de `/v1` e `/health` para `:3001`.
+Abra `http://localhost:5173` e cole sua chave OpenRouter na tela de setup.
 
 ### Produção
 
 ```bash
 npm install
-npm run web:install
-npm run build        # compila TS para dist/ e builda o front em web/dist/
-npm run start        # serve API + frontend em http://localhost:3001
+npm run build    # compila o backend (dist/) e o front (web/dist/)
+npm run start    # serve API + frontend em http://localhost:3001
 ```
 
 ## Endpoints
