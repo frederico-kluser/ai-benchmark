@@ -15,6 +15,17 @@ o pipeline, mas diferem no que é o "contestant".
 (`competitor.ts`) respondem em paralelo → **Juiz** (`judge.ts`) ranqueia às cegas + **Avaliador**
 (`evaluator.ts`) dá veredito qualitativo de aceitabilidade. Resultado: `scoreboard` por contestant.
 
+## Execução paralela (desde 2026-06-18)
+`runLoop` (`orchestrator.ts`) roda em 2 fases: (1) **pré-gera todos os cenários em paralelo**
+(`Promise.all`); (2) **roda todas as etapas em paralelo** (`Promise.all`, cada uma isolada em
+try/catch). O placar é aditivo (`applyScoreboard`), então a ordem de término não importa. A
+concorrência real é gateada pelo **limitador global adaptativo** em `openrouter.ts` (ver
+`knowledge-openrouter`); `saveRun` é throttled. O **juiz é listwise** (1 chamada, ou 2 passes
+paralelos agregados por posição média quando `judgePasses=2`) — não mais pairwise O(N²). No
+**training**, as iterações seguem sequenciais (dependência de dados), mas as etapas de cada
+iteração paralelizam. Na UI, `RunView` mostra um visualizador de processo ao vivo enquanto roda e
+revela placar/heatmap só ao terminar.
+
 ## Contestant (`Contestant` em types.ts)
 Competidor genérico com `id`, `label`, `modelId`, `systemPrompt?`, `techniqueId?`.
 - **compare**: cada contestant é um modelo distinto (`id === modelId`, sem systemPrompt).

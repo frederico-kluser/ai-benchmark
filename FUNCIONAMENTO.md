@@ -7,6 +7,11 @@ sequenciais hoje e poderiam ser paralelizados/otimizados**.
 > Complementa o [`README.md`](./README.md) (visão geral / como rodar) e o [`TELAS.md`](./TELAS.md)
 > (as telas). Aqui o foco é o **motor de execução** em `src/`.
 
+> **Status (2026-06-18):** as otimizações de paralelização foram **implementadas** — as etapas
+> agora rodam **todas em paralelo**, os cenários são **pré-gerados em paralelo**, o juiz é
+> **listwise** e há um **limitador global adaptativo** em `openrouter.ts`. As seções abaixo
+> refletem esse estado; a análise de "o que era sequencial" fica como histórico/racional.
+
 ---
 
 ## Sumário
@@ -46,8 +51,9 @@ default = gerador).
 
 ## A anatomia de uma etapa
 
-Toda run, em qualquer modo, é um **loop de N etapas** (`runLoop` em `src/orchestrator.ts`). Cada
-etapa é independente e auto-contida:
+Toda run, em qualquer modo, roda **N etapas em paralelo** (`runLoop` em `src/orchestrator.ts`):
+os cenários são pré-gerados juntos (fase 1) e depois todas as etapas executam concorrentemente
+(fase 2), limitadas pelo semáforo global. Cada etapa é independente e auto-contida:
 
 ```mermaid
 flowchart TB
@@ -145,23 +151,33 @@ Características:
 
 ---
 
-## O que JÁ roda em paralelo hoje
-
-Para situar a análise — o baseline atual de paralelismo:
+## O que roda em paralelo hoje
 
 | Onde | Como | Limite |
 |---|---|---|
-| Participantes de uma etapa | `runWithLimit(tasks, concurrency)` | `concurrency` da run (default 8) |
+| **Etapas (todas)** | `Promise.all` sobre as etapas (fase 2) | semáforo global |
+| **Datagen (todos os cenários)** | `Promise.all` na pré-geração (fase 1) | semáforo global |
+| Participantes de uma etapa | `Promise.all` (sem cap local) | semáforo global |
 | Juiz × Avaliador | `Promise.allSettled([...])` | os dois juntos |
-| Confrontos do juiz (pairwise) | `mapLimit(pairs, concurrency)` | **hardcoded 6** |
-| Variantes por técnica (variator) | `Promise.all(techniques.map(...))` | **sem teto** |
+| **Passes do juiz (judgePasses=2)** | `Promise.all` (2 ordens listwise) | semáforo global |
+| Variantes por técnica (variator) | `Promise.all(techniques.map(...))` | semáforo global |
+
+Tudo é gateado por **um único limitador global adaptativo** (`openrouter.ts`): cresce até o
+OpenRouter recusar (429), recua pela metade e volta a crescer (AIMD), com retry/backoff. O juiz
+passou de **torneio pairwise O(N²)** para **listwise** (1–2 chamadas por etapa).
 
 ---
 
-## O que é sequencial hoje e poderia ser otimizado
+## Otimizações — racional e status
 
-Ordenado por **impacto**. Cada item aponta o local no código, por que é seguro, o ganho esperado e os
-cuidados.
+> **Implementado em 2026-06-18:** itens 1 (etapas em paralelo), 2 (datagen pré-gerado), 3
+> (limitador global adaptativo + backoff), 4 (passes do juiz em paralelo), 5 (juiz listwise — opção
+> 5C, com prompt melhorado), 6 (throttle do `saveRun`) e 7 (variator pelo limitador global). **Não
+> alterado:** item 8 (`getModel` por chamada — impacto desprezível). As **iterações do training**
+> seguem sequenciais por dependência de dados (o ganho é dentro de cada iteração).
+
+A análise abaixo é o **racional** de cada decisão (estado anterior → motivo → ganho), preservada
+como histórico. Cada item aponta o local no código, por que é seguro e o ganho esperado.
 
 ### 1. Etapas rodam 100% sequenciais (compare/variation) — **maior ganho de latência**
 
