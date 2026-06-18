@@ -1,0 +1,106 @@
+import type {
+  Contestant,
+  RunConfig,
+  RunMode,
+  RunRecord,
+  StageRecord,
+} from './types';
+
+/**
+ * Deriva os contestants a partir da config.
+ * - compare: 1 contestant por modelo (id === modelId), sem systemPrompt.
+ * - variation/training: contestants sao resolvidos em runtime pelo variator e
+ *   passados via opts.contestants; aqui retornamos [] (o orquestrador exige os
+ *   contestants explicitos nesses modos).
+ */
+export function contestantsFromConfig(config: RunConfig): Contestant[] {
+  if (config.mode === 'compare') {
+    return config.competitorModelIds.map((modelId) => ({
+      id: modelId,
+      label: modelId,
+      modelId,
+    }));
+  }
+  return [];
+}
+
+/**
+ * Migracao-na-leitura: aceita um RunRecord em formato antigo (sem `mode`,
+ * `contestants`, `contestantId`, `rankedContestantIds`, etc.) e devolve um
+ * RunRecord no formato atual. Em runs antigas, `contestantId === modelId`,
+ * entao nada e reescrito em disco — apenas preenchemos os campos derivados.
+ */
+export function normalizeRunRecord(raw: any): RunRecord {
+  const config = raw?.config ?? {};
+  const mode: RunMode = raw?.mode ?? config.mode ?? 'compare';
+  config.mode = config.mode ?? mode;
+
+  const contestants: Contestant[] =
+    raw?.contestants ??
+    (Array.isArray(config.competitorModelIds)
+      ? config.competitorModelIds.map((m: string) => ({ id: m, label: m, modelId: m }))
+      : []);
+
+  const stages: StageRecord[] = Array.isArray(raw?.stages)
+    ? raw.stages.map(normalizeStage)
+    : [];
+
+  return {
+    id: raw.id,
+    status: raw.status,
+    config,
+    mode,
+    contestants,
+    stages,
+    scoreboard: raw.scoreboard ?? {},
+    costByContestant: raw.costByContestant,
+    totalCostUsd: raw.totalCostUsd ?? 0,
+    startedAt: raw.startedAt,
+    finishedAt: raw.finishedAt,
+    error: raw.error,
+    sessionId: raw.sessionId,
+    iteration: raw.iteration,
+    parentRunId: raw.parentRunId,
+  };
+}
+
+function normalizeStage(raw: any): StageRecord {
+  const responses = Array.isArray(raw?.responses)
+    ? raw.responses.map((r: any) => ({ ...r, contestantId: r.contestantId ?? r.modelId }))
+    : [];
+
+  let judge = raw?.judge;
+  if (judge) {
+    judge = {
+      ...judge,
+      rankedContestantIds: judge.rankedContestantIds ?? judge.rankedModelIds ?? [],
+      blindMap: judge.blindMap ?? {},
+    };
+  }
+
+  let evaluation = raw?.evaluation;
+  if (evaluation) {
+    evaluation = {
+      ...evaluation,
+      bestContestantId: evaluation.bestContestantId ?? evaluation.bestModelId ?? '',
+      verdicts: Array.isArray(evaluation.verdicts)
+        ? evaluation.verdicts.map((v: any) => ({
+            ...v,
+            contestantId: v.contestantId ?? v.modelId,
+          }))
+        : [],
+      blindMap: evaluation.blindMap ?? {},
+    };
+  }
+
+  let live = raw?.live;
+  if (live && typeof live === 'object') {
+    const mapped: Record<string, any> = {};
+    for (const [k, v] of Object.entries(live as Record<string, any>)) {
+      mapped[k] = { ...v, contestantId: v.contestantId ?? v.modelId ?? k };
+    }
+    live = mapped;
+  }
+
+  return { ...raw, responses, judge, evaluation, live };
+}

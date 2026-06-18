@@ -384,6 +384,17 @@ npm run start    # serve API + frontend juntos em http://localhost:3001
 Em produção o Express serve `web/dist` e faz *fallback* de SPA para rotas que não comecem com
 `/v1` ou `/health`.
 
+### Deploy estático (Vercel) — modo client-side
+
+Há também um **modo 100% client-side**: o pipeline foi portado para **`web/src/engine/`**, então o
+navegador chama o OpenRouter **direto** (CORS liberado), orquestra os runs na própria aba e persiste
+no **IndexedDB** — sem backend stateful. Isso permite hospedar a SPA **estática** (ex.: Vercel) via
+[`vercel.json`](./vercel.json) (build `npm run web:build`, output `web/dist`, SPA rewrite). Por que
+isso importa: serverless é efêmero/stateless, então um servidor de run de minutos não roda lá; no
+client-side a aba é o "processo vivo". **Trade-offs:** a aba precisa ficar aberta durante a run, e o
+histórico é por navegador/dispositivo. O backend `src/` continua disponível como alternativa (host de
+processo persistente: Railway/Render/Fly), mas **não é usado** pela SPA estática.
+
 ### Scripts (`package.json`)
 
 | Script | O que faz |

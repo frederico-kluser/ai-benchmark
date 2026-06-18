@@ -26,6 +26,10 @@ paralelos agregados por posição média quando `judgePasses=2`) — não mais p
 iteração paralelizam. Na UI, `RunView` mostra um visualizador de processo ao vivo enquanto roda e
 revela placar/heatmap só ao terminar.
 
+**Cópia client-side:** todo o pipeline (orchestrator/trainer/datagen/competitor/judge/evaluator/
+variator) tem uma versão em `web/src/engine/` que roda no navegador (SPA estática). Mesma lógica —
+sincronize os dois lados ao mexer. Ver `knowledge-architecture`.
+
 ## Contestant (`Contestant` em types.ts)
 Competidor genérico com `id`, `label`, `modelId`, `systemPrompt?`, `techniqueId?`.
 - **compare**: cada contestant é um modelo distinto (`id === modelId`, sem systemPrompt).

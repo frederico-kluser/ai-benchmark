@@ -1,5 +1,20 @@
 import { idbGet, idbGetAll, idbPut, idbPutMany } from './idb';
 import type { LgpdData } from './lgpd';
+import lgpdData from './data/lgpd-compliance.json';
+import { startRun } from './engine/orchestrator';
+import { startTraining } from './engine/trainer';
+import { generateContestants } from './engine/variator';
+import { listModels, validateKey as engineValidateKey } from './engine/openrouter';
+import { listTechniques } from './engine/techniques';
+import {
+  subscribeRun,
+  getRunRecord,
+  cacheRunRecord,
+  subscribeSession,
+  getSessionRecord,
+  cacheSessionRecord,
+} from './engine/events';
+import { loadRun, loadSession, listRuns as engineListRuns, listSessions as engineListSessions } from './engine/storage';
 
 export interface OpenRouterModel {
   id: string;
@@ -201,62 +216,62 @@ export interface ValidateKeyResponse {
 }
 
 export async function validateKey(key: string): Promise<ValidateKeyResponse> {
-  try {
-    const res = await fetch('/v1/benchmark/validate-key', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-openrouter-key': key },
-      body: JSON.stringify({}),
-    });
-    const json = (await res.json()) as ValidateKeyResponse;
-    if (!json.ok) console.error('[validateKey] invalida:', json.error);
-    return json;
-  } catch (err) {
-    console.error('[validateKey] erro de rede:', err);
-    throw err;
+  // Client-side: valida direto contra o OpenRouter (GET /key).
+  const r = await engineValidateKey(key);
+  if (r.ok) {
+    return {
+      ok: true,
+      label: r.label,
+      usageUsd: r.usageUsd,
+      limitUsd: r.limitUsd,
+      limitRemainingUsd: r.limitRemainingUsd,
+      isFreeTier: r.isFreeTier,
+    };
   }
+  return { ok: false, error: r.error };
 }
 
 export async function fetchModels(): Promise<OpenRouterModel[]> {
-  const res = await fetch('/v1/benchmark/models', { headers: authHeaders() });
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    const msg = res.status === 401
-      ? 'Key invalida. Reconfigure a key OpenRouter.'
-      : `Falha ao listar modelos (${res.status})`;
-    console.error('[fetchModels]', msg, body);
-    throw new Error(msg);
-  }
-  const json = (await res.json()) as { data: OpenRouterModel[] };
-  return json.data;
+  // Client-side: catálogo direto do OpenRouter (/models é público; usa a key p/ conta).
+  return (await listModels(getStoredKey())) as unknown as OpenRouterModel[];
 }
 
 export async function createRun(config: RunConfig): Promise<string> {
-  const res = await fetch('/v1/benchmark/runs', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...authHeaders() },
-    body: JSON.stringify(config),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }));
-    console.error('[createRun] falhou:', err);
-    throw new Error(err.error ?? 'Falha ao criar run');
+  // Client-side: o run roda na própria aba (engine). Para variação, as variantes
+  // são geradas via "optimizer" antes do loop (igual ao prepare do backend).
+  const apiKey = getStoredKey();
+  const cfg = config as Record<string, any>;
+  const opts: Record<string, unknown> = {};
+  if (cfg.mode === 'variation') {
+    const optimizerModelId = cfg.optimizerModelId ?? cfg.datagenModelId;
+    const promptOptimization = cfg.promptOptimization !== false;
+    opts.prepare = () =>
+      generateContestants({
+        apiKey,
+        modelId: cfg.contestantModelId,
+        theme: cfg.theme,
+        basePrompt: cfg.basePrompt,
+        originalPrompt: cfg.basePrompt,
+        includeOriginal: Boolean(cfg.basePrompt && String(cfg.basePrompt).trim()),
+        techniqueIds: cfg.techniqueIds,
+        manualVariants: cfg.manualVariants,
+        promptOptimization,
+        optimizerModelId,
+        timeoutMs: cfg.timeoutMs,
+      });
   }
-  const json = (await res.json()) as { runId: string };
-  return json.runId;
+  const { runId, record } = startRun(config as never, apiKey, opts as never);
+  cacheRunRecord(record);
+  return runId;
 }
 
 export async function fetchTechniques(): Promise<Technique[]> {
-  const res = await fetch('/v1/benchmark/techniques');
-  if (!res.ok) throw new Error('Falha ao listar técnicas');
-  const json = (await res.json()) as { data: Technique[] };
-  return json.data;
+  return listTechniques() as unknown as Technique[];
 }
 
 export async function fetchLgpd(): Promise<LgpdData> {
-  const res = await fetch('/v1/benchmark/lgpd');
-  if (!res.ok) throw new Error('Falha ao carregar base de conformidade LGPD');
-  const json = (await res.json()) as { data: LgpdData };
-  return json.data;
+  // Client-side: a base de conhecimento LGPD é empacotada no bundle.
+  return lgpdData as unknown as LgpdData;
 }
 
 // -------------- Sessões de treino --------------
@@ -282,33 +297,20 @@ export interface SessionRecord {
 }
 
 export async function createSession(config: RunConfig): Promise<string> {
-  const res = await fetch('/v1/benchmark/sessions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...authHeaders() },
-    body: JSON.stringify(config),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }));
-    console.error('[createSession] falhou:', err);
-    throw new Error(err.error ?? 'Falha ao criar sessão de treino');
-  }
-  const json = (await res.json()) as { sessionId: string };
-  return json.sessionId;
+  // Client-side: a sessão de treino roda na própria aba (engine trainer).
+  const { sessionId, record } = await startTraining(config as never, getStoredKey());
+  cacheSessionRecord(record);
+  return sessionId;
 }
 
 export async function fetchSession(id: string): Promise<SessionRecord> {
-  try {
-    const res = await fetch(`/v1/benchmark/sessions/${id}`);
-    if (res.ok) {
-      const rec = (await res.json()) as SessionRecord;
-      void cacheSession(rec);
-      return rec;
-    }
-  } catch {
-    /* offline — tenta cache */
+  const live = getSessionRecord(id);
+  if (live) {
+    void cacheSession(live as unknown as SessionRecord);
+    return live as unknown as SessionRecord;
   }
-  const cached = await idbGet<SessionRecord>('sessions', id);
-  if (cached) return cached;
+  const rec = await loadSession(id);
+  if (rec) return rec as unknown as SessionRecord;
   throw new Error('Sessão não encontrada');
 }
 
@@ -324,53 +326,28 @@ export interface SessionSummary {
 }
 
 export async function fetchSessions(): Promise<SessionSummary[]> {
-  let server: SessionSummary[] | null = null;
-  try {
-    const res = await fetch('/v1/benchmark/sessions');
-    if (res.ok) server = ((await res.json()) as { data: SessionSummary[] }).data;
-  } catch {
-    /* offline */
-  }
-  if (server) void idbPutMany('sessionSummaries', server);
-  const cached = await idbGetAll<SessionSummary>('sessionSummaries');
-  if (!server) return cached;
-  const byId = new Map<string, SessionSummary>();
-  for (const s of cached) byId.set(s.id, s);
-  for (const s of server) byId.set(s.id, s); // servidor é fonte de verdade
-  return [...byId.values()];
+  return await engineListSessions<SessionSummary>();
 }
 
 export function openSessionStream(
   id: string,
   onEvent: (e: any) => void,
-  onError?: (err: Event) => void,
+  _onError?: (err: Event) => void,
 ): () => void {
-  const es = new EventSource(`/v1/benchmark/sessions/${id}/events`);
-  let closed = false;
-  const close = () => {
-    if (closed) return;
-    closed = true;
-    es.close();
+  // Client-side: assina o barramento em memória da sessão (sem SSE).
+  const live = getSessionRecord(id);
+  if (live) {
+    onEvent({ type: 'snapshot', record: live });
+    if (['finished', 'error', 'aborted'].includes(live.status)) return () => undefined;
+    return subscribeSession(id, onEvent);
+  }
+  let active = true;
+  void loadSession(id).then((rec) => {
+    if (active && rec) onEvent({ type: 'snapshot', record: rec });
+  });
+  return () => {
+    active = false;
   };
-  es.onmessage = (msg) => {
-    try {
-      const event = JSON.parse(msg.data);
-      onEvent(event);
-      const terminal =
-        event.type === 'session.finished' ||
-        event.type === 'session.error' ||
-        (event.type === 'snapshot' &&
-          ['finished', 'error', 'aborted'].includes(event.record?.status));
-      if (terminal) close();
-    } catch (err) {
-      console.error('[session SSE parse]', err, msg.data);
-    }
-  };
-  es.onerror = (err) => {
-    if (closed) return;
-    onError?.(err);
-  };
-  return close;
 }
 
 // -------------- Cache local (IndexedDB) --------------
@@ -419,36 +396,17 @@ export async function cacheSession(s: SessionRecord): Promise<void> {
 }
 
 export async function fetchRuns(): Promise<RunSummary[]> {
-  let server: RunSummary[] | null = null;
-  try {
-    const res = await fetch('/v1/benchmark/runs');
-    if (res.ok) server = ((await res.json()) as { data: RunSummary[] }).data;
-    else console.error('[fetchRuns] falhou:', res.status);
-  } catch (err) {
-    console.error('[fetchRuns] offline:', err);
-  }
-  if (server) void idbPutMany('runSummaries', server);
-  const cached = await idbGetAll<RunSummary>('runSummaries');
-  if (!server) return cached; // offline: histórico vem do cache local
-  const byId = new Map<string, RunSummary>();
-  for (const s of cached) byId.set(s.id, s);
-  for (const s of server) byId.set(s.id, s); // servidor é fonte de verdade
-  return [...byId.values()];
+  return await engineListRuns<RunSummary>();
 }
 
 export async function fetchRun(id: string): Promise<RunRecord> {
-  try {
-    const res = await fetch(`/v1/benchmark/runs/${id}`);
-    if (res.ok) {
-      const rec = (await res.json()) as RunRecord;
-      void cacheRun(rec);
-      return rec;
-    }
-  } catch (err) {
-    console.error('[fetchRun] offline:', err);
+  const live = getRunRecord(id);
+  if (live) {
+    void cacheRun(live as unknown as RunRecord);
+    return live as unknown as RunRecord;
   }
-  const cached = await idbGet<RunRecord>('runs', id);
-  if (cached) return cached;
+  const rec = await loadRun(id);
+  if (rec) return rec as unknown as RunRecord;
   throw new Error('Run nao encontrada');
 }
 
@@ -457,105 +415,28 @@ const TERMINAL_RUN_STATUSES = ['finished', 'error', 'aborted'];
 export function openRunStream(
   id: string,
   onEvent: (e: any) => void,
-  onError?: (err: Event) => void,
+  _onError?: (err: Event) => void,
 ): () => void {
-  const es = new EventSource(`/v1/benchmark/runs/${id}/events`);
-  let closed = false;
-  const close = () => {
-    if (closed) return;
-    closed = true;
-    es.close();
-  };
-
-  es.onmessage = (msg) => {
-    try {
-      const event = JSON.parse(msg.data);
-      // log estruturado no console do navegador (visibilidade no DevTools)
-      const s =
-        typeof event.stageIndex === 'number' ? `etapa ${event.stageIndex + 1}` : '';
-      switch (event.type) {
-        case 'snapshot':
-          console.info('[bench] conectado ao stream', `(status: ${event.record?.status})`);
-          break;
-        case 'run.started':
-          console.info('[bench] run iniciada');
-          break;
-        case 'stage.generating':
-          console.info(`[bench] ${s}: gerando cenário…`);
-          break;
-        case 'stage.generated':
-          // conteúdo COMPLETO de cada geração no console do Chrome
-          console.groupCollapsed(`[bench] ${s}: cenário gerado`);
-          console.info('pergunta:', event.spec?.question);
-          console.info('contexto de produto:', event.spec?.productContext);
-          console.info('maxTokens sugerido:', event.spec?.maxTokens);
-          console.groupEnd();
-          break;
-        case 'stage.failed':
-          console.warn(`[bench] ${s}: PULADA — ${event.error}`);
-          break;
-        case 'competitor.progress':
-          console.debug(
-            `[bench] ${s} ${event.contestantId ?? event.modelId}: ${event.chars} chars (${event.charsPerSec?.toFixed?.(0)} ch/s)`,
-          );
-          break;
-        case 'competitor.finished':
-          if (event.response?.status === 'error') {
-            console.error(
-              `[bench] ${s} ${event.response.contestantId ?? event.response.modelId}: ERRO — ${event.response.errorMsg}`,
-            );
-          } else {
-            console.info(
-              `[bench] ${s} ${event.response?.contestantId ?? event.response?.modelId}: ok (${event.response?.tokensOut} tok)`,
-            );
-          }
-          break;
-        case 'stage.judged': {
-          const ev = event.evaluation;
-          console.groupCollapsed(
-            `[bench] ${s}: julgada${event.judge?.inconclusive ? ' (inconclusiva)' : ''}`,
-          );
-          console.info('ranking (melhor→pior):', event.judge?.rankedContestantIds);
-          if (ev && !ev.inconclusive) {
-            console.info('vencedor (avaliação):', ev.bestContestantId);
-            console.info('motivos do vencedor:', ev.bestReasons);
-            for (const v of ev.verdicts ?? []) {
-              console.info(
-                `${v.acceptable ? '✅ aceitável' : '❌ não aceitável'} — ${v.contestantId}: ${v.justification}`,
-              );
-            }
-          } else if (ev?.inconclusive) {
-            console.warn('avaliação inconclusiva:', ev.raw);
-          }
-          console.groupEnd();
-          break;
-        }
-        case 'run.finished':
-          console.info(`[bench] run finalizada (status: ${event.record?.status})`);
-          break;
-        case 'run.error':
-          console.error('[bench] run.error:', event.error);
-          break;
-      }
-      onEvent(event);
-
-      // A run acabou: feche o EventSource. Sem isso o browser reconecta
-      // infinitamente (o servidor da res.end() em runs terminais), gerando
-      // a enxurrada de "[SSE connection error]" no console.
-      const isTerminal =
-        event.type === 'run.finished' ||
-        event.type === 'run.error' ||
-        (event.type === 'snapshot' &&
-          TERMINAL_RUN_STATUSES.includes(event.record?.status));
-      if (isTerminal) close();
-    } catch (err) {
-      console.error('[SSE parse error]', err, msg.data);
+  // Client-side: assina o barramento em memória do run (sem SSE). Snapshot
+  // imediato do record vivo + eventos subsequentes; se já terminou, snapshot +
+  // evento terminal a partir do IndexedDB.
+  const live = getRunRecord(id);
+  if (live) {
+    onEvent({ type: 'snapshot', record: live });
+    if (TERMINAL_RUN_STATUSES.includes(live.status)) return () => undefined;
+    return subscribeRun(id, onEvent);
+  }
+  let active = true;
+  void loadRun(id).then((rec) => {
+    if (!active || !rec) return;
+    onEvent({ type: 'snapshot', record: rec });
+    if (rec.status === 'error') {
+      onEvent({ type: 'run.error', runId: id, error: rec.error ?? 'Run terminou com erro.' });
+    } else if (TERMINAL_RUN_STATUSES.includes(rec.status)) {
+      onEvent({ type: 'run.finished', runId: id, record: rec });
     }
+  });
+  return () => {
+    active = false;
   };
-  es.onerror = (err) => {
-    if (closed) return; // fechamento intencional pos-run, nao e erro
-    console.error('[SSE connection error]', err);
-    onError?.(err);
-  };
-  return close;
 }

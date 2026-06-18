@@ -45,6 +45,16 @@ data/           runtime: runs/ e sessions/ (IGNORADO no git; ver /data/ no .giti
 4. Catálogo de modelos: cache de 24h no backend + IndexedDB no cliente.
 5. As **etapas de uma run rodam todas em paralelo**; a concorrência das chamadas ao OpenRouter é gateada por um **limitador global adaptativo** em `openrouter.ts` (env `OPENROUTER_MAX_CONCURRENCY`). Ver `knowledge-benchmark-modes` / `knowledge-openrouter`.
 
+## Dois modos de execução (atenção: código duplicado)
+- **Backend** (`src/`): Express + run no servidor + filesystem. Usado por `npm run dev`/`npm start`.
+- **Client-side** (`web/src/engine/`): o MESMO pipeline portado para o navegador (chama o OpenRouter
+  direto, orquestra na aba, persiste no IndexedDB). Permite SPA estática (Vercel, `vercel.json`).
+  `web/src/api.ts` delega ao engine; `engine/events.ts` (pub/sub) e `engine/storage.ts` (IndexedDB)
+  substituem `events.ts`/`storage.ts` do Node.
+- **⚠️ `web/src/engine/*` é uma CÓPIA de `src/*`** (datagen/competitor/judge/evaluator/variator/
+  orchestrator/trainer/openrouter/normalize/techniques/types). Ao mudar a lógica do pipeline,
+  **atualize os dois lados** (ou só o engine, se o backend já é legado no seu caso).
+
 ## Gotcha de path
 `server.ts` resolve `web/dist` por `__dirname` (relativo ao arquivo). Mas **dados runtime e JSON
 de `src/data/` são lidos por `process.cwd()`** (ver `storage.ts` e `lgpd.ts`) — porque `tsc` não

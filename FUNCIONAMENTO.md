@@ -11,6 +11,9 @@ sequenciais hoje e poderiam ser paralelizados/otimizados**.
 > agora rodam **todas em paralelo**, os cenários são **pré-gerados em paralelo**, o juiz é
 > **listwise** e há um **limitador global adaptativo** em `openrouter.ts`. As seções abaixo
 > refletem esse estado; a análise de "o que era sequencial" fica como histórico/racional.
+>
+> Este mesmo pipeline foi **portado para o navegador** (`web/src/engine/`) no modo client-side
+> (SPA estática) — a mecânica das etapas é idêntica; muda só onde roda. Ver o README.
 
 ---
 

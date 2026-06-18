@@ -10,6 +10,10 @@ metadata:
 Pré-requisitos de conhecimento: `knowledge-backend` (e `knowledge-frontend` se a UI consome;
 `knowledge-openrouter` se chama modelo).
 
+> **Modo client-side (SPA):** lá não há rota Express — "expor dados" = uma função no
+> `web/src/engine/` + wrapper em `web/src/api.ts` (que mantém a mesma interface pública). Se a
+> feature precisa valer nos dois modos, reflita no backend (`src/`) E no engine. Ver `knowledge-architecture`.
+
 ## Procedimento
 1. **Rota** em `src/routes.ts`: adicione `router.get/post('/<rota>', ...)`. Decida se precisa de
    key (`requireKey` para chamadas ao OpenRouter) ou é pública (como `/techniques` e `/lgpd`).

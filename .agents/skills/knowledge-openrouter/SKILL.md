@@ -32,6 +32,8 @@ pelo pipeline. É **adaptativo (AIMD)**: `concurrencyLimit` cresce sob pressão 
 env `OPENROUTER_MAX_CONCURRENCY` (default 32). `currentConcurrency()` expõe `{limit, active, queued}`
 para logs. Quem paraleliza etapas/competidores (`orchestrator.ts`) NÃO usa cap local — confia no
 semáforo. Ao adicionar uma nova chamada de LLM, use `chatCompletion`/`Stream` e ela já entra no limite.
+**Cópia client-side:** `web/src/engine/openrouter.ts` é a versão do navegador (SPA) — mesma lógica,
+sem `process.env` (consts) e CORS direto. Sincronize ao mudar. Ver `knowledge-architecture`.
 
 ## Roteamento de provider / ZDR (estado atual + gancho)
 - Hoje o app **não** fixa provider: o OpenRouter roteia automaticamente. O `body` de
