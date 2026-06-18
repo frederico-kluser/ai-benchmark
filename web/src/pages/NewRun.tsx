@@ -1,11 +1,10 @@
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ModelSelector } from '../components/ModelSelector';
-import { ModeTabs } from '../components/ModeTabs';
 import { Toggle } from '../components/Toggle';
 import { TechniqueSelector } from '../components/TechniqueSelector';
 import { ManualVariantsEditor } from '../components/ManualVariantsEditor';
-import { markTutorialSeen, tutorialSeen, useHelp } from '../help';
+import { useHelp } from '../help';
 import {
   createRun,
   createSession,
@@ -55,11 +54,40 @@ const PRESETS: { label: string; theme: string }[] = [
   },
 ];
 
-const MODE_DESC: Record<RunMode, string> = {
-  compare: 'Vários modelos competem no mesmo benchmark — descubra qual responde melhor.',
-  variation: 'Um modelo, várias variações de system prompt competindo — descubra o melhor prompt.',
-  training: 'Um modelo: a cada iteração a melhor variação evolui (auto-melhoria do prompt).',
-};
+// Os 3 objetivos, agora apresentados como cartões escolhíveis no passo 1.
+const MODE_META: { id: RunMode; icon: string; label: string; tagline: string; detail: string }[] = [
+  {
+    id: 'compare',
+    icon: '⚖️',
+    label: 'Comparar modelos',
+    tagline: 'Vários modelos, o mesmo desafio',
+    detail: 'Descubra qual LLM responde melhor ao seu caso. Todos respondem às mesmas perguntas e o juiz monta o ranking.',
+  },
+  {
+    id: 'variation',
+    icon: '🧬',
+    label: 'Testar prompts',
+    tagline: 'Um modelo, vários system prompts',
+    detail: 'Mantém o modelo fixo e compara várias versões do prompt para achar a que funciona melhor.',
+  },
+  {
+    id: 'training',
+    icon: '📈',
+    label: 'Treinar prompt',
+    tagline: 'Auto-melhoria iterativa',
+    detail: 'A cada rodada a melhor versão do prompt evolui sozinha, convergindo para o melhor prompt possível.',
+  },
+];
+
+// Os 5 passos do assistente (mesma sequência para todos os modos).
+const STEPS = [
+  { id: 'mode', label: 'Objetivo' },
+  { id: 'theme', label: 'Tema' },
+  { id: 'players', label: 'Participantes' },
+  { id: 'eval', label: 'Avaliação' },
+  { id: 'review', label: 'Revisar' },
+] as const;
+type StepId = (typeof STEPS)[number]['id'];
 
 function pipelineFor(mode: RunMode) {
   if (mode === 'compare') {
@@ -94,6 +122,10 @@ function fmtUsd(x: number): string {
   return `$${x.toFixed(4)}`;
 }
 
+function scrollToTop() {
+  if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
 function Stepper({
   label,
   value,
@@ -119,9 +151,75 @@ function Stepper({
   );
 }
 
+// Diagrama do fluxo Gerador → (Competidores/Variações) → Juiz para o modo atual.
+function Pipeline({ mode, iterations }: { mode: RunMode; iterations: number }) {
+  const pipeline = pipelineFor(mode);
+  return (
+    <div className="pipeline">
+      {pipeline.map((p, i) => (
+        <Fragment key={p.num}>
+          <div className="pipeline-step">
+            <span className="pipeline-num">{p.num}</span>
+            <span className="pipeline-text">
+              <span className="pipeline-title">{p.title}</span>
+              <span className="pipeline-desc">{p.desc}</span>
+            </span>
+          </div>
+          {i < pipeline.length - 1 && <span className="pipeline-arrow">→</span>}
+        </Fragment>
+      ))}
+      {mode === 'training' && <span className="pipeline-arrow">↻ {iterations}×</span>}
+    </div>
+  );
+}
+
+// Trilha de progresso clicável no topo do assistente.
+function StepProgress({
+  current,
+  firstInvalid,
+  onJump,
+}: {
+  current: number;
+  firstInvalid: number;
+  onJump: (i: number) => void;
+}) {
+  return (
+    <ol className="wizard-steps">
+      {STEPS.map((s, i) => {
+        const state = i === current ? 'current' : i < current ? 'done' : 'todo';
+        const reachable = i <= current || i <= firstInvalid;
+        return (
+          <Fragment key={s.id}>
+            <li className={`wizard-step ${state}`}>
+              <button type="button" className="wizard-step-btn" disabled={!reachable} onClick={() => onJump(i)}>
+                <span className="wizard-step-num">{i < current ? '✓' : i + 1}</span>
+                <span className="wizard-step-label">{s.label}</span>
+              </button>
+            </li>
+            {i < STEPS.length - 1 && <span className="wizard-step-line" aria-hidden />}
+          </Fragment>
+        );
+      })}
+    </ol>
+  );
+}
+
+// Cabeçalho padrão de cada passo: rótulo "Passo N de 5", título e texto explicativo.
+function StepIntro({ step, title, children }: { step: number; title: string; children: ReactNode }) {
+  return (
+    <div className="wizard-intro">
+      <div className="wizard-kicker">Passo {step} de {STEPS.length}</div>
+      <h2 className="wizard-title">{title}</h2>
+      <p className="wizard-lead">{children}</p>
+    </div>
+  );
+}
+
 export function NewRun() {
   const navigate = useNavigate();
+  const help = useHelp();
   const [mode, setMode] = useState<RunMode>('compare');
+  const [stepIdx, setStepIdx] = useState(0);
   const [theme, setTheme] = useState(DEFAULT_THEME);
   const [stages, setStages] = useState(5);
   const [concurrency, setConcurrency] = useState(8);
@@ -149,17 +247,8 @@ export function NewRun() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Tutorial por modo: dispara automaticamente na 1ª vez em cada tab.
-  const help = useHelp();
-  useEffect(() => {
-    if (!tutorialSeen(mode)) {
-      markTutorialSeen(mode);
-      help.open(mode);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode]);
-
   const isSingle = mode === 'variation' || mode === 'training';
+  const modeMeta = MODE_META.find((m) => m.id === mode)!;
 
   // Catálogo compartilhado entre os seletores + estimativa de custo.
   const [models, setModels] = useState<OpenRouterModel[]>([]);
@@ -226,8 +315,66 @@ export function NewRun() {
     setter(Math.max(min, Math.min(max, current + dir * by)));
   }
 
-  async function submit(e: React.FormEvent) {
+  // --- Validação por passo: o assistente só avança quando o passo está completo. ---
+  function validateStep(id: StepId): string | null {
+    switch (id) {
+      case 'mode':
+        return null;
+      case 'theme':
+        return theme.trim() ? null : 'Descreva o tema do benchmark para continuar.';
+      case 'players':
+        if (mode === 'compare')
+          return competitors.length >= 2 ? null : 'Selecione pelo menos 2 modelos competidores.';
+        if (contestantModel.length !== 1) return 'Selecione 1 modelo sob teste.';
+        if (variantCount < 2)
+          return optimize
+            ? 'Selecione ao menos 2 técnicas (ou 1 técnica + prompt base).'
+            : 'Forneça ao menos 2 variantes manuais (ou 1 variante + prompt base).';
+        return null;
+      case 'eval':
+        if (datagen.length !== 1) return 'Selecione 1 modelo gerador.';
+        if (judge.length !== 1) return 'Selecione 1 modelo juiz.';
+        return null;
+      case 'review':
+        return null;
+      default:
+        return null;
+    }
+  }
+
+  function firstInvalid(): number {
+    for (let i = 0; i < STEPS.length; i++) {
+      if (validateStep(STEPS[i].id)) return i;
+    }
+    return STEPS.length;
+  }
+
+  function goTo(target: number) {
+    let dest = Math.max(0, Math.min(STEPS.length - 1, target));
+    if (dest > stepIdx) {
+      // Avançando: barra no primeiro passo incompleto e mostra o que falta.
+      const fi = firstInvalid();
+      if (fi < dest) {
+        dest = fi;
+        setError(validateStep(STEPS[fi].id));
+      } else {
+        setError(null);
+      }
+    } else {
+      setError(null);
+    }
+    setStepIdx(dest);
+    scrollToTop();
+  }
+
+  async function submit(e: FormEvent) {
     e.preventDefault();
+    // Enter fora do último passo apenas avança o assistente (não dispara a run).
+    if (STEPS[stepIdx].id !== 'review') {
+      goTo(stepIdx + 1);
+      return;
+    }
+
     setError(null);
     if (!theme.trim()) return setError('Defina um tema.');
     if (datagen.length !== 1) return setError('Selecione 1 modelo para gerador.');
@@ -289,162 +436,225 @@ export function NewRun() {
   }
 
   const keyConnected = !!getStoredKey();
-  const pipeline = pipelineFor(mode);
+  const stepId = STEPS[stepIdx].id;
+  const fi = firstInvalid();
 
   return (
-    <form className="screen" onSubmit={submit}>
-      <h1 className="page-title">Nova Run</h1>
-      <p className="page-sub">
-        Defina um tema, escolha o modo e dispare o benchmark. Tudo vem pré‑preenchido — ajuste o que quiser.
-      </p>
+    <form className="screen wizard" onSubmit={submit}>
+      <header className="wizard-head">
+        <h1 className="page-title">Nova Run</h1>
+        <p className="page-sub">
+          Monte seu benchmark em {STEPS.length} passos. Cada etapa explica o que faz — no fim, é só disparar os robôs.
+        </p>
+      </header>
 
-      <ModeTabs value={mode} onChange={setMode} />
-      <p className="mode-desc">{MODE_DESC[mode]}</p>
+      <StepProgress current={stepIdx} firstInvalid={fi} onJump={goTo} />
 
-      <div className="pipeline">
-        {pipeline.map((p, i) => (
-          <Fragment key={p.num}>
-            <div className="pipeline-step">
-              <span className="pipeline-num">{p.num}</span>
-              <span className="pipeline-text">
-                <span className="pipeline-title">{p.title}</span>
-                <span className="pipeline-desc">{p.desc}</span>
-              </span>
+      <div className="wizard-panel" key={stepId}>
+        {/* ---------------------------------------------------------- passo 1: objetivo */}
+        {stepId === 'mode' && (
+          <>
+            <StepIntro step={1} title="O que você quer descobrir?">
+              Escolha o tipo de experimento. Dá para trocar a qualquer momento — cada opção mostra abaixo como funciona.
+            </StepIntro>
+            <div className="mode-card-grid">
+              {MODE_META.map((m) => (
+                <button
+                  type="button"
+                  key={m.id}
+                  className={`mode-card ${mode === m.id ? 'selected' : ''}`}
+                  onClick={() => setMode(m.id)}
+                >
+                  <span className="mode-card-icon">{m.icon}</span>
+                  <span className="mode-card-title">{m.label}</span>
+                  <span className="mode-card-tag">{m.tagline}</span>
+                  <span className="mode-card-detail">{m.detail}</span>
+                </button>
+              ))}
             </div>
-            {i < pipeline.length - 1 && <span className="pipeline-arrow">→</span>}
-          </Fragment>
-        ))}
-        {mode === 'training' && <span className="pipeline-arrow">↻ {iterations}×</span>}
-      </div>
+            <div className="wizard-pipeline-wrap">
+              <div className="wizard-sub">Como roda o modo “{modeMeta.label}”</div>
+              <Pipeline mode={mode} iterations={iterations} />
+              <button type="button" className="link-toggle" onClick={() => help.open(mode)}>
+                Ver tutorial completo deste modo
+              </button>
+            </div>
+          </>
+        )}
 
-      <div className="newrun-grid">
-        <div className="newrun-main">
-          <div className="card field-card">
-            <div className="field-head">
-              <label className="field-label" htmlFor="theme">Tema</label>
-              <div className="preset-row">
-                <span className="preset-lead">Exemplos:</span>
-                {PRESETS.map((p) => (
-                  <button key={p.label} type="button" className="chip-tag" onClick={() => setTheme(p.theme)}>
-                    {p.label}
-                  </button>
-                ))}
+        {/* ---------------------------------------------------------- passo 2: tema */}
+        {stepId === 'theme' && (
+          <>
+            <StepIntro step={2} title="Sobre o que é o benchmark?">
+              Descreva o assunto ou cenário. Um modelo <strong>gerador</strong> vai criar várias perguntas realistas sobre
+              esse tema — são elas que os participantes respondem. Quanto mais específico, melhores as perguntas.
+            </StepIntro>
+            <div className="card field-card">
+              <div className="field-head">
+                <label className="field-label" htmlFor="theme">Tema</label>
+                <div className="preset-row">
+                  <span className="preset-lead">Exemplos:</span>
+                  {PRESETS.map((p) => (
+                    <button key={p.label} type="button" className="chip-tag" onClick={() => setTheme(p.theme)}>
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
-            <textarea
-              id="theme"
-              className="textarea"
-              value={theme}
-              onChange={(e) => setTheme(e.target.value)}
-              placeholder="Ex.: Atendimento de clínica de exames laboratoriais com FAQs e políticas de agendamento"
-              rows={3}
-            />
-          </div>
-
-          <div className="card steppers-card">
-            <div className="steppers-grid">
-              <Stepper label="Etapas" value={stages} onStep={(d) => step('stages', stages, setStages, d)} />
-              <Stepper
-                label="Max tokens"
-                value={maxOutputTokens}
-                onStep={(d) => step('maxOutputTokens', maxOutputTokens, setMaxOutputTokens, d)}
+              <textarea
+                id="theme"
+                className="textarea"
+                value={theme}
+                onChange={(e) => setTheme(e.target.value)}
+                placeholder="Ex.: Atendimento de clínica de exames laboratoriais com FAQs e políticas de agendamento"
+                rows={5}
               />
             </div>
-            {mode === 'training' && (
-              <div className="steppers-grid" style={{ marginTop: 14 }}>
-                <Stepper label="Iterações" value={iterations} onStep={(d) => step('iterations', iterations, setIterations, d)} />
-              </div>
-            )}
-            {advancedOpen && (
-              <div className="steppers-grid" style={{ marginTop: 14 }}>
-                <Stepper label="Concorrência" value={concurrency} onStep={(d) => step('concurrency', concurrency, setConcurrency, d)} />
-                <Stepper label="Timeout (ms)" value={timeoutMs} onStep={(d) => step('timeoutMs', timeoutMs, setTimeoutMs, d)} />
-              </div>
-            )}
-            <button type="button" className="link-toggle" onClick={() => setAdvancedOpen((v) => !v)}>
-              {advancedOpen ? 'Ocultar ajustes avançados' : 'Ajustes avançados (concorrência, timeout)'}
-              <span className={`caret ${advancedOpen ? 'open' : ''}`}>▶</span>
-            </button>
-          </div>
 
-          <div className="roles-label">Papéis dos modelos</div>
+            <div className="card steppers-card">
+              <div className="steppers-grid">
+                <Stepper label="Etapas" value={stages} onStep={(d) => step('stages', stages, setStages, d)} />
+                <Stepper
+                  label="Max tokens"
+                  value={maxOutputTokens}
+                  onStep={(d) => step('maxOutputTokens', maxOutputTokens, setMaxOutputTokens, d)}
+                />
+              </div>
+              {mode === 'training' && (
+                <div className="steppers-grid" style={{ marginTop: 14 }}>
+                  <Stepper label="Iterações" value={iterations} onStep={(d) => step('iterations', iterations, setIterations, d)} />
+                </div>
+              )}
+              <p className="field-hint">
+                <strong>Etapas</strong> = quantas perguntas diferentes o gerador cria. <strong>Max tokens</strong> limita o
+                tamanho de cada resposta.
+                {mode === 'training' && <> <strong>Iterações</strong> = quantas rodadas de evolução do prompt.</>}
+              </p>
+            </div>
+          </>
+        )}
 
-          {mode === 'compare' ? (
-            <ModelSelector
-              multi
-              title="Competidores"
-              hint="2 ou mais modelos — respondem ao cenário e disputam o ranking."
-              value={competitors}
-              onChange={setCompetitors}
-              excludeIds={[...datagen, ...judge]}
-              models={models}
-              loading={modelsLoading}
-            />
-          ) : (
+        {/* ---------------------------------------------------------- passo 3: participantes */}
+        {stepId === 'players' && (
+          <>
+            {mode === 'compare' ? (
+              <>
+                <StepIntro step={3} title="Quais modelos vão competir?">
+                  Escolha 2 ou mais modelos. Todos respondem às mesmas perguntas e disputam o ranking — o juiz decide quem
+                  foi melhor, sem saber qual modelo é qual.
+                </StepIntro>
+                <ModelSelector
+                  multi
+                  title="Competidores"
+                  hint="2 ou mais modelos — respondem ao cenário e disputam o ranking."
+                  value={competitors}
+                  onChange={setCompetitors}
+                  excludeIds={[...datagen, ...judge]}
+                  models={models}
+                  loading={modelsLoading}
+                />
+              </>
+            ) : (
+              <>
+                <StepIntro
+                  step={3}
+                  title={mode === 'training' ? 'Qual modelo vamos treinar?' : 'Qual modelo e quais prompts testar?'}
+                >
+                  {mode === 'training' ? (
+                    <>
+                      Escolha 1 modelo. A cada iteração, a melhor versão do system prompt evolui para a próxima rodada —
+                      convergindo para o melhor prompt possível.
+                    </>
+                  ) : (
+                    <>
+                      Escolha 1 modelo. Ele responde com várias versões do system prompt; o objetivo é achar a melhor. Gere
+                      as variações automaticamente a partir de técnicas, ou escreva as suas.
+                    </>
+                  )}
+                </StepIntro>
+                <ModelSelector
+                  multi={false}
+                  title="Modelo sob teste"
+                  hint="Exatamente 1 — a LLM cujo system prompt você quer otimizar."
+                  value={contestantModel}
+                  onChange={setContestantModel}
+                  excludeIds={[...datagen, ...judge]}
+                  models={models}
+                  loading={modelsLoading}
+                />
+
+                <div className="card field-card">
+                  <label className="field-label" htmlFor="basePrompt">Prompt base (opcional)</label>
+                  <textarea
+                    id="basePrompt"
+                    className="textarea"
+                    style={{ marginTop: 10 }}
+                    value={basePrompt}
+                    onChange={(e) => setBasePrompt(e.target.value)}
+                    placeholder="System prompt de partida. Deixe vazio para que as variações partam do zero a partir do tema."
+                    rows={4}
+                  />
+                  <Toggle
+                    checked={optimize}
+                    onChange={setOptimize}
+                    label="Otimização de prompt (gerar variações automaticamente)"
+                    hint={
+                      optimize
+                        ? 'Ligado: uma LLM gera as variações aplicando as técnicas selecionadas (o prompt base, quando houver, roda como controle).'
+                        : 'Desligado: nenhuma reescrita por LLM — rodam o prompt base (se houver) e as variações que você escrever.'
+                    }
+                  />
+                </div>
+
+                {optimize ? (
+                  <TechniqueSelector value={techniques} onChange={setTechniques} />
+                ) : (
+                  <ManualVariantsEditor value={manualVariants} onChange={setManualVariants} />
+                )}
+              </>
+            )}
+          </>
+        )}
+
+        {/* ---------------------------------------------------------- passo 4: avaliação */}
+        {stepId === 'eval' && (
+          <>
+            <StepIntro step={4} title="Quem cria as perguntas e quem julga?">
+              Dois modelos de apoio: o <strong>gerador</strong> inventa os cenários do benchmark e o <strong>juiz</strong>{' '}
+              compara as respostas às cegas, apontando a melhor. Eles não competem
+              {isSingle ? ' — e o juiz nunca é o modelo sob teste, para evitar viés.' : '.'}
+            </StepIntro>
+
             <ModelSelector
               multi={false}
-              title="Modelo sob teste"
-              hint="Exatamente 1 — a LLM cujo system prompt você quer otimizar."
-              value={contestantModel}
-              onChange={setContestantModel}
-              excludeIds={[...datagen, ...judge]}
+              title="Gerador de cenários"
+              hint="Exatamente 1 modelo — inventa as perguntas do benchmark."
+              value={datagen}
+              onChange={setDatagen}
+              excludeIds={[...(mode === 'compare' ? competitors : contestantModel), ...judge]}
               models={models}
               loading={modelsLoading}
             />
-          )}
 
-          <ModelSelector
-            multi={false}
-            title="Gerador de cenários"
-            hint="Exatamente 1 modelo — inventa as perguntas do benchmark."
-            value={datagen}
-            onChange={setDatagen}
-            excludeIds={[...(mode === 'compare' ? competitors : contestantModel), ...judge]}
-            models={models}
-            loading={modelsLoading}
-          />
+            <ModelSelector
+              multi={false}
+              title="Juiz"
+              hint="Exatamente 1 modelo — ranqueia às cegas e avalia a aceitabilidade."
+              value={judge}
+              onChange={setJudge}
+              excludeIds={[...(mode === 'compare' ? competitors : contestantModel), ...datagen]}
+              models={models}
+              loading={modelsLoading}
+            />
 
-          <ModelSelector
-            multi={false}
-            title="Juiz"
-            hint="Exatamente 1 modelo — ranqueia às cegas e avalia a aceitabilidade."
-            value={judge}
-            onChange={setJudge}
-            excludeIds={[...(mode === 'compare' ? competitors : contestantModel), ...datagen]}
-            models={models}
-            loading={modelsLoading}
-          />
+            <div className="roles-note">
+              {mode === 'compare'
+                ? 'Gerador e juiz usam um único modelo cada. Um mesmo modelo não pode ocupar dois papéis — os já escolhidos somem das outras listas.'
+                : 'O juiz não pode ser o modelo sob teste (evita viés de auto-preferência). Gerador e juiz são modelos à parte.'}
+            </div>
 
-          <div className="roles-note">
-            {mode === 'compare'
-              ? 'Gerador e juiz usam um único modelo cada. Um mesmo modelo não pode ocupar dois papéis — os já escolhidos somem das outras listas.'
-              : 'O juiz não pode ser o modelo sob teste (evita viés de auto-preferência). Gerador e juiz são modelos à parte.'}
-          </div>
-
-          {isSingle && (
-            <>
-              <div className="roles-label">Variações de prompt</div>
-              <div className="card field-card">
-                <label className="field-label" htmlFor="basePrompt">Prompt base (opcional)</label>
-                <textarea
-                  id="basePrompt"
-                  className="textarea"
-                  style={{ marginTop: 10 }}
-                  value={basePrompt}
-                  onChange={(e) => setBasePrompt(e.target.value)}
-                  placeholder="System prompt de partida. Deixe vazio para que as variações partam do zero a partir do tema."
-                  rows={4}
-                />
-                <Toggle
-                  checked={optimize}
-                  onChange={setOptimize}
-                  label="Otimização de prompt (gerar variações automaticamente)"
-                  hint={
-                    optimize
-                      ? 'Ligado: uma LLM gera as variações aplicando as técnicas selecionadas (o prompt base, quando houver, roda como controle).'
-                      : 'Desligado: nenhuma reescrita por LLM — rodam o prompt base (se houver) e as variações que você escrever.'
-                  }
-                />
+            {isSingle && (
+              <div className="card field-card" style={{ marginTop: 16 }}>
                 <Toggle
                   checked={twoPassJudge}
                   onChange={setTwoPassJudge}
@@ -452,54 +662,119 @@ export function NewRun() {
                   hint="Avalia cada etapa em duas ordens embaralhadas e tira a média — recomendado quando as variações são parecidas. Dobra o custo do juiz."
                 />
               </div>
+            )}
 
-              {optimize ? (
-                <TechniqueSelector value={techniques} onChange={setTechniques} />
-              ) : (
-                <ManualVariantsEditor value={manualVariants} onChange={setManualVariants} />
+            <div className="card steppers-card">
+              {advancedOpen && (
+                <div className="steppers-grid">
+                  <Stepper label="Concorrência" value={concurrency} onStep={(d) => step('concurrency', concurrency, setConcurrency, d)} />
+                  <Stepper label="Timeout (ms)" value={timeoutMs} onStep={(d) => step('timeoutMs', timeoutMs, setTimeoutMs, d)} />
+                </div>
               )}
-            </>
+              <button type="button" className="link-toggle" onClick={() => setAdvancedOpen((v) => !v)}>
+                {advancedOpen ? 'Ocultar ajustes avançados' : 'Ajustes avançados (concorrência, timeout)'}
+                <span className={`caret ${advancedOpen ? 'open' : ''}`}>▶</span>
+              </button>
+              {advancedOpen && (
+                <p className="field-hint">
+                  <strong>Concorrência</strong> = quantas chamadas em paralelo. <strong>Timeout</strong> = tempo máximo por
+                  resposta antes de desistir.
+                </p>
+              )}
+            </div>
+          </>
+        )}
+
+        {/* ---------------------------------------------------------- passo 5: revisão */}
+        {stepId === 'review' && (
+          <>
+            <StepIntro step={5} title="Confira e dispare os robôs">
+              Revise o resumo abaixo. Quando estiver tudo certo, é só disparar — você vai acompanhar cada modelo respondendo
+              ao vivo na próxima tela.
+            </StepIntro>
+
+            <div className="review-grid">
+              <div className="card review-card">
+                <div className="kicker" style={{ display: 'block', marginBottom: 14 }}>Resumo da run</div>
+                <div className="summary-rows">
+                  <div className="summary-row">
+                    <span className="k">Modo</span>
+                    <span className="v">{modeMeta.label}</span>
+                  </div>
+                  <div className="summary-row">
+                    <span className="k">{isSingle ? 'Variantes de prompt' : 'Competidores'}</span>
+                    <span className="v">{estimate.n}</span>
+                  </div>
+                  <div className="summary-row">
+                    <span className="k">Etapas</span>
+                    <span className="v">{estimate.stages}</span>
+                  </div>
+                  {mode === 'training' && (
+                    <div className="summary-row">
+                      <span className="k">Iterações</span>
+                      <span className="v">{estimate.iters}</span>
+                    </div>
+                  )}
+                  <div className="summary-row">
+                    <span className="k">Gerador</span>
+                    <span className="v v-mono">{datagen[0] ?? '—'}</span>
+                  </div>
+                  <div className="summary-row">
+                    <span className="k">Juiz</span>
+                    <span className="v v-mono">{judge[0] ?? '—'}</span>
+                  </div>
+                  <div className="summary-row">
+                    <span className="k">Chamadas de modelo</span>
+                    <span className="v">{estimate.calls}</span>
+                  </div>
+                </div>
+                <div className="summary-divider" />
+                <div className="review-theme-label">Tema</div>
+                <p className="review-theme">{theme.trim() || '—'}</p>
+              </div>
+
+              <div className="card review-card review-cost-card">
+                <div className="est-label">Custo estimado</div>
+                <div className="est-cost">
+                  {modelsLoading ? '—' : `${fmtUsd(estimate.low)} – ${fmtUsd(estimate.high)}`}
+                </div>
+                <div className="est-note">
+                  Estima a inferência do benchmark pelo teto de tokens. A geração/análise de variações (otimização) não está
+                  inclusa.
+                </div>
+                {keyConnected ? (
+                  <div className="aside-key-ok">✓ chave conectada</div>
+                ) : (
+                  <p className="field-hint" style={{ marginTop: 12 }}>
+                    Conecte sua chave da OpenRouter em <strong>Configurações</strong> antes de disparar.
+                  </p>
+                )}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+
+      <div className="wizard-foot">
+        {error && <div className="wizard-error">{error}</div>}
+        <div className="wizard-nav">
+          {stepIdx > 0 ? (
+            <button type="button" className="btn-secondary" onClick={() => goTo(stepIdx - 1)}>
+              ← Voltar
+            </button>
+          ) : (
+            <span />
+          )}
+          {stepId !== 'review' ? (
+            <button type="button" className="btn-primary" onClick={() => goTo(stepIdx + 1)}>
+              Continuar →
+            </button>
+          ) : (
+            <button type="submit" className="btn-primary" disabled={submitting}>
+              {submitting ? 'Disparando…' : mode === 'training' ? '🚀 Disparar o treino' : '🚀 Disparar os robôs'}
+            </button>
           )}
         </div>
-
-        <aside className="card newrun-aside">
-          <div className="kicker" style={{ display: 'block', marginBottom: 16 }}>Resumo da run</div>
-          <div className="summary-rows">
-            <div className="summary-row">
-              <span className="k">{isSingle ? 'Variantes' : 'Competidores'}</span>
-              <span className="v">{estimate.n}</span>
-            </div>
-            <div className="summary-row">
-              <span className="k">Etapas</span>
-              <span className="v">{estimate.stages}</span>
-            </div>
-            {mode === 'training' && (
-              <div className="summary-row">
-                <span className="k">Iterações</span>
-                <span className="v">{estimate.iters}</span>
-              </div>
-            )}
-            <div className="summary-row">
-              <span className="k">Chamadas de modelo</span>
-              <span className="v">{estimate.calls}</span>
-            </div>
-          </div>
-          <div className="summary-divider" />
-          <div className="est-label">Custo estimado</div>
-          <div className="est-cost">
-            {modelsLoading ? '—' : `${fmtUsd(estimate.low)} – ${fmtUsd(estimate.high)}`}
-          </div>
-          <div className="est-note">
-            Estima a inferência do benchmark pelo teto de tokens. Geração de variações/análise (otimização) não está inclusa.
-          </div>
-
-          {error && <div className="aside-error">{error}</div>}
-
-          <button type="submit" className="btn-primary btn-block" disabled={submitting} style={{ marginTop: 18 }}>
-            {submitting ? 'Iniciando…' : mode === 'training' ? 'Iniciar treino' : 'Iniciar benchmark'}
-          </button>
-          {keyConnected && <div className="aside-key-ok">✓ chave conectada</div>}
-        </aside>
       </div>
     </form>
   );
