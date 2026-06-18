@@ -49,6 +49,146 @@ function parsePrice(value: unknown): number {
   return 0;
 }
 
+// ---------------------------------------------------------------------------
+// Limitador GLOBAL de concorrencia (adaptativo, AIMD) + retry com backoff.
+// TODA chamada de geracao passa por guardedFetch (chatCompletion/Stream), entao
+// datagen, competidores, juiz, avaliador, optimizer e variator compartilham UM
+// unico semaforo. O limite CRESCE no sucesso (quando ha pressao) e RECUA pela
+// metade quando o OpenRouter devolve 429 — converge para o maximo que o
+// provedor aguenta, "brigando" para rodar no teto sem derrubar com 429.
+// Teto via env OPENROUTER_MAX_CONCURRENCY (default 32).
+// ---------------------------------------------------------------------------
+const MAX_CONCURRENCY = Math.max(1, Number(process.env.OPENROUTER_MAX_CONCURRENCY ?? 32));
+const MIN_CONCURRENCY = 1;
+const MAX_RETRIES = 6;
+
+let concurrencyLimit = Math.min(8, MAX_CONCURRENCY);
+let activeCalls = 0;
+const waiters: Array<() => void> = [];
+
+function acquireSlot(): Promise<void> {
+  if (activeCalls < concurrencyLimit) {
+    activeCalls += 1;
+    return Promise.resolve();
+  }
+  return new Promise<void>((resolve) => waiters.push(resolve));
+}
+
+function releaseSlot(): void {
+  activeCalls -= 1;
+  while (waiters.length > 0 && activeCalls < concurrencyLimit) {
+    const next = waiters.shift()!;
+    activeCalls += 1;
+    next();
+  }
+}
+
+// Cresce so quando ha pressao (saturado ou com fila), ate o teto.
+function noteSuccess(): void {
+  if (concurrencyLimit < MAX_CONCURRENCY && (activeCalls >= concurrencyLimit || waiters.length > 0)) {
+    concurrencyLimit += 1;
+  }
+}
+
+function noteRateLimit(): void {
+  concurrencyLimit = Math.max(MIN_CONCURRENCY, Math.floor(concurrencyLimit / 2));
+}
+
+/** Limite atual de concorrencia (para logs/telemetria). */
+export function currentConcurrency(): { limit: number; active: number; queued: number } {
+  return { limit: concurrencyLimit, active: activeCalls, queued: waiters.length };
+}
+
+function isRetryableStatus(status: number): boolean {
+  return status === 429 || (status >= 500 && status < 600);
+}
+
+function backoffMs(attempt: number): number {
+  const base = Math.min(8000, 250 * 2 ** attempt);
+  return base + Math.floor(Math.random() * 250); // jitter
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+interface GuardedResponse {
+  res: Response;
+  startedAt: number;
+  /** Libera o slot do limitador; passe ok=true se a leitura do corpo concluiu. */
+  finish: (ok: boolean) => void;
+}
+
+/**
+ * fetch sob o limitador global, com timeout/abort por tentativa e retry com
+ * backoff em 429/5xx/rede. Em 429 reduz o limite (AIMD). Retorna a Response OK
+ * SEGURANDO o slot — o chamador DEVE chamar finish() apos ler o corpo.
+ */
+async function guardedFetch(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number,
+  externalSignal?: AbortSignal,
+): Promise<GuardedResponse> {
+  let attempt = 0;
+  for (;;) {
+    await acquireSlot();
+    const controller = new AbortController();
+    const timeoutHandle = setTimeout(() => controller.abort(new Error('timeout')), timeoutMs);
+    const onExternalAbort = () => controller.abort(externalSignal?.reason);
+    if (externalSignal) {
+      if (externalSignal.aborted) controller.abort(externalSignal.reason);
+      else externalSignal.addEventListener('abort', onExternalAbort, { once: true });
+    }
+    const cleanup = () => {
+      clearTimeout(timeoutHandle);
+      if (externalSignal) externalSignal.removeEventListener('abort', onExternalAbort);
+    };
+
+    const startedAt = Date.now();
+    let res: Response;
+    try {
+      res = await fetch(url, { ...init, signal: controller.signal });
+    } catch (err) {
+      cleanup();
+      releaseSlot();
+      // abort (timeout/externo) nao repete; erro de rede repete com backoff.
+      if (controller.signal.aborted || attempt >= MAX_RETRIES) throw err;
+      await sleep(backoffMs(attempt));
+      attempt += 1;
+      continue;
+    }
+
+    if (!res.ok) {
+      const status = res.status;
+      if (isRetryableStatus(status) && attempt < MAX_RETRIES && !externalSignal?.aborted) {
+        if (status === 429) noteRateLimit();
+        await res.body?.cancel().catch(() => undefined);
+        cleanup();
+        releaseSlot();
+        await sleep(backoffMs(attempt));
+        attempt += 1;
+        continue;
+      }
+      const errText = await res.text().catch(() => '');
+      cleanup();
+      releaseSlot();
+      throw new Error(describeOpenRouterError(status, errText));
+    }
+
+    // OK: segura o slot ate o chamador terminar de ler o corpo.
+    return {
+      res,
+      startedAt,
+      finish: (ok: boolean) => {
+        if (ok) noteSuccess();
+        cleanup();
+        releaseSlot();
+      },
+    };
+  }
+}
+
 export async function listModels(apiKey: string, force = false): Promise<OpenRouterModel[]> {
   const ck = cacheKey(apiKey);
   const cached = modelsCache.get(ck);
@@ -130,14 +270,6 @@ export async function chatCompletion(params: ChatCompletionParams): Promise<Chat
     responseFormatJson,
   } = params;
 
-  const controller = new AbortController();
-  const timeoutHandle = setTimeout(() => controller.abort(new Error('timeout')), timeoutMs);
-  const onExternalAbort = () => controller.abort(externalSignal?.reason);
-  if (externalSignal) {
-    if (externalSignal.aborted) controller.abort(externalSignal.reason);
-    else externalSignal.addEventListener('abort', onExternalAbort, { once: true });
-  }
-
   const body: Record<string, unknown> = {
     model: modelId,
     messages,
@@ -150,22 +282,16 @@ export async function chatCompletion(params: ChatCompletionParams): Promise<Chat
     body.response_format = { type: 'json_object' };
   }
 
-  const startedAt = Date.now();
+  const { res, startedAt, finish } = await guardedFetch(
+    `${OPENROUTER_BASE}/chat/completions`,
+    { method: 'POST', headers: defaultHeaders(apiKey), body: JSON.stringify(body) },
+    timeoutMs,
+    externalSignal,
+  );
+
+  let ok = false;
   try {
-    const res = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
-      method: 'POST',
-      headers: defaultHeaders(apiKey),
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
-
     const latencyMs = Date.now() - startedAt;
-
-    if (!res.ok) {
-      const errText = await res.text().catch(() => '');
-      throw new Error(describeOpenRouterError(res.status, errText));
-    }
-
     const json = (await res.json()) as {
       choices?: { message?: { content?: string } }[];
       usage?: { prompt_tokens?: number; completion_tokens?: number };
@@ -175,10 +301,10 @@ export async function chatCompletion(params: ChatCompletionParams): Promise<Chat
     const tokensIn = json.usage?.prompt_tokens ?? 0;
     const tokensOut = json.usage?.completion_tokens ?? 0;
 
+    ok = true;
     return { text, tokensIn, tokensOut, latencyMs, raw: json };
   } finally {
-    clearTimeout(timeoutHandle);
-    if (externalSignal) externalSignal.removeEventListener('abort', onExternalAbort);
+    finish(ok);
   }
 }
 
@@ -210,14 +336,6 @@ export async function chatCompletionStream(
     onDelta,
   } = params;
 
-  const controller = new AbortController();
-  const timeoutHandle = setTimeout(() => controller.abort(new Error('timeout')), timeoutMs);
-  const onExternalAbort = () => controller.abort(externalSignal?.reason);
-  if (externalSignal) {
-    if (externalSignal.aborted) controller.abort(externalSignal.reason);
-    else externalSignal.addEventListener('abort', onExternalAbort, { once: true });
-  }
-
   const body: Record<string, unknown> = {
     model: modelId,
     messages,
@@ -228,25 +346,21 @@ export async function chatCompletionStream(
   if (typeof maxTokens === 'number' && maxTokens > 0) body.max_tokens = maxTokens;
   if (responseFormatJson) body.response_format = { type: 'json_object' };
 
-  const startedAt = Date.now();
+  const { res, startedAt, finish } = await guardedFetch(
+    `${OPENROUTER_BASE}/chat/completions`,
+    { method: 'POST', headers: defaultHeaders(apiKey), body: JSON.stringify(body) },
+    timeoutMs,
+    externalSignal,
+  );
+
+  let ok = false;
   let fullText = '';
   let tokensIn = 0;
   let tokensOut = 0;
   let lastRaw: unknown = null;
 
   try {
-    const res = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
-      method: 'POST',
-      headers: defaultHeaders(apiKey),
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
-
-    if (!res.ok || !res.body) {
-      const errText = await res.text().catch(() => '');
-      throw new Error(describeOpenRouterError(res.status, errText));
-    }
-
+    if (!res.body) throw new Error('OpenRouter retornou stream sem corpo de resposta.');
     const reader = res.body.getReader();
     const decoder = new TextDecoder('utf-8');
     let buffer = '';
@@ -288,10 +402,10 @@ export async function chatCompletionStream(
     }
 
     const latencyMs = Date.now() - startedAt;
+    ok = true;
     return { text: fullText, tokensIn, tokensOut, latencyMs, raw: lastRaw };
   } finally {
-    clearTimeout(timeoutHandle);
-    if (externalSignal) externalSignal.removeEventListener('abort', onExternalAbort);
+    finish(ok);
   }
 }
 

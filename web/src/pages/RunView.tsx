@@ -177,8 +177,11 @@ export function RunView() {
   const hasRing = record.status === 'running' || record.status === 'finished';
   const ringOffset = RING_C * (1 - (totalStages ? doneStages / totalStages : 0));
 
+  const isRunning = record.status === 'running';
+  // Resultados (placar/heatmap/etapas detalhadas) só aparecem quando a run TERMINA.
+  // Enquanto roda, mostramos o visualizador de processo (todas as etapas em paralelo).
   const hasScoreboard = record.stages.some((s) => s.judge);
-  const effectiveTab = tab ?? (record.status === 'running' ? 'etapas' : hasScoreboard ? 'resumo' : 'etapas');
+  const effectiveTab = tab ?? (hasScoreboard ? 'resumo' : 'etapas');
   const showScoreboard = hasScoreboard && effectiveTab === 'resumo';
   const showStages = !hasScoreboard || effectiveTab === 'etapas';
   const isSingle = mode !== 'compare';
@@ -253,7 +256,9 @@ export function RunView() {
 
       {isSingle && <ContestantsPanel contestants={contestants} />}
 
-      {hasScoreboard && (
+      {isRunning && <ProcessMonitor record={record} totalCompetitors={totalCompetitors} />}
+
+      {!isRunning && hasScoreboard && (
         <div className="run-tabs-bar">
           <div className="tabs">
             <button className={`tab ${effectiveTab === 'resumo' ? 'active' : ''}`} onClick={() => setTab('resumo')}>Resumo</button>
@@ -262,7 +267,7 @@ export function RunView() {
         </div>
       )}
 
-      {showScoreboard && (
+      {!isRunning && showScoreboard && (
         <>
           <div className="section-label">Classificação final (1º ao último)</div>
           <div className="score-card">
@@ -339,7 +344,7 @@ export function RunView() {
         </>
       )}
 
-      {showStages && (
+      {!isRunning && showStages && (
         <>
           <div className="section-label">Etapas</div>
           {record.stages.length === 0 && (
@@ -357,6 +362,78 @@ export function RunView() {
             />
           ))}
         </>
+      )}
+    </div>
+  );
+}
+
+// Visualizador de PROCESSO ao vivo: todas as etapas rodando em paralelo. Os
+// resultados finais (placar/heatmap) só aparecem quando a run termina.
+function ProcessMonitor({
+  record,
+  totalCompetitors,
+}: {
+  record: RunRecord;
+  totalCompetitors: number;
+}) {
+  const total = record.config.stages;
+  const done = record.stages.filter((s) => s.judge || s.error).length;
+  const pct = total ? Math.round((done / total) * 100) : 0;
+  const stages = record.stages.slice().sort((a, b) => a.index - b.index);
+  return (
+    <>
+      <div className="section-label">Processo ao vivo</div>
+      <div className="process-progress">
+        <div className="process-bar">
+          <div className="process-bar-fill" style={{ width: `${pct}%` }} />
+        </div>
+        <span className="process-progress-label">{done}/{total} etapas concluídas</span>
+      </div>
+      {stages.length === 0 && (
+        <div className="card" style={{ color: 'var(--text-3)' }}>Preparando as etapas…</div>
+      )}
+      <div className="process-list">
+        {stages.map((s) => (
+          <ProcessRow key={s.index} stage={s} totalCompetitors={totalCompetitors} />
+        ))}
+      </div>
+    </>
+  );
+}
+
+function ProcessRow({ stage, totalCompetitors }: { stage: StageRecord; totalCompetitors: number }) {
+  const badge = stageStatus(stage, totalCompetitors);
+  const liveValues = stage.live ? Object.values(stage.live) : [];
+  const numLabel = String(stage.index + 1).padStart(2, '0');
+  return (
+    <div className="process-row">
+      <div className="process-row-head">
+        <span className="stage-num">{numLabel}</span>
+        <span className={`stage-badge ${badge.cls}`}>{badge.text}</span>
+        <span className="process-row-meta">{stage.responses.length}/{totalCompetitors} respostas</span>
+      </div>
+      {stage.spec && <div className="process-row-q">{trunc(stage.spec.question, 110)}</div>}
+      {!stage.spec && !stage.error && (
+        <div className="inline-status"><span className="spinner" />Gerando cenário…</div>
+      )}
+      {stage.error && <div className="process-row-err">Etapa pulada: {stage.error}</div>}
+      {liveValues.length > 0 && (
+        <div className="process-live">
+          {liveValues.map((l) => (
+            <div className="process-live-item" key={l.contestantId}>
+              <div className="process-live-head">
+                <span className="live-model">{l.label ?? l.modelId}</span>
+                <span className="live-counter">
+                  {l.chars} chars · {l.charsPerSec.toFixed(0)} ch/s{l.done ? ' ✓' : ''}
+                </span>
+              </div>
+              <div className="live-preview">
+                {l.preview || '…'}
+                {!l.done && <span className="live-caret" />}
+              </div>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );

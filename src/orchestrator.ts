@@ -6,14 +6,7 @@ import { evaluateStage } from './evaluator.js';
 import { emitEvent } from './events.js';
 import { saveRun } from './storage.js';
 import { contestantsFromConfig } from './normalize.js';
-import type {
-  Contestant,
-  CompetitorResponse,
-  RunConfig,
-  RunRecord,
-  StageRecord,
-  StageSpec,
-} from './types.js';
+import type { Contestant, RunConfig, RunRecord, StageRecord, StageSpec } from './types.js';
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -22,23 +15,6 @@ function nowIso(): string {
 function log(runId: string, msg: string, extra?: Record<string, unknown>): void {
   const payload = extra ? ` ${JSON.stringify(extra)}` : '';
   console.log(`[bench ${runId}] ${msg}${payload}`);
-}
-
-async function runWithLimit<T>(
-  items: (() => Promise<T>)[],
-  limit: number,
-): Promise<T[]> {
-  const results: T[] = new Array(items.length);
-  let cursor = 0;
-  const workers = new Array(Math.min(limit, items.length)).fill(0).map(async () => {
-    while (true) {
-      const i = cursor++;
-      if (i >= items.length) break;
-      results[i] = await items[i]();
-    }
-  });
-  await Promise.all(workers);
-  return results;
 }
 
 function applyScoreboard(
@@ -136,6 +112,32 @@ export function runToCompletion(
 
 async function runLoop(record: RunRecord, apiKey: string, opts: StartRunOpts): Promise<void> {
   const { id: runId } = record;
+
+  // --- Persistencia com THROTTLE: as etapas paralelas geram MUITAS escritas;
+  // coalescemos em no max. 1x/SAVE_INTERVAL_MS (trailing) e damos flush nos
+  // marcos. O estado ao vivo ja vai por SSE, entao o disco nao precisa de cada
+  // delta. storage.saveRun continua serializando por run (escrita atomica). ---
+  const SAVE_INTERVAL_MS = 800;
+  let saveTimer: ReturnType<typeof setTimeout> | null = null;
+  let lastSave = 0;
+  const scheduleSave = (): void => {
+    if (saveTimer) return;
+    const delay = Math.max(0, SAVE_INTERVAL_MS - (Date.now() - lastSave));
+    saveTimer = setTimeout(() => {
+      saveTimer = null;
+      lastSave = Date.now();
+      void saveRun(record).catch(() => undefined);
+    }, delay);
+  };
+  const flushSave = async (): Promise<void> => {
+    if (saveTimer) {
+      clearTimeout(saveTimer);
+      saveTimer = null;
+    }
+    lastSave = Date.now();
+    await saveRun(record);
+  };
+
   await saveRun(record);
   emitEvent({ type: 'run.started', runId, record });
   log(runId, 'started', {
@@ -166,38 +168,35 @@ async function runLoop(record: RunRecord, apiKey: string, opts: StartRunOpts): P
   const datagenTimeout = Math.max(record.config.timeoutMs ?? 60_000, 90_000);
   const DATAGEN_ATTEMPTS = 2;
   const pinnedStages = opts.pinnedStages;
+  const totalStages = record.config.stages;
 
-  for (let i = 0; i < record.config.stages; i++) {
-    const stageRecord: StageRecord = {
-      index: i,
-      responses: [],
-      startedAt: nowIso(),
-    };
-    record.stages.push(stageRecord);
+  // Cria todos os slots de etapa de uma vez (a run.started carregou stages=[];
+  // emitimos stage.generating por etapa para a UI criar cada slot).
+  record.stages = Array.from(
+    { length: totalStages },
+    (_, i): StageRecord => ({ index: i, responses: [], startedAt: nowIso() }),
+  );
 
-    // Cada etapa e isolada: se UMA falhar (datagen, ou qualquer imprevisto),
-    // marcamos a etapa e seguimos para a proxima — a run NUNCA trava por isso.
-    try {
-      let spec: StageSpec | undefined;
-
-      if (pinnedStages && pinnedStages[i]) {
-        // Benchmark pinado (treino): reusa a etapa, pula o datagen.
-        spec = pinnedStages[i];
-        stageRecord.spec = spec;
-        await saveRun(record);
-        emitEvent({ type: 'stage.generated', runId, stageIndex: i, spec });
-      } else {
-        emitEvent({ type: 'stage.generating', runId, stageIndex: i });
-        log(runId, `stage ${i + 1}/${record.config.stages} generating`);
-
+  // === FASE 1: gerar TODOS os cenarios EM PARALELO (datagen fora do caminho critico). ===
+  // O limitador global (openrouter.ts) controla a concorrencia real das chamadas.
+  await Promise.all(
+    record.stages.map(async (stageRecord) => {
+      const i = stageRecord.index;
+      emitEvent({ type: 'stage.generating', runId, stageIndex: i });
+      try {
+        if (pinnedStages && pinnedStages[i]) {
+          stageRecord.spec = pinnedStages[i];
+          emitEvent({ type: 'stage.generated', runId, stageIndex: i, spec: pinnedStages[i] });
+          return;
+        }
         let lastDatagenErr: unknown;
         for (let attempt = 1; attempt <= DATAGEN_ATTEMPTS; attempt++) {
           try {
-            spec = await generateStage({
+            stageRecord.spec = await generateStage({
               apiKey,
               theme: record.config.theme,
               stageIndex: i,
-              totalStages: record.config.stages,
+              totalStages,
               modelId: record.config.datagenModelId,
               timeoutMs: datagenTimeout,
             });
@@ -210,182 +209,190 @@ async function runLoop(record: RunRecord, apiKey: string, opts: StartRunOpts): P
             );
           }
         }
-
-        if (!spec) {
+        if (!stageRecord.spec) {
           const msg = `Datagen falhou apos ${DATAGEN_ATTEMPTS} tentativas: ${
             lastDatagenErr instanceof Error ? lastDatagenErr.message : String(lastDatagenErr)
           }`;
           stageRecord.error = msg;
           stageRecord.finishedAt = nowIso();
-          await saveRun(record);
           emitEvent({ type: 'stage.failed', runId, stageIndex: i, error: msg });
-          log(runId, `stage ${i + 1} PULADA (datagen) — seguindo para a proxima`);
-          continue; // <- proxima etapa; a run continua
+          log(runId, `stage ${i + 1} PULADA (datagen)`);
+          return;
         }
-
-        stageRecord.spec = spec;
-        await saveRun(record);
-        emitEvent({ type: 'stage.generated', runId, stageIndex: i, spec });
+        emitEvent({ type: 'stage.generated', runId, stageIndex: i, spec: stageRecord.spec });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        stageRecord.error = stageRecord.error ?? msg;
+        stageRecord.finishedAt = nowIso();
+        emitEvent({ type: 'stage.failed', runId, stageIndex: i, error: msg });
       }
+    }),
+  );
+  scheduleSave();
 
-      // narrow para os closures abaixo (spec ja garantido nao-undefined aqui)
-      const stageSpec = spec;
+  // === FASE 2: rodar TODAS as etapas (com spec) EM PARALELO. ===
+  // Cada etapa e isolada (try/catch): uma falha nao derruba a run nem as outras.
+  // O placar e ADITIVO (applyScoreboard) — independe da ordem de termino.
+  const PROGRESS_THROTTLE_MS = 150;
+  await Promise.all(
+    record.stages.map(async (stageRecord) => {
+      const i = stageRecord.index;
+      const stageSpec = stageRecord.spec;
+      if (!stageSpec || stageRecord.error) return; // pulada na fase 1
 
-      // contestants em paralelo com cap
-      stageRecord.live = {};
-      const PROGRESS_THROTTLE_MS = 150;
-      const tasks = record.contestants.map((contestant) => async () => {
-        emitEvent({
-          type: 'competitor.started',
-          runId,
-          stageIndex: i,
-          contestantId: contestant.id,
-          modelId: contestant.modelId,
-        });
-        const startedAt = Date.now();
-        stageRecord.live![contestant.id] = {
-          contestantId: contestant.id,
-          modelId: contestant.modelId,
-          label: contestant.label,
-          startedAt,
-          chars: 0,
-          charsPerSec: 0,
-          preview: '',
-          done: false,
-        };
-        let lastEmit = 0;
-
-        const response = await runCompetitor({
-          apiKey,
-          contestantId: contestant.id,
-          modelId: contestant.modelId,
-          systemPrompt: contestant.systemPrompt,
-          stage: stageSpec,
-          timeoutMs: record.config.timeoutMs,
-          retries: 1,
-          maxOutputTokens: record.config.maxOutputTokens,
-          onProgress: (chars, charsPerSec, preview) => {
-            const live = stageRecord.live?.[contestant.id];
-            if (live) {
-              live.chars = chars;
-              live.charsPerSec = charsPerSec;
-              live.preview = preview;
-            }
-            const now = Date.now();
-            if (now - lastEmit < PROGRESS_THROTTLE_MS) return;
-            lastEmit = now;
+      try {
+        stageRecord.live = {};
+        // Competidores em paralelo — SEM cap local; o limitador global throttla.
+        await Promise.all(
+          record.contestants.map(async (contestant) => {
             emitEvent({
-              type: 'competitor.progress',
+              type: 'competitor.started',
               runId,
               stageIndex: i,
               contestantId: contestant.id,
               modelId: contestant.modelId,
-              chars,
-              charsPerSec,
-              preview,
             });
-          },
+            const startedAt = Date.now();
+            stageRecord.live![contestant.id] = {
+              contestantId: contestant.id,
+              modelId: contestant.modelId,
+              label: contestant.label,
+              startedAt,
+              chars: 0,
+              charsPerSec: 0,
+              preview: '',
+              done: false,
+            };
+            let lastEmit = 0;
+
+            const response = await runCompetitor({
+              apiKey,
+              contestantId: contestant.id,
+              modelId: contestant.modelId,
+              systemPrompt: contestant.systemPrompt,
+              stage: stageSpec,
+              timeoutMs: record.config.timeoutMs,
+              retries: 1,
+              maxOutputTokens: record.config.maxOutputTokens,
+              onProgress: (chars, charsPerSec, preview) => {
+                const live = stageRecord.live?.[contestant.id];
+                if (live) {
+                  live.chars = chars;
+                  live.charsPerSec = charsPerSec;
+                  live.preview = preview;
+                }
+                const now = Date.now();
+                if (now - lastEmit < PROGRESS_THROTTLE_MS) return;
+                lastEmit = now;
+                emitEvent({
+                  type: 'competitor.progress',
+                  runId,
+                  stageIndex: i,
+                  contestantId: contestant.id,
+                  modelId: contestant.modelId,
+                  chars,
+                  charsPerSec,
+                  preview,
+                });
+              },
+            });
+
+            const live = stageRecord.live?.[contestant.id];
+            if (live) {
+              live.done = true;
+              live.chars = response.text.length;
+              const elapsedSec = Math.max(0.001, (Date.now() - startedAt) / 1000);
+              live.charsPerSec = response.text.length / elapsedSec;
+            }
+            stageRecord.responses.push(response);
+            record.totalCostUsd += response.costUsd;
+            if (record.costByContestant) {
+              record.costByContestant[contestant.id] =
+                (record.costByContestant[contestant.id] ?? 0) + response.costUsd;
+            }
+            scheduleSave();
+            emitEvent({ type: 'competitor.finished', runId, stageIndex: i, response });
+            return response;
+          }),
+        );
+        stageRecord.live = undefined;
+
+        // Juiz (ranking listwise) + avaliacao qualitativa EM PARALELO (allSettled).
+        emitEvent({ type: 'stage.judging', runId, stageIndex: i });
+        log(runId, `stage ${i + 1} judging + evaluating`);
+        const [judgeRes, evalRes] = await Promise.allSettled([
+          judgeStage({
+            apiKey,
+            stage: stageSpec,
+            responses: stageRecord.responses,
+            judgeModelId: record.config.judgeModelId,
+            timeoutMs: record.config.timeoutMs,
+            passes: record.config.judgePasses,
+          }),
+          evaluateStage({
+            apiKey,
+            stage: stageSpec,
+            responses: stageRecord.responses,
+            evaluatorModelId: record.config.judgeModelId,
+            timeoutMs: record.config.timeoutMs,
+          }),
+        ]);
+
+        if (judgeRes.status === 'fulfilled') {
+          stageRecord.judge = judgeRes.value;
+        } else {
+          stageRecord.judge = {
+            rankedContestantIds: [],
+            blindMap: {},
+            rawJudgeText: (judgeRes.reason as Error)?.message ?? String(judgeRes.reason),
+            inconclusive: true,
+          };
+          log(runId, `stage ${i + 1} juiz falhou: ${stageRecord.judge.rawJudgeText}`);
+        }
+        if (!stageRecord.judge.inconclusive) {
+          applyScoreboard(record.scoreboard, stageRecord.judge.rankedContestantIds);
+        }
+
+        if (evalRes.status === 'fulfilled') {
+          stageRecord.evaluation = evalRes.value;
+        } else {
+          stageRecord.evaluation = {
+            bestContestantId: '',
+            bestReasons: '',
+            verdicts: [],
+            blindMap: {},
+            raw: (evalRes.reason as Error)?.message ?? String(evalRes.reason),
+            inconclusive: true,
+          };
+          log(runId, `stage ${i + 1} avaliacao falhou: ${stageRecord.evaluation.raw}`);
+        }
+
+        stageRecord.finishedAt = nowIso();
+        scheduleSave();
+        emitEvent({
+          type: 'stage.judged',
+          runId,
+          stageIndex: i,
+          judge: stageRecord.judge,
+          evaluation: stageRecord.evaluation,
+          scoreboard: { ...record.scoreboard },
+          totalCostUsd: record.totalCostUsd,
         });
-
-        const live = stageRecord.live?.[contestant.id];
-        if (live) {
-          live.done = true;
-          live.chars = response.text.length;
-          const elapsedSec = Math.max(0.001, (Date.now() - startedAt) / 1000);
-          live.charsPerSec = response.text.length / elapsedSec;
-        }
-        stageRecord.responses.push(response);
-        record.totalCostUsd += response.costUsd;
-        if (record.costByContestant) {
-          record.costByContestant[contestant.id] =
-            (record.costByContestant[contestant.id] ?? 0) + response.costUsd;
-        }
-        await saveRun(record);
-        emitEvent({ type: 'competitor.finished', runId, stageIndex: i, response });
-        return response;
-      });
-
-      await runWithLimit<CompetitorResponse>(tasks, record.config.concurrency ?? 8);
-      // apos todos terminarem, limpa live state (mantemos apenas em memoria durante a etapa)
-      stageRecord.live = undefined;
-
-      // juiz (ranking) + avaliacao qualitativa rodam EM PARALELO. allSettled =>
-      // um nunca derruba o outro nem a run.
-      emitEvent({ type: 'stage.judging', runId, stageIndex: i });
-      log(runId, `stage ${i + 1} judging + evaluating (paralelo)`);
-      const [judgeRes, evalRes] = await Promise.allSettled([
-        judgeStage({
-          apiKey,
-          stage: stageSpec,
-          responses: stageRecord.responses,
-          judgeModelId: record.config.judgeModelId,
-          timeoutMs: record.config.timeoutMs,
-          passes: record.config.judgePasses,
-        }),
-        evaluateStage({
-          apiKey,
-          stage: stageSpec,
-          responses: stageRecord.responses,
-          evaluatorModelId: record.config.judgeModelId,
-          timeoutMs: record.config.timeoutMs,
-        }),
-      ]);
-
-      if (judgeRes.status === 'fulfilled') {
-        stageRecord.judge = judgeRes.value;
-      } else {
-        stageRecord.judge = {
-          rankedContestantIds: [],
-          blindMap: {},
-          rawJudgeText: (judgeRes.reason as Error)?.message ?? String(judgeRes.reason),
-          inconclusive: true,
-        };
-        log(runId, `stage ${i + 1} juiz falhou: ${stageRecord.judge.rawJudgeText}`);
+      } catch (stageErr) {
+        // rede de seguranca: qualquer imprevisto na etapa NAO mata a run
+        const msg = stageErr instanceof Error ? stageErr.message : String(stageErr);
+        stageRecord.error = stageRecord.error ?? msg;
+        stageRecord.finishedAt = nowIso();
+        stageRecord.live = undefined;
+        emitEvent({ type: 'stage.failed', runId, stageIndex: i, error: msg });
+        log(runId, `stage ${i + 1} erro inesperado, pulando: ${msg}`);
       }
-      if (!stageRecord.judge.inconclusive) {
-        applyScoreboard(record.scoreboard, stageRecord.judge.rankedContestantIds);
-      }
-
-      if (evalRes.status === 'fulfilled') {
-        stageRecord.evaluation = evalRes.value;
-      } else {
-        stageRecord.evaluation = {
-          bestContestantId: '',
-          bestReasons: '',
-          verdicts: [],
-          blindMap: {},
-          raw: (evalRes.reason as Error)?.message ?? String(evalRes.reason),
-          inconclusive: true,
-        };
-        log(runId, `stage ${i + 1} avaliacao falhou: ${stageRecord.evaluation.raw}`);
-      }
-
-      stageRecord.finishedAt = nowIso();
-      await saveRun(record);
-      emitEvent({
-        type: 'stage.judged',
-        runId,
-        stageIndex: i,
-        judge: stageRecord.judge,
-        evaluation: stageRecord.evaluation,
-        scoreboard: { ...record.scoreboard },
-        totalCostUsd: record.totalCostUsd,
-      });
-    } catch (stageErr) {
-      // rede de seguranca: qualquer imprevisto na etapa NAO mata a run
-      const msg = stageErr instanceof Error ? stageErr.message : String(stageErr);
-      stageRecord.error = stageRecord.error ?? msg;
-      stageRecord.finishedAt = nowIso();
-      stageRecord.live = undefined;
-      await saveRun(record).catch(() => undefined);
-      emitEvent({ type: 'stage.failed', runId, stageIndex: i, error: msg });
-      log(runId, `stage ${i + 1} erro inesperado, pulando: ${msg}`);
-    }
-  }
+    }),
+  );
 
   record.status = 'finished';
   record.finishedAt = nowIso();
-  await saveRun(record);
+  await flushSave();
   emitEvent({ type: 'run.finished', runId, record });
   log(runId, 'finished', { totalCostUsd: record.totalCostUsd });
 }

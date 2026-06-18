@@ -682,3 +682,18 @@ code, .mono { font-family: ui-monospace, 'SF Mono', Menlo, monospace; }
   .wizard-step-line { width: 14px; }
   .wizard-title { font-size: 22px; }
 }
+
+/* visualizador de processo ao vivo (etapas em paralelo) */
+.process-progress { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+.process-bar { flex: 1; height: 8px; border-radius: 980px; background: var(--subtle); overflow: hidden; }
+.process-bar-fill { height: 100%; background: var(--accent); border-radius: 980px; transition: width .4s ease; }
+.process-progress-label { font-size: 12px; font-weight: 600; color: var(--text-2); white-space: nowrap; }
+.process-list { display: flex; flex-direction: column; gap: 12px; }
+.process-row { background: var(--card); border: 1px solid var(--card-border); border-radius: 14px; padding: 14px 16px; }
+.process-row-head { display: flex; align-items: center; gap: 10px; }
+.process-row-meta { margin-left: auto; font-size: 12px; color: var(--text-3); font-weight: 600; }
+.process-row-q { margin-top: 10px; font-size: 13px; line-height: 1.5; color: var(--text-2); }
+.process-row-err { margin-top: 10px; font-size: 12.5px; color: var(--warn); }
+.process-live { margin-top: 12px; display: flex; flex-direction: column; gap: 10px; }
+.process-live-item { border: 1px solid rgba(10, 132, 255, 0.3); background: rgba(10, 132, 255, 0.035); border-radius: 10px; padding: 10px 12px; }
+.process-live-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 6px; }
