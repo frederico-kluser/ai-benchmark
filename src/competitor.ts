@@ -3,7 +3,11 @@ import type { CompetitorResponse, StageSpec } from './types.js';
 
 export interface RunCompetitorParams {
   apiKey: string;
+  /** Chave estavel do competidor. compare: === modelId. */
+  contestantId: string;
   modelId: string;
+  /** Override do system message; ausente => usa stage.productContext. */
+  systemPrompt?: string;
   stage: StageSpec;
   timeoutMs?: number;
   retries?: number;
@@ -16,7 +20,9 @@ const PREVIEW_TAIL_CHARS = 240;
 export async function runCompetitor(params: RunCompetitorParams): Promise<CompetitorResponse> {
   const {
     apiKey,
+    contestantId,
     modelId,
+    systemPrompt,
     stage,
     timeoutMs = 60_000,
     retries = 1,
@@ -40,7 +46,7 @@ export async function runCompetitor(params: RunCompetitorParams): Promise<Compet
         apiKey,
         modelId,
         messages: [
-          { role: 'system', content: stage.productContext },
+          { role: 'system', content: systemPrompt ?? stage.productContext },
           { role: 'user', content: stage.question },
         ],
         temperature: 0,
@@ -59,6 +65,7 @@ export async function runCompetitor(params: RunCompetitorParams): Promise<Compet
       });
 
       return {
+        contestantId,
         modelId,
         text: res.text,
         latencyMs: res.latencyMs,
@@ -75,6 +82,7 @@ export async function runCompetitor(params: RunCompetitorParams): Promise<Compet
   }
 
   return {
+    contestantId,
     modelId,
     text: '',
     latencyMs: 0,

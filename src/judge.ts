@@ -10,6 +10,7 @@ const SYSTEM_PROMPT = `Voce e um juiz imparcial avaliando respostas de modelos d
 Voce recebe a pergunta original, o contexto de produto que cada modelo recebeu, e uma lista de respostas anonimizadas (rotuladas com letras A, B, C, ...).
 
 Sua tarefa: ranquear as respostas da MELHOR para a PIOR, considerando aderencia ao contexto, corretude, completude e clareza.
+NAO prefira respostas mais longas: avalie pelo conteudo e pela utilidade, nunca pelo tamanho.
 
 Saida ESTRITAMENTE JSON: {"ranking": ["A", "C", "B", ...]} contendo TODAS as letras recebidas, sem empates, sem comentarios. Sem markdown.`;
 
@@ -45,37 +46,30 @@ export interface JudgeStageParams {
   responses: CompetitorResponse[];
   judgeModelId: string;
   timeoutMs?: number;
+  /** 2 = avalia em duas ordens embaralhadas e faz a media (anti-vies de posicao). */
+  passes?: 1 | 2;
 }
 
-export async function judgeStage(params: JudgeStageParams): Promise<JudgeResult> {
-  const { apiKey, stage, responses, judgeModelId, timeoutMs = 90_000 } = params;
+interface JudgePass {
+  rankedContestantIds: string[];
+  blindMap: Record<string, string>;
+  rawJudgeText: string;
+}
 
-  const okResponses = responses.filter((r) => r.status === 'ok' && r.text.trim().length > 0);
-
-  if (okResponses.length === 0) {
-    return {
-      rankedModelIds: [],
-      blindMap: {},
-      rawJudgeText: '',
-      inconclusive: true,
-    };
-  }
-
-  if (okResponses.length === 1) {
-    const only = okResponses[0];
-    return {
-      rankedModelIds: [only.modelId],
-      blindMap: { A: only.modelId },
-      rawJudgeText: '(only 1 valid response, auto-ranked)',
-    };
-  }
-
+/** Uma passada de julgamento sobre >= 2 respostas validas (embaralhamento proprio). */
+async function judgeOnce(
+  apiKey: string,
+  stage: StageSpec,
+  okResponses: CompetitorResponse[],
+  judgeModelId: string,
+  timeoutMs: number,
+): Promise<JudgePass> {
   const shuffled = shuffle(okResponses);
   const blindMap: Record<string, string> = {};
   const blocks: string[] = [];
   shuffled.forEach((r, i) => {
     const letter = letterFor(i);
-    blindMap[letter] = r.modelId;
+    blindMap[letter] = r.contestantId;
     blocks.push(`### Resposta ${letter}\n${r.text}`);
   });
 
@@ -119,17 +113,58 @@ Devolva apenas: {"ranking": ${JSON.stringify(Object.keys(blindMap))} ordenado da
   const letters = validated.data.ranking
     .map((l) => l.trim().toUpperCase())
     .filter((l) => l in blindMap);
-
-  // garante todas as letras
   for (const l of Object.keys(blindMap)) {
     if (!letters.includes(l)) letters.push(l);
   }
 
-  const rankedModelIds = letters.map((l) => blindMap[l]);
-
   return {
-    rankedModelIds,
+    rankedContestantIds: letters.map((l) => blindMap[l]),
     blindMap,
     rawJudgeText: result.text,
+  };
+}
+
+export async function judgeStage(params: JudgeStageParams): Promise<JudgeResult> {
+  const { apiKey, stage, responses, judgeModelId, timeoutMs = 90_000 } = params;
+  const passes = params.passes === 2 ? 2 : 1;
+
+  const okResponses = responses.filter((r) => r.status === 'ok' && r.text.trim().length > 0);
+
+  if (okResponses.length === 0) {
+    return { rankedContestantIds: [], blindMap: {}, rawJudgeText: '', inconclusive: true };
+  }
+  if (okResponses.length === 1) {
+    const only = okResponses[0];
+    return {
+      rankedContestantIds: [only.contestantId],
+      blindMap: { A: only.contestantId },
+      rawJudgeText: '(only 1 valid response, auto-ranked)',
+    };
+  }
+
+  const first = await judgeOnce(apiKey, stage, okResponses, judgeModelId, timeoutMs);
+  if (passes === 1) {
+    return { rankedContestantIds: first.rankedContestantIds, blindMap: first.blindMap, rawJudgeText: first.rawJudgeText };
+  }
+
+  // 2a passada com novo embaralhamento; combina por posicao media.
+  const second = await judgeOnce(apiKey, stage, okResponses, judgeModelId, timeoutMs);
+  const ids = okResponses.map((r) => r.contestantId);
+  const rankIn = (ranking: string[], id: string) => {
+    const i = ranking.indexOf(id);
+    return i < 0 ? ranking.length : i;
+  };
+  const avg = (id: string) =>
+    (rankIn(first.rankedContestantIds, id) + rankIn(second.rankedContestantIds, id)) / 2;
+  const merged = [...ids].sort(
+    (a, b) =>
+      avg(a) - avg(b) ||
+      rankIn(first.rankedContestantIds, a) - rankIn(first.rankedContestantIds, b),
+  );
+
+  return {
+    rankedContestantIds: merged,
+    blindMap: first.blindMap, // letras da 1a passada (exibicao "(era X)")
+    rawJudgeText: `# passada 1\n${first.rawJudgeText}\n\n# passada 2\n${second.rawJudgeText}`,
   };
 }

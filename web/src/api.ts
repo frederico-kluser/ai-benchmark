@@ -5,10 +5,47 @@ export interface OpenRouterModel {
   pricing: { prompt: number; completion: number };
 }
 
+export type RunMode = 'compare' | 'variation' | 'training';
+
+export interface ManualVariant {
+  label: string;
+  systemPrompt: string;
+}
+
+export interface Contestant {
+  id: string;
+  label: string;
+  modelId: string;
+  systemPrompt?: string;
+  techniqueId?: string;
+  isOriginal?: boolean;
+  parentContestantId?: string;
+}
+
+/** Tecnica exposta por GET /techniques (sem o meta-prompt). */
+export interface Technique {
+  id: string;
+  name: string;
+  good: string;
+  bad: string;
+}
+
 export interface RunConfig {
+  mode?: RunMode;
   theme: string;
   stages: number;
-  competitorModelIds: string[];
+  // compare:
+  competitorModelIds?: string[];
+  // variation/training:
+  contestantModelId?: string;
+  basePrompt?: string;
+  promptOptimization?: boolean;
+  techniqueIds?: string[];
+  manualVariants?: ManualVariant[];
+  optimizerModelId?: string;
+  judgePasses?: 1 | 2;
+  iterations?: number;
+  // meta:
   datagenModelId: string;
   judgeModelId: string;
   concurrency?: number;
@@ -17,6 +54,7 @@ export interface RunConfig {
 }
 
 export interface CompetitorResponse {
+  contestantId: string;
   modelId: string;
   text: string;
   latencyMs: number;
@@ -34,20 +72,20 @@ export interface StageSpec {
 }
 
 export interface JudgeResult {
-  rankedModelIds: string[];
+  rankedContestantIds: string[];
   blindMap: Record<string, string>;
   rawJudgeText: string;
   inconclusive?: boolean;
 }
 
 export interface EvaluationVerdict {
-  modelId: string;
+  contestantId: string;
   acceptable: boolean;
   justification: string;
 }
 
 export interface StageEvaluation {
-  bestModelId: string;
+  bestContestantId: string;
   bestReasons: string;
   verdicts: EvaluationVerdict[];
   blindMap: Record<string, string>;
@@ -70,7 +108,9 @@ export interface StageRecord {
 }
 
 export interface CompetitorLiveState {
+  contestantId: string;
   modelId: string;
+  label?: string;
   startedAt: number;
   chars: number;
   charsPerSec: number;
@@ -82,23 +122,46 @@ export interface RunRecord {
   id: string;
   status: 'running' | 'finished' | 'error' | 'aborted';
   config: RunConfig;
+  mode?: RunMode;
+  contestants?: Contestant[];
   stages: StageRecord[];
   scoreboard: Record<string, number>;
+  costByContestant?: Record<string, number>;
   totalCostUsd: number;
   startedAt: string;
   finishedAt?: string;
   error?: string;
+  sessionId?: string;
+  iteration?: number;
+  parentRunId?: string;
 }
 
 export interface RunSummary {
   id: string;
   status: RunRecord['status'];
+  mode?: RunMode;
   theme: string;
   stages: number;
+  contestants?: number;
   competitors: number;
   totalCostUsd: number;
   startedAt: string;
   finishedAt?: string;
+  sessionId?: string;
+  iteration?: number;
+}
+
+// -------------- Contestant helpers (retrocompat: 1 ponto de verdade) --------------
+
+export function runMode(record: RunRecord): RunMode {
+  return record.mode ?? record.config?.mode ?? 'compare';
+}
+
+/** Lista de contestants do record; deriva de competitorModelIds em runs antigas. */
+export function normalizeContestants(record: RunRecord): Contestant[] {
+  if (record.contestants && record.contestants.length) return record.contestants;
+  const ids = record.config?.competitorModelIds ?? [];
+  return ids.map((id) => ({ id, label: id, modelId: id }));
 }
 
 // -------------- API key (localStorage) --------------
@@ -177,6 +240,107 @@ export async function createRun(config: RunConfig): Promise<string> {
   return json.runId;
 }
 
+export async function fetchTechniques(): Promise<Technique[]> {
+  const res = await fetch('/v1/benchmark/techniques');
+  if (!res.ok) throw new Error('Falha ao listar técnicas');
+  const json = (await res.json()) as { data: Technique[] };
+  return json.data;
+}
+
+// -------------- Sessões de treino --------------
+
+export interface SessionIterationSummary {
+  iteration: number;
+  runId: string;
+  winnerContestantId: string;
+  systemPrompt: string;
+  score: number;
+}
+
+export interface SessionRecord {
+  id: string;
+  status: RunRecord['status'];
+  config: RunConfig;
+  runIds: string[];
+  bestPromptByIteration: SessionIterationSummary[];
+  totalCostUsd: number;
+  startedAt: string;
+  finishedAt?: string;
+  error?: string;
+}
+
+export async function createSession(config: RunConfig): Promise<string> {
+  const res = await fetch('/v1/benchmark/sessions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify(config),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    console.error('[createSession] falhou:', err);
+    throw new Error(err.error ?? 'Falha ao criar sessão de treino');
+  }
+  const json = (await res.json()) as { sessionId: string };
+  return json.sessionId;
+}
+
+export async function fetchSession(id: string): Promise<SessionRecord> {
+  const res = await fetch(`/v1/benchmark/sessions/${id}`);
+  if (!res.ok) throw new Error('Sessão não encontrada');
+  return (await res.json()) as SessionRecord;
+}
+
+export interface SessionSummary {
+  id: string;
+  status: RunRecord['status'];
+  theme: string;
+  iterationsPlanned: number;
+  iterationsDone: number;
+  totalCostUsd: number;
+  startedAt: string;
+  finishedAt?: string;
+}
+
+export async function fetchSessions(): Promise<SessionSummary[]> {
+  const res = await fetch('/v1/benchmark/sessions');
+  if (!res.ok) throw new Error('Falha ao listar sessões');
+  const json = (await res.json()) as { data: SessionSummary[] };
+  return json.data;
+}
+
+export function openSessionStream(
+  id: string,
+  onEvent: (e: any) => void,
+  onError?: (err: Event) => void,
+): () => void {
+  const es = new EventSource(`/v1/benchmark/sessions/${id}/events`);
+  let closed = false;
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    es.close();
+  };
+  es.onmessage = (msg) => {
+    try {
+      const event = JSON.parse(msg.data);
+      onEvent(event);
+      const terminal =
+        event.type === 'session.finished' ||
+        event.type === 'session.error' ||
+        (event.type === 'snapshot' &&
+          ['finished', 'error', 'aborted'].includes(event.record?.status));
+      if (terminal) close();
+    } catch (err) {
+      console.error('[session SSE parse]', err, msg.data);
+    }
+  };
+  es.onerror = (err) => {
+    if (closed) return;
+    onError?.(err);
+  };
+  return close;
+}
+
 export async function fetchRuns(): Promise<RunSummary[]> {
   const res = await fetch('/v1/benchmark/runs');
   if (!res.ok) {
@@ -240,17 +404,17 @@ export function openRunStream(
           break;
         case 'competitor.progress':
           console.debug(
-            `[bench] ${s} ${event.modelId}: ${event.chars} chars (${event.charsPerSec?.toFixed?.(0)} ch/s)`,
+            `[bench] ${s} ${event.contestantId ?? event.modelId}: ${event.chars} chars (${event.charsPerSec?.toFixed?.(0)} ch/s)`,
           );
           break;
         case 'competitor.finished':
           if (event.response?.status === 'error') {
             console.error(
-              `[bench] ${s} ${event.response.modelId}: ERRO — ${event.response.errorMsg}`,
+              `[bench] ${s} ${event.response.contestantId ?? event.response.modelId}: ERRO — ${event.response.errorMsg}`,
             );
           } else {
             console.info(
-              `[bench] ${s} ${event.response?.modelId}: ok (${event.response?.tokensOut} tok)`,
+              `[bench] ${s} ${event.response?.contestantId ?? event.response?.modelId}: ok (${event.response?.tokensOut} tok)`,
             );
           }
           break;
@@ -259,13 +423,13 @@ export function openRunStream(
           console.groupCollapsed(
             `[bench] ${s}: julgada${event.judge?.inconclusive ? ' (inconclusiva)' : ''}`,
           );
-          console.info('ranking (melhor→pior):', event.judge?.rankedModelIds);
+          console.info('ranking (melhor→pior):', event.judge?.rankedContestantIds);
           if (ev && !ev.inconclusive) {
-            console.info('vencedor (avaliação):', ev.bestModelId);
+            console.info('vencedor (avaliação):', ev.bestContestantId);
             console.info('motivos do vencedor:', ev.bestReasons);
             for (const v of ev.verdicts ?? []) {
               console.info(
-                `${v.acceptable ? '✅ aceitável' : '❌ não aceitável'} — ${v.modelId}: ${v.justification}`,
+                `${v.acceptable ? '✅ aceitável' : '❌ não aceitável'} — ${v.contestantId}: ${v.justification}`,
               );
             }
           } else if (ev?.inconclusive) {

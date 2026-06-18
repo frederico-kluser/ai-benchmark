@@ -302,7 +302,7 @@ code, .mono { font-family: ui-monospace, 'SF Mono', Menlo, monospace; }
 .search-input { flex: 1; min-width: 200px; max-width: 280px; }
 
 .table-card { background: var(--card); border: 1px solid var(--card-border); border-radius: 18px; box-shadow: var(--shadow); overflow: hidden; }
-.runs-head, .runs-row { display: grid; grid-template-columns: 92px 110px minmax(0, 1fr) 70px 64px 96px 150px; gap: 12px; align-items: center; }
+.runs-head, .runs-row { display: grid; grid-template-columns: 88px 104px 86px minmax(0, 1fr) 58px 56px 88px 128px; gap: 12px; align-items: center; }
 .runs-head { padding: 14px 22px; border-bottom: 1px solid var(--card-border); }
 .runs-head > div { font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-3); }
 .runs-row { padding: 16px 22px; cursor: pointer; border-bottom: 1px solid var(--line); text-decoration: none; transition: background .12s; }
@@ -504,4 +504,73 @@ code, .mono { font-family: ui-monospace, 'SF Mono', Menlo, monospace; }
   .score-head { display: none; }
   .score-row { grid-template-columns: 44px minmax(0, 1fr) 60px 120px; row-gap: 6px; }
   .score-row .score-num { display: none; }
+}
+
+/* ================================================================ MODOS + VARIAÇÃO + TREINO */
+
+/* mode description under the tabs */
+.mode-desc { font-size: 14px; color: var(--text-2); margin: -8px 0 22px; }
+
+/* mode pills (history + run header) */
+.pill-compare { background: var(--card-border); color: var(--text-2); }
+.pill-variation { background: var(--accent-soft); color: var(--accent-strong); }
+.pill-training { background: var(--warn-soft); color: var(--warn); }
+
+/* toggle (otimização, juiz 2-ordens) */
+.toggle-field { margin: 16px 0; }
+.toggle { display: inline-flex; align-items: center; gap: 9px; cursor: pointer; font-size: 14px; font-weight: 500; color: var(--text); }
+.toggle input { width: 17px; height: 17px; accent-color: var(--accent); cursor: pointer; }
+.toggle-hint { font-size: 13px; color: var(--text-3); line-height: 1.5; margin-top: 7px; }
+
+/* technique selector */
+.technique-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(258px, 1fr)); gap: 10px; margin-top: 6px; }
+.technique-item { background: var(--subtle); border: 1px solid var(--card-border); border-radius: 12px; padding: 11px 13px; cursor: pointer; transition: background .15s, border-color .15s, box-shadow .15s; }
+.technique-item:hover { background: var(--hover); }
+.technique-item.selected { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 3px var(--accent-ring); }
+.technique-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 14px; font-weight: 600; }
+.technique-head input { accent-color: var(--accent); }
+.technique-good { font-size: 12px; color: var(--ok); line-height: 1.45; }
+.technique-bad { font-size: 12px; color: var(--warn); line-height: 1.45; margin-top: 2px; }
+.technique-count { font-size: 13px; color: var(--text-3); margin-top: 12px; }
+
+/* manual variants editor */
+.manual-variant { background: var(--subtle); border: 1px solid var(--card-border); border-radius: 12px; padding: 12px; margin-bottom: 10px; }
+.manual-variant-head { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.manual-variant-head .input { flex: 1; }
+
+/* contestants panel (run view) */
+.variants-card { padding: 20px 22px; margin-bottom: 22px; }
+.contestant-row { border: 1px solid var(--chip-border); border-radius: 12px; margin-bottom: 8px; overflow: hidden; }
+.contestant-row:last-child { margin-bottom: 0; }
+.contestant-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 14px; cursor: pointer; background: none; border: none; width: 100%; font-family: inherit; text-align: left; }
+.contestant-head:hover { background: var(--hover); }
+.contestant-label { font-size: 14px; font-weight: 600; color: var(--text); display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.contestant-prompt { margin: 0 14px 14px; }
+.tech-tag { font-size: 11px; font-weight: 600; color: var(--accent-strong); background: var(--accent-soft); padding: 2px 9px; border-radius: 980px; }
+.control-tag { font-size: 11px; font-weight: 600; color: var(--text-2); background: var(--card-border); padding: 2px 9px; border-radius: 980px; }
+
+/* run header extras (variação/treino) */
+.run-iter { font-size: 13px; color: var(--text-3); }
+.session-link { font-size: 13px; font-weight: 500; margin-top: 6px; display: inline-block; }
+
+/* ================================================================ TREINO (sessão) */
+.trend-card { padding: 20px 22px; margin-bottom: 24px; }
+.trend-chart { display: flex; align-items: flex-end; gap: 14px; height: 168px; padding: 8px 4px 0; overflow-x: auto; }
+.trend-col { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; flex: 0 0 54px; height: 100%; }
+.trend-bar { width: 34px; min-height: 3px; background: var(--accent); border-radius: 7px 7px 0 0; transition: height .35s ease; }
+.trend-val { font-size: 12px; font-weight: 600; color: var(--text); margin-top: 6px; font-variant-numeric: tabular-nums; }
+.trend-label { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+.trend-empty { font-size: 13px; color: var(--text-3); }
+
+.iteration-row { background: var(--card); border: 1px solid var(--card-border); border-radius: 14px; box-shadow: var(--shadow-sm); margin-bottom: 10px; padding: 14px 16px; }
+.iteration-row.current { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
+.iteration-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.iteration-title { font-size: 15px; font-weight: 600; color: var(--text); display: inline-flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.iteration-meta { font-size: 13px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.iteration-links { font-size: 13px; display: flex; gap: 14px; }
+.best-prompt-card { padding: 22px 24px; margin-bottom: 24px; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
+
+/* history: coluna Modo */
+@media (max-width: 820px) {
+  .runs-row .r-mode { display: none; }
 }

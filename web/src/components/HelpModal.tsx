@@ -10,27 +10,32 @@ const STEPS: Step[] = [
   {
     kicker: 'Visão geral',
     title: 'Bem-vindo ao Benchmark Arena',
-    body: 'Compare vários LLMs no mesmo desafio, lado a lado. Você define um tema; um modelo gerador inventa cenários realistas; os competidores respondem em paralelo; e um juiz ranqueia as respostas às cegas. No fim, você vê quem foi melhor — e por quê.',
+    body: 'Descubra qual LLM — ou qual prompt — responde melhor a um desafio. Você define um tema; um modelo gerador inventa cenários realistas; os concorrentes respondem em paralelo; e um juiz ranqueia as respostas às cegas. No fim, você vê quem foi melhor — e por quê.',
   },
   {
     kicker: 'Passo 1',
-    title: 'Monte uma run',
-    body: 'Em “Nova Run”, escreva o tema (ou use um dos exemplos), escolha 2 ou mais competidores, 1 gerador e 1 juiz. O painel “Resumo da run” mostra o custo estimado e o nº de chamadas antes de você iniciar. Concorrência e timeout ficam em “Ajustes avançados”.',
+    title: 'Escolha o modo',
+    body: 'Em “Nova Run”, escolha entre três modos: Comparar (vários modelos no mesmo desafio), Variação (um modelo com várias variações de system prompt) e Treino (iterativo — a cada rodada a melhor variação evolui, em busca do melhor prompt).',
   },
   {
     kicker: 'Passo 2',
-    title: 'Acompanhe ao vivo',
-    body: 'Ao iniciar, você vai para a Visão da Run. As etapas abrem sozinhas e você vê cada modelo respondendo token a token, com contadores de caracteres e o anel de progresso das etapas no topo.',
+    title: 'Monte a run',
+    body: 'Escreva o tema (ou use um exemplo). Em Comparar, escolha 2+ competidores. Em Variação/Treino, escolha o modelo sob teste e as técnicas de prompt (cada uma vira uma variação) — ou desligue a otimização e escreva as variações à mão; o prompt base é opcional. O painel “Resumo da run” mostra variantes, chamadas e custo estimado.',
   },
   {
     kicker: 'Passo 3',
-    title: 'Leia o resultado',
-    body: 'Quando o juiz termina, a aba “Resumo” traz a classificação (pontos, 1ºs, posição média e % de respostas aceitáveis) e o heatmap de posições — verde é melhor, vermelho é pior. A aba “Etapas” mostra cada resposta com o veredito e a justificativa.',
+    title: 'Acompanhe ao vivo',
+    body: 'Ao iniciar, você vai para a Visão da Run. As etapas abrem sozinhas e você vê cada resposta sendo gerada token a token, com contadores e o anel de progresso no topo. Em Variação/Treino, o painel “Variantes de prompt” mostra o system prompt de cada concorrente.',
   },
   {
     kicker: 'Passo 4',
+    title: 'Leia o resultado',
+    body: 'Quando o juiz termina, a aba “Resumo” traz a classificação (pontos, 1ºs, posição média e % de respostas aceitáveis) e o heatmap — verde é melhor, vermelho é pior. No Treino, a tela da sessão mostra a curva de melhoria por iteração e o melhor prompt final, pronto para copiar.',
+  },
+  {
+    kicker: 'Passo 5',
     title: 'Chave, histórico e tema',
-    body: 'Em “Configurações”, cole sua chave da OpenRouter — ela fica salva só no seu navegador. Em “Histórico”, você revisita runs anteriores, filtra por status e busca por tema. E o botão sol/lua alterna entre os modos claro e escuro a qualquer momento.',
+    body: 'Em “Configurações”, cole sua chave da OpenRouter — ela fica salva só no seu navegador. Em “Histórico”, você revisita runs e treinos, filtra por status e busca por tema. E o botão sol/lua alterna entre claro e escuro a qualquer momento.',
   },
 ];
 

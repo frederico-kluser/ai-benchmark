@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useParams } from 'react-router-dom';
-import type { RunRecord, StageRecord } from '../api';
-import { fetchRun, openRunStream } from '../api';
+import { Link, useParams } from 'react-router-dom';
+import type { Contestant, RunRecord, StageRecord } from '../api';
+import { fetchRun, normalizeContestants, openRunStream, runMode } from '../api';
 import { useTheme } from '../theme';
 
 function formatUsd(v: number): string {
@@ -38,7 +38,8 @@ function rankColor(pos: number, total: number, dark: boolean): RankColor {
 }
 
 interface Standing {
-  modelId: string;
+  contestantId: string;
+  label: string;
   points: number;
   firstPlaces: number;
   avgPos: number | null;
@@ -49,23 +50,23 @@ interface Standing {
 }
 
 function computeStandings(record: RunRecord): Standing[] {
-  const ids = record.config.competitorModelIds;
-  const rows: Standing[] = ids.map((modelId) => {
+  const contestants = normalizeContestants(record);
+  const rows: Standing[] = contestants.map((c) => {
     const positions: number[] = [];
     let firstPlaces = 0;
     let acceptable = 0;
     let evaluated = 0;
     let errors = 0;
     for (const s of record.stages) {
-      const pos = (s.judge?.rankedModelIds ?? []).indexOf(modelId);
+      const pos = (s.judge?.rankedContestantIds ?? []).indexOf(c.id);
       if (pos >= 0) {
         positions.push(pos);
         if (pos === 0) firstPlaces++;
       }
-      if (s.responses.some((r) => r.modelId === modelId && r.status === 'error')) errors++;
+      if (s.responses.some((r) => r.contestantId === c.id && r.status === 'error')) errors++;
       const ev = s.evaluation;
       if (ev && !ev.inconclusive) {
-        const v = ev.verdicts.find((x) => x.modelId === modelId);
+        const v = ev.verdicts.find((x) => x.contestantId === c.id);
         if (v) {
           evaluated++;
           if (v.acceptable) acceptable++;
@@ -73,8 +74,9 @@ function computeStandings(record: RunRecord): Standing[] {
       }
     }
     return {
-      modelId,
-      points: record.scoreboard[modelId] ?? 0,
+      contestantId: c.id,
+      label: c.label,
+      points: record.scoreboard[c.id] ?? 0,
       firstPlaces,
       avgPos: positions.length ? positions.reduce((a, b) => a + b, 0) / positions.length + 1 : null,
       rankedStages: positions.length,
@@ -89,7 +91,7 @@ function computeStandings(record: RunRecord): Standing[] {
     const bp = b.avgPos ?? Infinity;
     if (ap !== bp) return ap - bp;
     if (b.firstPlaces !== a.firstPlaces) return b.firstPlaces - a.firstPlaces;
-    return a.modelId.localeCompare(b.modelId);
+    return a.contestantId.localeCompare(b.contestantId);
   });
 }
 
@@ -131,7 +133,6 @@ export function RunView() {
           setRecord(event.record);
           return;
         }
-        // auto-abrir a etapa quando comeca a gerar
         if (event.type === 'stage.generating' || event.type === 'competitor.started') {
           setOpenStages((prev) => new Set(prev).add(event.stageIndex));
         }
@@ -157,16 +158,18 @@ export function RunView() {
     });
   }
 
-  const competitorIds = useMemo(
-    () => (record ? record.config.competitorModelIds : []),
-    [record],
+  const contestants = useMemo(() => (record ? normalizeContestants(record) : []), [record]);
+  const byId = useMemo(
+    () => new Map<string, Contestant>(contestants.map((c) => [c.id, c])),
+    [contestants],
   );
   const standings = useMemo(() => (record ? computeStandings(record) : []), [record]);
 
   if (error) return <div className="screen center-screen"><div className="banner banner-error">{error}</div></div>;
   if (!record) return <div className="screen center-screen"><div className="loading-note">Carregando…</div></div>;
 
-  const totalCompetitors = competitorIds.length;
+  const mode = runMode(record);
+  const totalCompetitors = contestants.length;
   const totalStages = record.config.stages;
   const doneStages = record.stages.filter((s) => s.judge || s.error).length;
   const hasRing = record.status === 'running' || record.status === 'finished';
@@ -176,6 +179,7 @@ export function RunView() {
   const effectiveTab = tab ?? (record.status === 'running' ? 'etapas' : hasScoreboard ? 'resumo' : 'etapas');
   const showScoreboard = hasScoreboard && effectiveTab === 'resumo';
   const showStages = !hasScoreboard || effectiveTab === 'etapas';
+  const isSingle = mode !== 'compare';
 
   return (
     <div className="screen runview">
@@ -183,10 +187,15 @@ export function RunView() {
         <div className="run-header-main">
           <div className="run-title-row">
             <h1 className="run-title">Run <code>{record.id.slice(0, 8)}</code></h1>
+            {isSingle && <span className={`pill pill-${mode}`}>{mode === 'variation' ? 'variação' : 'treino'}</span>}
+            {record.iteration != null && <span className="run-iter">iteração {record.iteration + 1}</span>}
             {record.status === 'running' && (
               <span className="live-pill"><span className="dot" />AO VIVO</span>
             )}
           </div>
+          {record.sessionId && (
+            <Link className="session-link" to={`/training/${record.sessionId}`}>← voltar à sessão de treino</Link>
+          )}
           <div className="run-theme">{record.config.theme}</div>
         </div>
 
@@ -240,6 +249,8 @@ export function RunView() {
         </div>
       )}
 
+      {isSingle && <ContestantsPanel contestants={contestants} />}
+
       {hasScoreboard && (
         <div className="run-tabs-bar">
           <div className="tabs">
@@ -254,18 +265,18 @@ export function RunView() {
           <div className="section-label">Classificação final (1º ao último)</div>
           <div className="score-card">
             <div className="score-head">
-              <div>Col.</div><div>Modelo</div><div>Pontos</div><div>1ºs</div><div>Pos. média</div><div>Aceitável p/ o trabalho</div><div>Erros</div>
+              <div>Col.</div><div>{isSingle ? 'Variante' : 'Modelo'}</div><div>Pontos</div><div>1ºs</div><div>Pos. média</div><div>Aceitável p/ o trabalho</div><div>Erros</div>
             </div>
             {standings.map((row, idx) => {
               const acceptRate = row.evaluated > 0 ? row.acceptable / row.evaluated : null;
               return (
-                <div className="score-row" key={row.modelId}>
+                <div className="score-row" key={row.contestantId}>
                   <div>
                     <span className="place-badge" style={{ background: rankColor(idx + 1, standings.length, dark).solid }}>
                       {idx + 1}º
                     </span>
                   </div>
-                  <div className="score-model">{row.modelId}</div>
+                  <div className="score-model">{row.label}</div>
                   <div className="score-points">{row.points}</div>
                   <div className="score-num">{row.firstPlaces}</div>
                   <div className="score-num">{row.avgPos != null ? row.avgPos.toFixed(2) : '—'}</div>
@@ -299,12 +310,12 @@ export function RunView() {
                   <div className="heat-col" key={s.index}>{s.index + 1}</div>
                 ))}
               </div>
-              {competitorIds.map((modelId) => (
-                <div className="heat-row" key={modelId}>
-                  <div className="heat-label">{modelId}</div>
+              {contestants.map((c) => (
+                <div className="heat-row" key={c.id}>
+                  <div className="heat-label">{c.label}</div>
                   {record.stages.map((s) => {
-                    const ranking = s.judge?.rankedModelIds ?? [];
-                    const pos = ranking.indexOf(modelId);
+                    const ranking = s.judge?.rankedContestantIds ?? [];
+                    const pos = ranking.indexOf(c.id);
                     if (pos < 0) {
                       return (
                         <div className="heat-cell-wrap" key={s.index} title={`Etapa ${s.index + 1}: não ranqueado`}>
@@ -336,6 +347,7 @@ export function RunView() {
             <StageCard
               key={stage.index}
               stage={stage}
+              byId={byId}
               open={openStages.has(stage.index)}
               onToggle={() => toggle(stage.index)}
               totalCompetitors={totalCompetitors}
@@ -348,27 +360,76 @@ export function RunView() {
   );
 }
 
+function ContestantsPanel({ contestants }: { contestants: Contestant[] }) {
+  const [open, setOpen] = useState<Set<string>>(new Set());
+  const modelId = contestants[0]?.modelId;
+  function toggle(id: string) {
+    setOpen((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  return (
+    <>
+      <div className="section-label">Variantes de prompt</div>
+      <div className="card variants-card">
+        {modelId && (
+          <div className="muted" style={{ fontSize: 13, marginBottom: 12 }}>
+            Modelo sob teste: <code className="mono-id">{modelId}</code>
+          </div>
+        )}
+        {contestants.map((c) => (
+          <div className="contestant-row" key={c.id}>
+            <button type="button" className="contestant-head" onClick={() => toggle(c.id)}>
+              <span className="contestant-label">
+                {c.label}
+                {c.isOriginal && <span className="control-tag">controle</span>}
+                {c.techniqueId && <span className="tech-tag">{c.techniqueId}</span>}
+              </span>
+              <span className={`stage-caret ${open.has(c.id) ? 'open' : ''}`}>▶</span>
+            </button>
+            {open.has(c.id) &&
+              (c.systemPrompt ? (
+                <pre className="context-pre contestant-prompt">{c.systemPrompt}</pre>
+              ) : (
+                <div className="contestant-prompt muted" style={{ fontSize: 13 }}>
+                  (usa o contexto do cenário gerado por etapa)
+                </div>
+              ))}
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
 function StageCard({
   stage,
+  byId,
   open,
   onToggle,
   totalCompetitors,
   dark,
 }: {
   stage: StageRecord;
+  byId: Map<string, Contestant>;
   open: boolean;
   onToggle: () => void;
   totalCompetitors: number;
   dark: boolean;
 }) {
-  const ranking = stage.judge?.rankedModelIds ?? [];
+  const ranking = stage.judge?.rankedContestantIds ?? [];
   const blindMap = stage.judge?.blindMap ?? {};
-  const modelToLetter: Record<string, string> = {};
-  for (const [letter, modelId] of Object.entries(blindMap)) modelToLetter[modelId] = letter;
+  const contestantToLetter: Record<string, string> = {};
+  for (const [letter, cid] of Object.entries(blindMap)) contestantToLetter[cid] = letter;
 
   const ev = stage.evaluation;
-  const verdictByModel: Record<string, { acceptable: boolean; justification: string }> = {};
-  for (const v of ev?.verdicts ?? []) verdictByModel[v.modelId] = v;
+  const verdictByContestant: Record<string, { acceptable: boolean; justification: string }> = {};
+  for (const v of ev?.verdicts ?? []) verdictByContestant[v.contestantId] = v;
+
+  const labelFor = (cid: string, fallback: string) => byId.get(cid)?.label ?? fallback;
 
   const badge = stageStatus(stage, totalCompetitors);
   const numLabel = String(stage.index + 1).padStart(2, '0');
@@ -383,8 +444,8 @@ function StageCard({
   const sortedResponses = stage.responses
     .slice()
     .sort((a, b) => {
-      const pa = ranking.indexOf(a.modelId);
-      const pb = ranking.indexOf(b.modelId);
+      const pa = ranking.indexOf(a.contestantId);
+      const pb = ranking.indexOf(b.contestantId);
       return (pa < 0 ? Infinity : pa) - (pb < 0 ? Infinity : pb);
     });
 
@@ -423,7 +484,7 @@ function StageCard({
                 <div className="q-text">{stage.spec.question}</div>
               </div>
               <div className="stage-block">
-                <div className="label-mini">Contexto de produto</div>
+                <div className="label-mini">Contexto do cenário (gerado)</div>
                 <pre className="context-pre">{stage.spec.productContext}</pre>
               </div>
             </>
@@ -433,7 +494,7 @@ function StageCard({
             <div className="evaluation-box">
               <div className="evaluation-head">
                 <span className="winner-pill">Vencedor</span>
-                <span className="evaluation-model">{ev.bestModelId}</span>
+                <span className="evaluation-model">{labelFor(ev.bestContestantId, ev.bestContestantId)}</span>
               </div>
               <p className="evaluation-reasons">{ev.bestReasons}</p>
             </div>
@@ -447,9 +508,9 @@ function StageCard({
           {showLive && (
             <div className="live-cards">
               {liveValues.map((l) => (
-                <div className="live-card" key={l.modelId}>
+                <div className="live-card" key={l.contestantId}>
                   <div className="live-head">
-                    <span className="live-model">{l.modelId}</span>
+                    <span className="live-model">{l.label ?? l.modelId}</span>
                     <span className="live-counter">{l.chars} chars · {l.charsPerSec.toFixed(1)} ch/s</span>
                   </div>
                   <div className="live-preview">
@@ -470,18 +531,18 @@ function StageCard({
           {stage.judge && sortedResponses.length > 0 && (
             <div className="answers">
               {sortedResponses.map((r) => {
-                const pos = ranking.indexOf(r.modelId);
-                const letter = modelToLetter[r.modelId];
-                const verdict = verdictByModel[r.modelId];
+                const pos = ranking.indexOf(r.contestantId);
+                const letter = contestantToLetter[r.contestantId];
+                const verdict = verdictByContestant[r.contestantId];
                 return (
-                  <div className="answer-card" key={r.modelId}>
+                  <div className="answer-card" key={r.contestantId}>
                     <div className="answer-head">
                       {pos >= 0 && (
                         <span className="rank-badge" style={{ background: rankColor(pos + 1, totalCompetitors, dark).solid }}>
                           #{pos + 1}
                         </span>
                       )}
-                      <span className="answer-model">{r.modelId}</span>
+                      <span className="answer-model">{labelFor(r.contestantId, r.modelId)}</span>
                       {letter && <span className="answer-blind">(era {letter})</span>}
                       {verdict && (
                         <span className={`verdict-pill ${verdict.acceptable ? 'ok' : 'bad'}`}>
@@ -515,9 +576,12 @@ function applyEvent(prev: RunRecord, event: any): RunRecord {
       live: s.live ? { ...s.live } : undefined,
     })),
   };
+  const labelOf = (id: string) => next.contestants?.find((c) => c.id === id)?.label;
   switch (event.type) {
     case 'run.started':
       return event.record;
+    case 'variants.generated':
+      return { ...next, contestants: event.contestants };
     case 'stage.generating': {
       if (!next.stages[event.stageIndex]) {
         next.stages.push({ index: event.stageIndex, responses: [], startedAt: new Date().toISOString() });
@@ -544,8 +608,10 @@ function applyEvent(prev: RunRecord, event: any): RunRecord {
       const s = next.stages[event.stageIndex];
       if (s) {
         if (!s.live) s.live = {};
-        s.live[event.modelId] = {
+        s.live[event.contestantId] = {
+          contestantId: event.contestantId,
           modelId: event.modelId,
+          label: labelOf(event.contestantId),
           startedAt: Date.now(),
           chars: 0,
           charsPerSec: 0,
@@ -559,9 +625,11 @@ function applyEvent(prev: RunRecord, event: any): RunRecord {
       const s = next.stages[event.stageIndex];
       if (s) {
         if (!s.live) s.live = {};
-        const existing = s.live[event.modelId];
-        s.live[event.modelId] = {
+        const existing = s.live[event.contestantId];
+        s.live[event.contestantId] = {
+          contestantId: event.contestantId,
           modelId: event.modelId,
+          label: existing?.label ?? labelOf(event.contestantId),
           startedAt: existing?.startedAt ?? Date.now(),
           chars: event.chars,
           charsPerSec: event.charsPerSec,
@@ -574,11 +642,11 @@ function applyEvent(prev: RunRecord, event: any): RunRecord {
     case 'competitor.finished': {
       const s = next.stages[event.stageIndex];
       if (s) {
-        const idx = s.responses.findIndex((r) => r.modelId === event.response.modelId);
+        const idx = s.responses.findIndex((r) => r.contestantId === event.response.contestantId);
         if (idx >= 0) s.responses[idx] = event.response;
         else s.responses.push(event.response);
-        if (s.live && s.live[event.response.modelId]) {
-          s.live[event.response.modelId] = { ...s.live[event.response.modelId], done: true };
+        if (s.live && s.live[event.response.contestantId]) {
+          s.live[event.response.contestantId] = { ...s.live[event.response.contestantId], done: true };
         }
         next.totalCostUsd = (next.totalCostUsd ?? 0) + event.response.costUsd;
       }

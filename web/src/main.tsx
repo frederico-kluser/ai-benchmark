@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route, NavLink, useNavigate, Navigate } from 're
 import { NewRun } from './pages/NewRun';
 import { RunView } from './pages/RunView';
 import { RunsList } from './pages/RunsList';
+import { TrainingView } from './pages/TrainingView';
 import { KeyGate } from './components/KeySetup';
 import { SettingsPage } from './pages/Settings';
 import { HelpModal } from './components/HelpModal';
@@ -89,6 +90,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
           <Route path="/new" element={<KeyGate><NewRun /></KeyGate>} />
           <Route path="/runs" element={<RunsList />} />
           <Route path="/runs/:id" element={<RunView />} />
+          <Route path="/training/:sessionId" element={<TrainingView />} />
         </Routes>
       </Layout>
     </BrowserRouter>

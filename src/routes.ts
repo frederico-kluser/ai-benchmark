@@ -3,37 +3,70 @@ import type { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { listModels, validateKey } from './openrouter.js';
 import { startRun } from './orchestrator.js';
-import { listRuns, loadRun } from './storage.js';
-import { subscribe } from './events.js';
+import { startTraining } from './trainer.js';
+import { generateContestants } from './variator.js';
+import { listTechniques } from './techniques.js';
+import { listRuns, loadRun, listSessions, loadSession } from './storage.js';
+import { subscribe, subscribeSession } from './events.js';
 import type { CompetitorResponse, RunRecord } from './types.js';
 
 const router = Router();
 
+const baseFields = {
+  theme: z.string().min(1),
+  stages: z.number().int().min(1).max(50),
+  datagenModelId: z.string().min(1),
+  judgeModelId: z.string().min(1),
+  concurrency: z.number().int().min(1).max(32).optional(),
+  timeoutMs: z.number().int().min(1_000).max(300_000).optional(),
+  maxOutputTokens: z.number().int().min(50).max(16_000).optional(),
+  promptOptimization: z.boolean().optional(),
+  optimizerModelId: z.string().min(1).optional(),
+  judgePasses: z.union([z.literal(1), z.literal(2)]).optional(),
+};
+
+const manualVariantSchema = z.object({
+  label: z.string().min(1),
+  systemPrompt: z.string().min(1),
+});
+
+const singleModelFields = {
+  contestantModelId: z.string().min(1),
+  basePrompt: z.string().optional(),
+  techniqueIds: z.array(z.string().min(1)).optional(),
+  manualVariants: z.array(manualVariantSchema).optional(),
+};
+
+const compareObj = z.object({
+  mode: z.literal('compare'),
+  // >= 2 competidores, todos distintos
+  competitorModelIds: z.array(z.string().min(1)).min(2),
+  ...baseFields,
+});
+const variationObj = z.object({
+  mode: z.literal('variation'),
+  ...singleModelFields,
+  ...baseFields,
+});
+const trainingObj = z.object({
+  mode: z.literal('training'),
+  ...singleModelFields,
+  iterations: z.number().int().min(2).max(10),
+  ...baseFields,
+});
+
 const runConfigSchema = z
-  .object({
-    theme: z.string().min(1),
-    stages: z.number().int().min(1).max(50),
-    // >= 2 competidores, todos distintos
-    competitorModelIds: z.array(z.string().min(1)).min(2),
-    // exatamente UM gerador de cenarios
-    datagenModelId: z.string().min(1),
-    // exatamente UM juiz — nada mais
-    judgeModelId: z.string().min(1),
-    concurrency: z.number().int().min(1).max(32).optional(),
-    timeoutMs: z.number().int().min(1_000).max(300_000).optional(),
-    maxOutputTokens: z.number().int().min(50).max(16_000).optional(),
-  })
+  .preprocess(
+    (val) => {
+      // compat: payloads antigos sem `mode` sao tratados como compare.
+      if (val && typeof val === 'object' && (val as Record<string, unknown>).mode === undefined) {
+        return { ...(val as Record<string, unknown>), mode: 'compare' };
+      }
+      return val;
+    },
+    z.discriminatedUnion('mode', [compareObj, variationObj, trainingObj]),
+  )
   .superRefine((cfg, ctx) => {
-    const dup = cfg.competitorModelIds.find(
-      (id, i) => cfg.competitorModelIds.indexOf(id) !== i,
-    );
-    if (dup) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['competitorModelIds'],
-        message: `Competidor repetido: "${dup}". Cada competidor deve ser unico.`,
-      });
-    }
     if (cfg.datagenModelId === cfg.judgeModelId) {
       ctx.addIssue({
         code: 'custom',
@@ -41,19 +74,63 @@ const runConfigSchema = z
         message: 'O juiz e o gerador de cenarios devem ser modelos diferentes.',
       });
     }
-    if (cfg.competitorModelIds.includes(cfg.datagenModelId)) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['datagenModelId'],
-        message: 'O gerador de cenarios nao pode ser tambem um competidor.',
-      });
-    }
-    if (cfg.competitorModelIds.includes(cfg.judgeModelId)) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['judgeModelId'],
-        message: 'O juiz nao pode ser tambem um competidor.',
-      });
+    if (cfg.mode === 'compare') {
+      const dup = cfg.competitorModelIds.find(
+        (id, i) => cfg.competitorModelIds.indexOf(id) !== i,
+      );
+      if (dup) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['competitorModelIds'],
+          message: `Competidor repetido: "${dup}". Cada competidor deve ser unico.`,
+        });
+      }
+      if (cfg.competitorModelIds.includes(cfg.datagenModelId)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['datagenModelId'],
+          message: 'O gerador de cenarios nao pode ser tambem um competidor.',
+        });
+      }
+      if (cfg.competitorModelIds.includes(cfg.judgeModelId)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['judgeModelId'],
+          message: 'O juiz nao pode ser tambem um competidor.',
+        });
+      }
+    } else {
+      // variation | training: anti vies de auto-preferencia do juiz
+      if (cfg.judgeModelId === cfg.contestantModelId) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['judgeModelId'],
+          message: 'O juiz nao pode ser o mesmo modelo sob teste (vies de auto-preferencia).',
+        });
+      }
+      const optimize = cfg.promptOptimization !== false;
+      const baseCount = cfg.basePrompt && cfg.basePrompt.trim() ? 1 : 0;
+      if (optimize) {
+        const techCount = cfg.techniqueIds?.length ?? 0;
+        if (techCount + baseCount < 2) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['techniqueIds'],
+            message:
+              'Selecione ao menos 2 tecnicas (ou 1 tecnica + prompt base) para ter contestants suficientes.',
+          });
+        }
+      } else {
+        const manualCount = (cfg.manualVariants ?? []).filter((v) => v.systemPrompt.trim()).length;
+        if (manualCount + baseCount < 2) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['manualVariants'],
+            message:
+              'Com otimizacao desligada, forneca ao menos 2 variantes (ou 1 variante + prompt base).',
+          });
+        }
+      }
     }
   });
 
@@ -113,11 +190,47 @@ router.post('/runs', requireKey, async (req, res) => {
   }
 
   try {
-    const { runId } = startRun(parsed.data, apiKey);
+    const cfg = parsed.data;
+
+    if (cfg.mode === 'training') {
+      res.status(400).json({ error: 'Modo treino usa POST /v1/benchmark/sessions.' });
+      return;
+    }
+
+    if (cfg.mode === 'variation') {
+      const optimizerModelId = cfg.optimizerModelId ?? cfg.datagenModelId;
+      const promptOptimization = cfg.promptOptimization !== false;
+      const { runId } = startRun(cfg, apiKey, {
+        prepare: () =>
+          generateContestants({
+            apiKey,
+            modelId: cfg.contestantModelId,
+            theme: cfg.theme,
+            basePrompt: cfg.basePrompt,
+            originalPrompt: cfg.basePrompt,
+            includeOriginal: Boolean(cfg.basePrompt && cfg.basePrompt.trim()),
+            techniqueIds: cfg.techniqueIds,
+            manualVariants: cfg.manualVariants,
+            promptOptimization,
+            optimizerModelId,
+            timeoutMs: cfg.timeoutMs,
+          }),
+      });
+      res.status(202).json({ runId });
+      return;
+    }
+
+    // compare
+    const { runId } = startRun(cfg, apiKey);
     res.status(202).json({ runId });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }
+});
+
+// Biblioteca curada de tecnicas de variacao (sem o meta-prompt). Nao exige key.
+router.get('/techniques', (_req, res) => {
+  res.json({ data: listTechniques() });
 });
 
 router.get('/runs', async (_req, res) => {
@@ -209,12 +322,18 @@ router.get('/runs/:id/export.csv', async (req, res) => {
     res.status(404).json({ error: 'Run nao encontrada' });
     return;
   }
+  const byId = new Map(record.contestants.map((c) => [c.id, c]));
   const rows: string[] = [];
   rows.push(
     [
       'runId',
+      'sessionId',
+      'iteration',
       'stageIndex',
       'question',
+      'contestantId',
+      'label',
+      'technique',
       'modelId',
       'status',
       'latencyMs',
@@ -229,14 +348,20 @@ router.get('/runs/:id/export.csv', async (req, res) => {
       .join(','),
   );
   for (const stage of record.stages) {
-    const ranking = stage.judge?.rankedModelIds ?? [];
+    const ranking = stage.judge?.rankedContestantIds ?? [];
     for (const r of stage.responses) {
-      const rankPosition = ranking.indexOf(r.modelId);
+      const rankPosition = ranking.indexOf(r.contestantId);
+      const c = byId.get(r.contestantId);
       rows.push(
         [
           record.id,
+          record.sessionId ?? '',
+          record.iteration ?? '',
           stage.index,
           stage.spec?.question ?? '',
+          r.contestantId,
+          c?.label ?? '',
+          c?.techniqueId ?? '',
           r.modelId,
           r.status,
           r.latencyMs,
@@ -257,6 +382,109 @@ router.get('/runs/:id/export.csv', async (req, res) => {
     'Content-Disposition': `attachment; filename="run-${record.id}.csv"`,
   });
   res.send(rows.join('\n'));
+});
+
+// ---------------------------------------------------------------------------
+// Sessoes de treino (modo training = N iteracoes encadeadas)
+// ---------------------------------------------------------------------------
+
+router.post('/sessions', requireKey, async (req, res) => {
+  const parsed = runConfigSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Config invalida', details: parsed.error.flatten() });
+    return;
+  }
+  if (parsed.data.mode !== 'training') {
+    res.status(400).json({ error: 'POST /sessions exige mode "training".' });
+    return;
+  }
+  const apiKey = (req as Request & { apiKey: string }).apiKey;
+
+  const keyCheck = await validateKey(apiKey);
+  if (!keyCheck.ok) {
+    res.status(401).json({ error: `Key OpenRouter invalida: ${keyCheck.error}` });
+    return;
+  }
+
+  try {
+    const { sessionId } = await startTraining(parsed.data, apiKey);
+    res.status(202).json({ sessionId });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+router.get('/sessions', async (_req, res) => {
+  try {
+    res.json({ data: await listSessions() });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+router.get('/sessions/:id', async (req, res) => {
+  try {
+    const record = await loadSession(req.params.id);
+    if (!record) {
+      res.status(404).json({ error: 'Sessao nao encontrada' });
+      return;
+    }
+    res.json(record);
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+router.get('/sessions/:id/events', async (req, res) => {
+  const sessionId = req.params.id;
+  const record = await loadSession(sessionId);
+  if (!record) {
+    res.status(404).json({ error: 'Sessao nao encontrada' });
+    return;
+  }
+
+  res.status(200).set({
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+  res.flushHeaders?.();
+
+  const send = (payload: unknown) => {
+    res.write(`data: ${JSON.stringify(payload)}\n\n`);
+  };
+
+  send({ type: 'snapshot', record });
+
+  const isTerminal =
+    record.status === 'finished' || record.status === 'error' || record.status === 'aborted';
+  if (isTerminal) {
+    if (record.status === 'error') {
+      send({ type: 'session.error', sessionId, error: record.error ?? 'Sessao terminou com erro.' });
+    } else {
+      send({ type: 'session.finished', sessionId, record });
+    }
+    res.end();
+    return;
+  }
+
+  const unsubscribe = subscribeSession(sessionId, (event) => {
+    send(event);
+    if (event.type === 'session.finished' || event.type === 'session.error') {
+      unsubscribe();
+      res.end();
+    }
+  });
+
+  const keepAlive = setInterval(() => {
+    res.write(': keepalive\n\n');
+  }, 15_000);
+
+  req.on('close', () => {
+    clearInterval(keepAlive);
+    unsubscribe();
+  });
 });
 
 export type { RunRecord, CompetitorResponse };
