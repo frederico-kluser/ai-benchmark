@@ -521,6 +521,7 @@ Uma run longa não pode morrer por um soluço de rede ou de um modelo:
 
 ---
 
-Para entender **cada tela** em detalhe, veja **[`TELAS.md`](./TELAS.md)**. Para trabalhar no código
-com um agente, comece por **[`AGENTS.md`](./AGENTS.md)** e a biblioteca de
-**[skills](./.agents/skills/catalog.md)**.
+Para o **funcionamento interno** (pipeline, os 3 modos em detalhe e oportunidades de
+otimização/paralelização), veja **[`FUNCIONAMENTO.md`](./FUNCIONAMENTO.md)**. Para entender **cada
+tela**, veja **[`TELAS.md`](./TELAS.md)**. Para trabalhar no código com um agente, comece por
+**[`AGENTS.md`](./AGENTS.md)** e a biblioteca de **[skills](./.agents/skills/catalog.md)**.
