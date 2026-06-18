@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import type { Contestant, RunRecord, StageRecord } from '../api';
-import { fetchRun, normalizeContestants, openRunStream, runMode } from '../api';
+import { cacheRun, fetchRun, normalizeContestants, openRunStream, runMode } from '../api';
 import { useTheme } from '../theme';
 
 function formatUsd(v: number): string {
@@ -131,11 +131,13 @@ export function RunView() {
         if (cancelled) return;
         if (event.type === 'snapshot') {
           setRecord(event.record);
+          void cacheRun(event.record);
           return;
         }
         if (event.type === 'stage.generating' || event.type === 'competitor.started') {
           setOpenStages((prev) => new Set(prev).add(event.stageIndex));
         }
+        if (event.type === 'run.finished') void cacheRun(event.record);
         setRecord((prev) => prev && applyEvent(prev, event));
       },
       () => {

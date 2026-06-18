@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import type { SessionIterationSummary, SessionRecord } from '../api';
-import { fetchSession, openSessionStream } from '../api';
+import { cacheSession, fetchSession, openSessionStream } from '../api';
 
 function TrendChart({ data }: { data: SessionIterationSummary[] }) {
   if (!data.length) return <div className="card trend-card"><div className="trend-empty">Sem iterações concluídas ainda.</div></div>;
@@ -66,8 +66,10 @@ export function TrainingView() {
         if (cancelled) return;
         if (event.type === 'snapshot') {
           setSession(event.record);
+          void cacheSession(event.record);
           return;
         }
+        if (event.type === 'session.finished') void cacheSession(event.record);
         refetch();
       },
       () => refetch(),

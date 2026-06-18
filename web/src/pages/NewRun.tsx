@@ -5,6 +5,7 @@ import { ModeTabs } from '../components/ModeTabs';
 import { Toggle } from '../components/Toggle';
 import { TechniqueSelector } from '../components/TechniqueSelector';
 import { ManualVariantsEditor } from '../components/ManualVariantsEditor';
+import { markTutorialSeen, tutorialSeen, useHelp } from '../help';
 import {
   createRun,
   createSession,
@@ -147,6 +148,16 @@ export function NewRun() {
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Tutorial por modo: dispara automaticamente na 1ª vez em cada tab.
+  const help = useHelp();
+  useEffect(() => {
+    if (!tutorialSeen(mode)) {
+      markTutorialSeen(mode);
+      help.open(mode);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode]);
 
   const isSingle = mode === 'variation' || mode === 'training';
 

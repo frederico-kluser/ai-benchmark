@@ -1,3 +1,5 @@
+import { idbGet, idbGetAll, idbPut, idbPutMany } from './idb';
+
 export interface OpenRouterModel {
   id: string;
   name: string;
@@ -285,9 +287,19 @@ export async function createSession(config: RunConfig): Promise<string> {
 }
 
 export async function fetchSession(id: string): Promise<SessionRecord> {
-  const res = await fetch(`/v1/benchmark/sessions/${id}`);
-  if (!res.ok) throw new Error('Sessão não encontrada');
-  return (await res.json()) as SessionRecord;
+  try {
+    const res = await fetch(`/v1/benchmark/sessions/${id}`);
+    if (res.ok) {
+      const rec = (await res.json()) as SessionRecord;
+      void cacheSession(rec);
+      return rec;
+    }
+  } catch {
+    /* offline — tenta cache */
+  }
+  const cached = await idbGet<SessionRecord>('sessions', id);
+  if (cached) return cached;
+  throw new Error('Sessão não encontrada');
 }
 
 export interface SessionSummary {
@@ -302,10 +314,20 @@ export interface SessionSummary {
 }
 
 export async function fetchSessions(): Promise<SessionSummary[]> {
-  const res = await fetch('/v1/benchmark/sessions');
-  if (!res.ok) throw new Error('Falha ao listar sessões');
-  const json = (await res.json()) as { data: SessionSummary[] };
-  return json.data;
+  let server: SessionSummary[] | null = null;
+  try {
+    const res = await fetch('/v1/benchmark/sessions');
+    if (res.ok) server = ((await res.json()) as { data: SessionSummary[] }).data;
+  } catch {
+    /* offline */
+  }
+  if (server) void idbPutMany('sessionSummaries', server);
+  const cached = await idbGetAll<SessionSummary>('sessionSummaries');
+  if (!server) return cached;
+  const byId = new Map<string, SessionSummary>();
+  for (const s of cached) byId.set(s.id, s);
+  for (const s of server) byId.set(s.id, s); // servidor é fonte de verdade
+  return [...byId.values()];
 }
 
 export function openSessionStream(
@@ -341,23 +363,83 @@ export function openSessionStream(
   return close;
 }
 
+// -------------- Cache local (IndexedDB) --------------
+
+function summaryFromRecord(r: RunRecord): RunSummary {
+  const n = r.contestants?.length ?? r.config?.competitorModelIds?.length ?? 0;
+  return {
+    id: r.id,
+    status: r.status,
+    mode: r.mode ?? r.config?.mode ?? 'compare',
+    theme: r.config?.theme ?? '',
+    stages: r.config?.stages ?? r.stages?.length ?? 0,
+    contestants: n,
+    competitors: n,
+    totalCostUsd: r.totalCostUsd ?? 0,
+    startedAt: r.startedAt,
+    finishedAt: r.finishedAt,
+    sessionId: r.sessionId,
+    iteration: r.iteration,
+  };
+}
+
+function summaryFromSession(s: SessionRecord): SessionSummary {
+  return {
+    id: s.id,
+    status: s.status,
+    theme: s.config?.theme ?? '',
+    iterationsPlanned: s.config?.iterations ?? 0,
+    iterationsDone: s.bestPromptByIteration?.length ?? 0,
+    totalCostUsd: s.totalCostUsd ?? 0,
+    startedAt: s.startedAt,
+    finishedAt: s.finishedAt,
+  };
+}
+
+/** Persiste uma run completa no cache local (chamado ao carregar/finalizar). */
+export async function cacheRun(r: RunRecord): Promise<void> {
+  if (!r?.id) return;
+  await Promise.all([idbPut('runs', r), idbPut('runSummaries', summaryFromRecord(r))]);
+}
+
+/** Persiste uma sessão completa no cache local. */
+export async function cacheSession(s: SessionRecord): Promise<void> {
+  if (!s?.id) return;
+  await Promise.all([idbPut('sessions', s), idbPut('sessionSummaries', summaryFromSession(s))]);
+}
+
 export async function fetchRuns(): Promise<RunSummary[]> {
-  const res = await fetch('/v1/benchmark/runs');
-  if (!res.ok) {
-    console.error('[fetchRuns] falhou:', res.status);
-    throw new Error('Falha ao listar runs');
+  let server: RunSummary[] | null = null;
+  try {
+    const res = await fetch('/v1/benchmark/runs');
+    if (res.ok) server = ((await res.json()) as { data: RunSummary[] }).data;
+    else console.error('[fetchRuns] falhou:', res.status);
+  } catch (err) {
+    console.error('[fetchRuns] offline:', err);
   }
-  const json = (await res.json()) as { data: RunSummary[] };
-  return json.data;
+  if (server) void idbPutMany('runSummaries', server);
+  const cached = await idbGetAll<RunSummary>('runSummaries');
+  if (!server) return cached; // offline: histórico vem do cache local
+  const byId = new Map<string, RunSummary>();
+  for (const s of cached) byId.set(s.id, s);
+  for (const s of server) byId.set(s.id, s); // servidor é fonte de verdade
+  return [...byId.values()];
 }
 
 export async function fetchRun(id: string): Promise<RunRecord> {
-  const res = await fetch(`/v1/benchmark/runs/${id}`);
-  if (!res.ok) {
-    console.error('[fetchRun] falhou:', res.status);
-    throw new Error('Run nao encontrada');
+  try {
+    const res = await fetch(`/v1/benchmark/runs/${id}`);
+    if (res.ok) {
+      const rec = (await res.json()) as RunRecord;
+      void cacheRun(rec);
+      return rec;
+    }
+  } catch (err) {
+    console.error('[fetchRun] offline:', err);
   }
-  return (await res.json()) as RunRecord;
+  const cached = await idbGet<RunRecord>('runs', id);
+  if (cached) return cached;
+  throw new Error('Run nao encontrada');
 }
 
 const TERMINAL_RUN_STATUSES = ['finished', 'error', 'aborted'];

@@ -1,18 +1,16 @@
-import { z } from 'zod';
 import { chatCompletion } from './openrouter.js';
 import type { CompetitorResponse, JudgeResult, StageSpec } from './types.js';
 
-const judgeSchema = z.object({
-  ranking: z.array(z.string().min(1)).min(1),
-});
+// Juiz por TORNEIO round-robin: em vez de ranquear todas as respostas de uma vez
+// (listwise), rodamos UMA instancia do juiz por CONFRONTO (par de respostas). Cada
+// instancia devolve apenas o vencedor (output minimo). As vitorias sao agregadas
+// (placar de Copeland) e viram o ranking final. Confrontos pairwise sao mais
+// confiaveis que o listwise quando as respostas sao parecidas (caso do modo variacao).
 
-const SYSTEM_PROMPT = `Voce e um juiz imparcial avaliando respostas de modelos de IA.
-Voce recebe a pergunta original, o contexto de produto que cada modelo recebeu, e uma lista de respostas anonimizadas (rotuladas com letras A, B, C, ...).
-
-Sua tarefa: ranquear as respostas da MELHOR para a PIOR, considerando aderencia ao contexto, corretude, completude e clareza.
+const SYSTEM_PROMPT_PAIR = `Voce e um juiz imparcial. Recebe a pergunta do usuario, o contexto fornecido aos modelos, e DUAS respostas anonimizadas: A e B.
+Escolha a MELHOR considerando aderencia ao contexto, corretude, completude e clareza.
 NAO prefira respostas mais longas: avalie pelo conteudo e pela utilidade, nunca pelo tamanho.
-
-Saida ESTRITAMENTE JSON: {"ranking": ["A", "C", "B", ...]} contendo TODAS as letras recebidas, sem empates, sem comentarios. Sem markdown.`;
+Responda APENAS com a letra A ou B. Sem explicacao, sem pontuacao, sem markdown.`;
 
 function shuffle<T>(arr: T[]): T[] {
   const a = [...arr];
@@ -27,17 +25,62 @@ function letterFor(index: number): string {
   return String.fromCharCode(65 + index);
 }
 
-function extractJson(text: string): string {
-  const trimmed = text.trim();
-  if (trimmed.startsWith('{')) return trimmed;
-  const match = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (match) return match[1].trim();
-  const firstBrace = trimmed.indexOf('{');
-  const lastBrace = trimmed.lastIndexOf('}');
-  if (firstBrace >= 0 && lastBrace > firstBrace) {
-    return trimmed.slice(firstBrace, lastBrace + 1);
+function parseAB(text: string): 'A' | 'B' | null {
+  const t = (text ?? '').trim().toUpperCase();
+  if (t.startsWith('A')) return 'A';
+  if (t.startsWith('B')) return 'B';
+  const m = t.match(/[AB]/);
+  return m ? (m[0] as 'A' | 'B') : null;
+}
+
+/** Roda `fn` sobre `items` com no maximo `limit` em paralelo. */
+async function mapLimit<T, R>(items: T[], limit: number, fn: (x: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let cursor = 0;
+  const workers = new Array(Math.min(limit, items.length)).fill(0).map(async () => {
+    while (true) {
+      const i = cursor++;
+      if (i >= items.length) break;
+      results[i] = await fn(items[i]);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
+export interface MatchResult {
+  a: string; // contestantId
+  b: string; // contestantId
+  winner: string | null; // contestantId vencedor, ou null (empate/inconclusivo)
+}
+
+/**
+ * Agregacao PURA dos confrontos em um ranking (placar de Copeland: nº de vitorias).
+ * Empate em vitorias -> desempate por confronto direto (head-to-head) -> ordem estavel.
+ */
+export function rankFromMatchups(ids: string[], matches: MatchResult[]): string[] {
+  const wins: Record<string, number> = {};
+  const h2h: Record<string, Record<string, number>> = {};
+  for (const id of ids) {
+    wins[id] = 0;
+    h2h[id] = {};
   }
-  return trimmed;
+  for (const m of matches) {
+    if (m.winner === m.a) {
+      wins[m.a] = (wins[m.a] ?? 0) + 1;
+      h2h[m.a][m.b] = (h2h[m.a][m.b] ?? 0) + 1;
+    } else if (m.winner === m.b) {
+      wins[m.b] = (wins[m.b] ?? 0) + 1;
+      h2h[m.b][m.a] = (h2h[m.b][m.a] ?? 0) + 1;
+    }
+  }
+  return [...ids].sort((x, y) => {
+    if (wins[y] !== wins[x]) return wins[y] - wins[x];
+    const xy = h2h[x]?.[y] ?? 0;
+    const yx = h2h[y]?.[x] ?? 0;
+    if (xy !== yx) return yx - xy; // quem venceu o confronto direto vem antes
+    return ids.indexOf(x) - ids.indexOf(y);
+  });
 }
 
 export interface JudgeStageParams {
@@ -46,87 +89,78 @@ export interface JudgeStageParams {
   responses: CompetitorResponse[];
   judgeModelId: string;
   timeoutMs?: number;
-  /** 2 = avalia em duas ordens embaralhadas e faz a media (anti-vies de posicao). */
+  /** Passes por confronto: 2 = avalia nas duas ordens; so conta vitoria se consistente (anti-vies de posicao). */
   passes?: 1 | 2;
+  /** Confrontos simultaneos. */
+  concurrency?: number;
 }
 
-interface JudgePass {
-  rankedContestantIds: string[];
-  blindMap: Record<string, string>;
-  rawJudgeText: string;
-}
-
-/** Uma passada de julgamento sobre >= 2 respostas validas (embaralhamento proprio). */
-async function judgeOnce(
+async function judgeOneOrder(
   apiKey: string,
   stage: StageSpec,
-  okResponses: CompetitorResponse[],
+  first: CompetitorResponse,
+  second: CompetitorResponse,
   judgeModelId: string,
   timeoutMs: number,
-): Promise<JudgePass> {
-  const shuffled = shuffle(okResponses);
-  const blindMap: Record<string, string> = {};
-  const blocks: string[] = [];
-  shuffled.forEach((r, i) => {
-    const letter = letterFor(i);
-    blindMap[letter] = r.contestantId;
-    blocks.push(`### Resposta ${letter}\n${r.text}`);
-  });
-
+): Promise<'first' | 'second' | null> {
   const userPrompt = `PERGUNTA DO USUARIO:
 ${stage.question}
 
-CONTEXTO DE PRODUTO FORNECIDO AOS MODELOS:
+CONTEXTO FORNECIDO AOS MODELOS:
 ${stage.productContext}
 
-RESPOSTAS A SEREM RANQUEADAS:
-${blocks.join('\n\n')}
+### Resposta A
+${first.text}
 
-Devolva apenas: {"ranking": ${JSON.stringify(Object.keys(blindMap))} ordenado da melhor para a pior}.`;
+### Resposta B
+${second.text}
+
+Qual resposta e melhor? Responda APENAS com A ou B.`;
 
   const result = await chatCompletion({
     apiKey,
     modelId: judgeModelId,
     messages: [
-      { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'system', content: SYSTEM_PROMPT_PAIR },
       { role: 'user', content: userPrompt },
     ],
     temperature: 0,
+    maxTokens: 8,
     timeoutMs,
-    responseFormatJson: true,
   });
+  const ab = parseAB(result.text);
+  return ab === 'A' ? 'first' : ab === 'B' ? 'second' : null;
+}
 
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(extractJson(result.text));
-  } catch (err) {
-    throw new Error(
-      `Judge retornou JSON invalido: ${(err as Error).message}. Texto: ${result.text.slice(0, 300)}`,
-    );
-  }
+/** Um confronto entre dois contestants -> contestantId vencedor (ou null). */
+async function judgePair(
+  apiKey: string,
+  stage: StageSpec,
+  ra: CompetitorResponse,
+  rb: CompetitorResponse,
+  judgeModelId: string,
+  timeoutMs: number,
+  passes: 1 | 2,
+): Promise<string | null> {
+  // randomiza qual resposta aparece como "A" (reduz vies de posicao)
+  const flip = Math.random() < 0.5;
+  const first = flip ? rb : ra;
+  const second = flip ? ra : rb;
 
-  const validated = judgeSchema.safeParse(parsed);
-  if (!validated.success) {
-    throw new Error(`Judge schema invalido: ${validated.error.message}`);
-  }
+  const o1 = await judgeOneOrder(apiKey, stage, first, second, judgeModelId, timeoutMs);
+  const winner1 = o1 === 'first' ? first.contestantId : o1 === 'second' ? second.contestantId : null;
+  if (passes !== 2) return winner1;
 
-  const letters = validated.data.ranking
-    .map((l) => l.trim().toUpperCase())
-    .filter((l) => l in blindMap);
-  for (const l of Object.keys(blindMap)) {
-    if (!letters.includes(l)) letters.push(l);
-  }
-
-  return {
-    rankedContestantIds: letters.map((l) => blindMap[l]),
-    blindMap,
-    rawJudgeText: result.text,
-  };
+  // 2a ordem (invertida): so conta vitoria se as duas ordens concordarem
+  const o2 = await judgeOneOrder(apiKey, stage, second, first, judgeModelId, timeoutMs);
+  const winner2 = o2 === 'first' ? second.contestantId : o2 === 'second' ? first.contestantId : null;
+  return winner1 && winner2 && winner1 === winner2 ? winner1 : null;
 }
 
 export async function judgeStage(params: JudgeStageParams): Promise<JudgeResult> {
   const { apiKey, stage, responses, judgeModelId, timeoutMs = 90_000 } = params;
   const passes = params.passes === 2 ? 2 : 1;
+  const concurrency = Math.max(1, params.concurrency ?? 6);
 
   const okResponses = responses.filter((r) => r.status === 'ok' && r.text.trim().length > 0);
 
@@ -138,33 +172,42 @@ export async function judgeStage(params: JudgeStageParams): Promise<JudgeResult>
     return {
       rankedContestantIds: [only.contestantId],
       blindMap: { A: only.contestantId },
-      rawJudgeText: '(only 1 valid response, auto-ranked)',
+      rawJudgeText: '(1 resposta valida, auto-vencedora)',
     };
   }
 
-  const first = await judgeOnce(apiKey, stage, okResponses, judgeModelId, timeoutMs);
-  if (passes === 1) {
-    return { rankedContestantIds: first.rankedContestantIds, blindMap: first.blindMap, rawJudgeText: first.rawJudgeText };
+  // blindMap cosmetico (letras estaveis para a UI exibir "(era X)")
+  const blindMap: Record<string, string> = {};
+  shuffle(okResponses).forEach((r, i) => {
+    blindMap[letterFor(i)] = r.contestantId;
+  });
+
+  // todos os confrontos (round-robin)
+  const pairs: [CompetitorResponse, CompetitorResponse][] = [];
+  for (let i = 0; i < okResponses.length; i++) {
+    for (let j = i + 1; j < okResponses.length; j++) {
+      pairs.push([okResponses[i], okResponses[j]]);
+    }
   }
 
-  // 2a passada com novo embaralhamento; combina por posicao media.
-  const second = await judgeOnce(apiKey, stage, okResponses, judgeModelId, timeoutMs);
-  const ids = okResponses.map((r) => r.contestantId);
-  const rankIn = (ranking: string[], id: string) => {
-    const i = ranking.indexOf(id);
-    return i < 0 ? ranking.length : i;
-  };
-  const avg = (id: string) =>
-    (rankIn(first.rankedContestantIds, id) + rankIn(second.rankedContestantIds, id)) / 2;
-  const merged = [...ids].sort(
-    (a, b) =>
-      avg(a) - avg(b) ||
-      rankIn(first.rankedContestantIds, a) - rankIn(first.rankedContestantIds, b),
+  const winners = await mapLimit(pairs, concurrency, ([ra, rb]) =>
+    judgePair(apiKey, stage, ra, rb, judgeModelId, timeoutMs, passes),
   );
+  const matches: MatchResult[] = pairs.map(([ra, rb], k) => ({
+    a: ra.contestantId,
+    b: rb.contestantId,
+    winner: winners[k],
+  }));
 
-  return {
-    rankedContestantIds: merged,
-    blindMap: first.blindMap, // letras da 1a passada (exibicao "(era X)")
-    rawJudgeText: `# passada 1\n${first.rawJudgeText}\n\n# passada 2\n${second.rawJudgeText}`,
-  };
+  const ids = okResponses.map((r) => r.contestantId);
+  const rankedContestantIds = rankFromMatchups(ids, matches);
+
+  const winCount: Record<string, number> = {};
+  for (const id of ids) winCount[id] = 0;
+  for (const m of matches) if (m.winner) winCount[m.winner] = (winCount[m.winner] ?? 0) + 1;
+  const rawJudgeText =
+    `Torneio round-robin: ${pairs.length} confronto(s), ${passes} passe(s)/confronto. ` +
+    `Vitorias: ${rankedContestantIds.map((id) => `${id}=${winCount[id] ?? 0}`).join(', ')}`;
+
+  return { rankedContestantIds, blindMap, rawJudgeText };
 }
