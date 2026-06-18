@@ -6,8 +6,12 @@ interface Props {
   multi?: boolean;
   value: string[];
   onChange: (ids: string[]) => void;
-  label: string;
+  title: string;
+  hint: string;
   excludeIds?: string[];
+  /** Optional shared catalog (avoids each selector refetching). Self-fetches when omitted. */
+  models?: OpenRouterModel[];
+  loading?: boolean;
 }
 
 function formatPricePerMTok(usdPerToken: number): string {
@@ -15,6 +19,10 @@ function formatPricePerMTok(usdPerToken: number): string {
   if (perM === 0) return '$0';
   if (perM < 0.01) return `$${perM.toFixed(4)}`;
   return `$${perM.toFixed(2)}`;
+}
+
+function priceLabel(model: OpenRouterModel): string {
+  return `in ${formatPricePerMTok(model.pricing.prompt)} / out ${formatPricePerMTok(model.pricing.completion)} /1M`;
 }
 
 // -------- fuzzy search --------
@@ -29,7 +37,6 @@ function fuzzyScore(haystack: string, needle: string): number {
   if (h.includes(n)) return 500;
 
   // Subsequence: cada caractere de n precisa aparecer em h em ordem.
-  // Bonus para matches consecutivos e em boundaries (apos /, -, _, ., :, espaco).
   let hi = 0;
   let score = 0;
   let consecutive = 0;
@@ -46,12 +53,10 @@ function fuzzyScore(haystack: string, needle: string): number {
     }
     if (found === -1) return 0;
 
-    // Bonus por boundary
     const before = found > 0 ? h[found - 1] : '';
     const isBoundary = found === 0 || /[\/\-_.: ]/.test(before);
     if (isBoundary) score += 8;
 
-    // Bonus consecutivo
     if (prevChar && h[found - 1] === prevChar && found > 0) {
       consecutive += 1;
       score += 4 + consecutive * 2;
@@ -64,7 +69,6 @@ function fuzzyScore(haystack: string, needle: string): number {
     hi = found + 1;
   }
 
-  // Penaliza haystack longo (preferir matches curtos e diretos)
   score -= Math.floor(h.length / 20);
   return score;
 }
@@ -81,29 +85,39 @@ function multiTokenScore(haystack: string, query: string): number {
   return total;
 }
 
-export function ModelSelector({ multi = true, value, onChange, label, excludeIds = [] }: Props) {
-  const [models, setModels] = useState<OpenRouterModel[]>([]);
-  const [loading, setLoading] = useState(true);
+export function ModelSelector({
+  multi = true,
+  value,
+  onChange,
+  title,
+  hint,
+  excludeIds = [],
+  models: sharedModels,
+  loading: sharedLoading,
+}: Props) {
+  const selfManaged = sharedModels === undefined;
+  const [selfModels, setSelfModels] = useState<OpenRouterModel[]>([]);
+  const [selfLoading, setSelfLoading] = useState(selfManaged);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
+  const models = sharedModels ?? selfModels;
+  const loading = selfManaged ? selfLoading : !!sharedLoading;
+
   useEffect(() => {
+    if (!selfManaged) return;
     let active = true;
     fetchModels()
-      .then((data) => {
-        if (active) setModels(data);
-      })
-      .catch((err) => {
-        if (active) setError(err.message);
-      })
-      .finally(() => active && setLoading(false));
+      .then((data) => active && setSelfModels(data))
+      .catch((err) => active && setError(err.message))
+      .finally(() => active && setSelfLoading(false));
     return () => {
       active = false;
     };
-  }, []);
+  }, [selfManaged]);
 
   // Fechar ao clicar/tocar fora ou pressionar Escape
   useEffect(() => {
@@ -130,9 +144,8 @@ export function ModelSelector({ multi = true, value, onChange, label, excludeIds
     };
   }, [open]);
 
-  // Mantém TODOS os ids selecionados, mesmo os que ainda nao estao no
-  // catalogo carregado (ex.: defaults pre-preenchidos). Sem isso o chip
-  // some da tela e o usuario nao ve o que esta selecionado.
+  // Mantém TODOS os ids selecionados, mesmo os que ainda nao estao no catalogo
+  // carregado (ex.: defaults pre-preenchidos) — senao o chip some da tela.
   const selected = useMemo(
     () => value.map((id) => ({ id, model: models.find((m) => m.id === id) })),
     [value, models],
@@ -145,19 +158,17 @@ export function ModelSelector({ multi = true, value, onChange, label, excludeIds
     const q = query.trim();
     if (!q) return available.slice(0, 50);
 
-    const scored = available
+    return available
       .map((m) => {
         const idScore = multiTokenScore(m.id, q);
         const nameScore = multiTokenScore(m.name, q);
-        // peso maior pro id (ex.: "anthropic/claude-3.5-sonnet")
         const score = idScore * 1.5 + nameScore;
         return { m, score };
       })
       .filter((x) => x.score > 0)
       .sort((a, b) => b.score - a.score)
-      .slice(0, 50);
-
-    return scored.map((x) => x.m);
+      .slice(0, 50)
+      .map((x) => x.m);
   }, [query, models, excludeIds, value]);
 
   function select(id: string) {
@@ -175,37 +186,41 @@ export function ModelSelector({ multi = true, value, onChange, label, excludeIds
     onChange(value.filter((v) => v !== id));
   }
 
+  const placeholder = loading
+    ? 'Carregando modelos…'
+    : !multi && value.length > 0
+      ? 'Trocar modelo (apenas 1 permitido)…'
+      : !multi
+        ? 'Escolher 1 modelo…'
+        : 'Buscar modelo (ex.: "claude sonnet", "gpt 5 mini")';
+
   return (
-    <div className="selector" ref={wrapperRef}>
-      <label className="selector-label">{label}</label>
+    <section className="card selector-card" ref={wrapperRef}>
+      <div className="selector-title">{title}</div>
+      <div className="selector-hint">{hint}</div>
+
       <div className="selector-chips">
         {selected.map(({ id, model }) => (
-          <span key={id} className="chip">
-            <span className="chip-name">{id}</span>
-            <span className="chip-price">
-              {model
-                ? `in ${formatPricePerMTok(model.pricing.prompt)} / out ${formatPricePerMTok(model.pricing.completion)} /1M`
-                : loading
-                  ? 'carregando…'
-                  : 'fora do catálogo?'}
+          <div key={id} className="model-chip">
+            <span className="model-chip-text">
+              <span className="model-chip-id">{id}</span>
+              <span className="model-chip-price">
+                {model ? priceLabel(model) : loading ? 'carregando…' : 'fora do catálogo'}
+              </span>
             </span>
-            <button type="button" onClick={() => remove(id)}>×</button>
-          </span>
+            <button type="button" className="model-chip-x" aria-label={`Remover ${id}`} onClick={() => remove(id)}>
+              ×
+            </button>
+          </div>
         ))}
       </div>
+
       <div className="selector-search">
         <input
           ref={inputRef}
           type="text"
-          placeholder={
-            loading
-              ? 'Carregando modelos…'
-              : !multi && value.length > 0
-                ? 'Trocar modelo (apenas 1 permitido)…'
-                : !multi
-                  ? 'Escolher 1 modelo…'
-                  : 'Buscar modelo (ex.: "claude sonnet", "gpt 4o mini")'
-          }
+          className="input"
+          placeholder={placeholder}
           value={query}
           onChange={(e) => {
             setQuery(e.target.value);
@@ -214,31 +229,32 @@ export function ModelSelector({ multi = true, value, onChange, label, excludeIds
           onFocus={() => setOpen(true)}
           disabled={loading}
         />
-        {error && <span className="error">{error}</span>}
         {open && (
-          <ul className="selector-dropdown">
-            {filtered.length === 0 && <li className="empty">Nenhum modelo encontrado</li>}
+          <ul className="selector-pop">
+            {filtered.length === 0 && <li className="selector-empty">Nenhum modelo encontrado</li>}
             {filtered.map((m) => (
-              <li
-                key={m.id}
-                onMouseDown={(e) => {
-                  // mousedown para nao perder foco antes do click
-                  e.preventDefault();
-                  select(m.id);
-                }}
-              >
-                <div className="row">
-                  <strong>{m.id}</strong>
-                  <span className="price">
-                    in {formatPricePerMTok(m.pricing.prompt)} / out {formatPricePerMTok(m.pricing.completion)}
+              <li key={m.id}>
+                <button
+                  type="button"
+                  className="selector-opt"
+                  onMouseDown={(e) => {
+                    // mousedown para nao perder foco antes do click
+                    e.preventDefault();
+                    select(m.id);
+                  }}
+                >
+                  <span className="selector-opt-text">
+                    <span className="selector-opt-id">{m.id}</span>
+                    <span className="selector-opt-name">{m.name}</span>
                   </span>
-                </div>
-                <div className="sub">{m.name}</div>
+                  <span className="selector-opt-price">{priceLabel(m)}</span>
+                </button>
               </li>
             ))}
           </ul>
         )}
       </div>
-    </div>
+      {error && <div className="selector-hint" style={{ color: 'var(--err)', marginTop: 10, marginBottom: 0 }}>{error}</div>}
+    </section>
   );
 }

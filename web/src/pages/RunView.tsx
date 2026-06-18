@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import type { RunRecord, StageRecord } from '../api';
 import { fetchRun, openRunStream } from '../api';
+import { useTheme } from '../theme';
 
 function formatUsd(v: number): string {
   if (v === 0) return '$0';
@@ -12,6 +13,28 @@ function formatUsd(v: number): string {
 function formatMs(ms: number): string {
   if (ms < 1000) return `${ms}ms`;
   return `${(ms / 1000).toFixed(2)}s`;
+}
+
+function trunc(s: string, n: number): string {
+  return s.length > n ? s.slice(0, n) + '…' : s;
+}
+
+interface RankColor {
+  solid: string;
+  soft: string;
+  text: string;
+}
+
+// Verde (melhor) -> vermelho (pior), em HSL. `pos` é 1-based.
+function rankColor(pos: number, total: number, dark: boolean): RankColor {
+  const tl = dark ? 72 : 34;
+  const sa = dark ? 0.22 : 0.15;
+  if (total <= 1 || pos < 1) {
+    return { solid: 'hsl(145 60% 42%)', soft: `hsl(145 70% 50% / ${sa})`, text: `hsl(145 55% ${tl}%)` };
+  }
+  const frac = (pos - 1) / (total - 1);
+  const hue = Math.round(145 - (145 - 6) * frac);
+  return { solid: `hsl(${hue} 62% 44%)`, soft: `hsl(${hue} 75% 50% / ${sa})`, text: `hsl(${hue} 58% ${tl}%)` };
 }
 
 interface Standing {
@@ -70,20 +93,27 @@ function computeStandings(record: RunRecord): Standing[] {
   });
 }
 
-function rankColor(position: number, total: number): string {
-  if (position < 0) return '#3a3a3a';
-  const pct = position / Math.max(1, total - 1);
-  // verde -> vermelho
-  const r = Math.round(80 + pct * 175);
-  const g = Math.round(180 - pct * 130);
-  return `rgb(${r},${g},80)`;
+function stageStatus(stage: StageRecord, totalComp: number): { text: string; cls: string } {
+  if (stage.error) return { text: 'falhou', cls: 'b-neutral' };
+  if (stage.judge?.inconclusive) return { text: 'inconclusivo', cls: 'b-neutral' };
+  if (stage.judge) return { text: 'julgado', cls: 'b-ok' };
+  if (!stage.spec) return { text: 'gerando cenário', cls: 'b-neutral' };
+  const liveActive = stage.live ? Object.values(stage.live).some((l) => !l.done) : false;
+  if (liveActive || stage.responses.length < totalComp) return { text: 'respondendo', cls: 'b-blue' };
+  return { text: 'aguardando juiz', cls: 'b-warn' };
 }
+
+const RING_R = 18;
+const RING_C = 2 * Math.PI * RING_R;
 
 export function RunView() {
   const { id } = useParams<{ id: string }>();
+  const theme = useTheme();
+  const dark = theme === 'dark';
   const [record, setRecord] = useState<RunRecord | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [openStages, setOpenStages] = useState<Set<number>>(new Set());
+  const [tab, setTab] = useState<'resumo' | 'etapas' | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -133,147 +163,187 @@ export function RunView() {
   );
   const standings = useMemo(() => (record ? computeStandings(record) : []), [record]);
 
-  if (error) return <div className="page"><div className="error-banner">{error}</div></div>;
-  if (!record) return <div className="page">Carregando…</div>;
+  if (error) return <div className="screen center-screen"><div className="banner banner-error">{error}</div></div>;
+  if (!record) return <div className="screen center-screen"><div className="loading-note">Carregando…</div></div>;
 
   const totalCompetitors = competitorIds.length;
+  const totalStages = record.config.stages;
+  const doneStages = record.stages.filter((s) => s.judge || s.error).length;
+  const hasRing = record.status === 'running' || record.status === 'finished';
+  const ringOffset = RING_C * (1 - (totalStages ? doneStages / totalStages : 0));
+
+  const hasScoreboard = record.stages.some((s) => s.judge);
+  const effectiveTab = tab ?? (record.status === 'running' ? 'etapas' : hasScoreboard ? 'resumo' : 'etapas');
+  const showScoreboard = hasScoreboard && effectiveTab === 'resumo';
+  const showStages = !hasScoreboard || effectiveTab === 'etapas';
 
   return (
-    <div className="page runview">
-      <header className="run-header">
-        <div>
-          <h1>Run <code>{record.id.slice(0, 8)}</code></h1>
-          <div className="muted">{record.config.theme}</div>
+    <div className="screen runview">
+      <div className="card run-header">
+        <div className="run-header-main">
+          <div className="run-title-row">
+            <h1 className="run-title">Run <code>{record.id.slice(0, 8)}</code></h1>
+            {record.status === 'running' && (
+              <span className="live-pill"><span className="dot" />AO VIVO</span>
+            )}
+          </div>
+          <div className="run-theme">{record.config.theme}</div>
         </div>
+
         <div className="run-stats">
-          <div><strong>Status:</strong> <span className={`status status-${record.status}`}>{record.status}</span></div>
-          <div><strong>Etapas:</strong> {record.stages.length}/{record.config.stages}</div>
-          <div><strong>Custo total:</strong> {formatUsd(record.totalCostUsd)}</div>
           <div>
-            <a href={`/v1/benchmark/runs/${record.id}`} target="_blank" rel="noreferrer">JSON</a>
-            {' · '}
-            <a href={`/v1/benchmark/runs/${record.id}/export.csv`}>CSV</a>
+            <div className="run-stat-label">Status</div>
+            <span className={`pill pill-${record.status}`}>{record.status}</span>
+          </div>
+
+          {hasRing && (
+            <div className="run-ring-wrap">
+              <svg className="run-ring" width="46" height="46" viewBox="0 0 46 46">
+                <circle className="run-ring-track" cx="23" cy="23" r={RING_R} fill="none" strokeWidth="5" />
+                <circle
+                  className="run-ring-fill"
+                  cx="23"
+                  cy="23"
+                  r={RING_R}
+                  fill="none"
+                  strokeWidth="5"
+                  strokeLinecap="round"
+                  strokeDasharray={RING_C.toFixed(2)}
+                  strokeDashoffset={ringOffset.toFixed(2)}
+                  transform="rotate(-90 23 23)"
+                />
+              </svg>
+              <div>
+                <div className="run-stat-label" style={{ marginBottom: 2 }}>Etapas</div>
+                <div className="run-stat-strong">{doneStages}/{totalStages}</div>
+              </div>
+            </div>
+          )}
+
+          <div style={{ textAlign: 'right' }}>
+            <div className="run-stat-label" style={{ marginBottom: 6 }}>Custo total</div>
+            <div className="run-cost">{formatUsd(record.totalCostUsd)}</div>
+            <div className="export-row">
+              <a className="export-btn" href={`/v1/benchmark/runs/${record.id}`} target="_blank" rel="noreferrer">JSON</a>
+              <a className="export-btn" href={`/v1/benchmark/runs/${record.id}/export.csv`}>CSV</a>
+            </div>
           </div>
         </div>
-      </header>
+      </div>
 
       {record.status === 'error' && record.error && (
-        <div className="error-banner">
-          <strong>A run falhou:</strong> {record.error}
-        </div>
+        <div className="banner banner-error"><strong>A run falhou:</strong> {record.error}</div>
       )}
       {record.status === 'aborted' && (
-        <div className="error-banner">
-          Run interrompida (o servidor reiniciou enquanto ela rodava).
+        <div className="banner banner-neutral">
+          Run interrompida — o servidor reiniciou enquanto ela rodava; por isso foi marcada como abortada.
         </div>
       )}
 
-      <section className="scoreboard">
-        <h2>Classificação final (1º ao último)</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>Col.</th>
-              <th>Modelo</th>
-              <th>Pontos</th>
-              <th>1ºs</th>
-              <th>Pos. média</th>
-              <th>Aceitável p/ o trabalho</th>
-              <th>Erros</th>
-            </tr>
-          </thead>
-          <tbody>
+      {hasScoreboard && (
+        <div className="run-tabs-bar">
+          <div className="tabs">
+            <button className={`tab ${effectiveTab === 'resumo' ? 'active' : ''}`} onClick={() => setTab('resumo')}>Resumo</button>
+            <button className={`tab ${effectiveTab === 'etapas' ? 'active' : ''}`} onClick={() => setTab('etapas')}>Etapas</button>
+          </div>
+        </div>
+      )}
+
+      {showScoreboard && (
+        <>
+          <div className="section-label">Classificação final (1º ao último)</div>
+          <div className="score-card">
+            <div className="score-head">
+              <div>Col.</div><div>Modelo</div><div>Pontos</div><div>1ºs</div><div>Pos. média</div><div>Aceitável p/ o trabalho</div><div>Erros</div>
+            </div>
             {standings.map((row, idx) => {
-              const acceptRate =
-                row.evaluated > 0 ? row.acceptable / row.evaluated : null;
+              const acceptRate = row.evaluated > 0 ? row.acceptable / row.evaluated : null;
               return (
-                <tr key={row.modelId}>
-                  <td>
-                    <span
-                      className="rank-badge"
-                      style={{ background: rankColor(idx, standings.length) }}
-                    >
+                <div className="score-row" key={row.modelId}>
+                  <div>
+                    <span className="place-badge" style={{ background: rankColor(idx + 1, standings.length, dark).solid }}>
                       {idx + 1}º
                     </span>
-                  </td>
-                  <td><code>{row.modelId}</code></td>
-                  <td><strong>{row.points}</strong></td>
-                  <td>{row.firstPlaces}</td>
-                  <td>{row.avgPos != null ? row.avgPos.toFixed(2) : '—'}</td>
-                  <td>
-                    {row.evaluated === 0 ? (
-                      <span className="muted">—</span>
-                    ) : (
-                      <span
-                        className={
-                          acceptRate != null && acceptRate >= 0.5
-                            ? 'verdict-ok'
-                            : 'verdict-bad'
-                        }
-                      >
-                        {row.acceptable}/{row.evaluated} etapas
-                        {acceptRate != null &&
-                          ` (${Math.round(acceptRate * 100)}%)`}
-                      </span>
-                    )}
-                  </td>
-                  <td>{row.errors > 0 ? <span className="error">{row.errors}</span> : 0}</td>
-                </tr>
+                  </div>
+                  <div className="score-model">{row.modelId}</div>
+                  <div className="score-points">{row.points}</div>
+                  <div className="score-num">{row.firstPlaces}</div>
+                  <div className="score-num">{row.avgPos != null ? row.avgPos.toFixed(2) : '—'}</div>
+                  <div className="score-accept" style={{ color: row.evaluated === 0 ? 'var(--text-3)' : acceptRate != null && acceptRate >= 0.5 ? 'var(--ok)' : 'var(--err)' }}>
+                    {row.evaluated === 0
+                      ? '—'
+                      : `${row.acceptable}/${row.evaluated}${acceptRate != null ? ` (${Math.round(acceptRate * 100)}%)` : ''}`}
+                  </div>
+                  <div className="score-num" style={{ color: row.errors > 0 ? 'var(--err)' : 'var(--text-2)' }}>{row.errors}</div>
+                </div>
               );
             })}
-          </tbody>
-        </table>
-        <p className="muted small">
-          Pontos: 1º lugar vale N−1, 2º vale N−2, … (somados em todas as etapas).
-          “Aceitável p/ o trabalho” = avaliação qualitativa paralela: a resposta
-          resolve a necessidade de forma correta e segura, mesmo não sendo a melhor.
-        </p>
-      </section>
-
-      <section className="heatmap">
-        <h2>Heatmap de posições</h2>
-        <div className="heatmap-grid">
-          <div className="heatmap-row heatmap-head">
-            <div className="heatmap-cell model-label"> </div>
-            {record.stages.map((s) => (
-              <div key={s.index} className="heatmap-cell">{s.index + 1}</div>
-            ))}
-          </div>
-          {competitorIds.map((modelId) => (
-            <div key={modelId} className="heatmap-row">
-              <div className="heatmap-cell model-label"><code>{modelId}</code></div>
-              {record.stages.map((s) => {
-                const ranking = s.judge?.rankedModelIds ?? [];
-                const pos = ranking.indexOf(modelId);
-                const label = pos >= 0 ? String(pos + 1) : '·';
-                return (
-                  <div
-                    key={s.index}
-                    className="heatmap-cell"
-                    style={{ background: pos >= 0 ? rankColor(pos, totalCompetitors) : undefined }}
-                    title={`Etapa ${s.index + 1}: ${label}`}
-                  >
-                    {label}
-                  </div>
-                );
-              })}
+            <div className="score-foot">
+              Pontos somam o esquema corrida (1º = N−1, … último = 0) de todas as etapas.
+              “Aceitável” = a resposta resolve a necessidade de forma correta e segura, mesmo sem ser a melhor.
             </div>
-          ))}
-        </div>
-      </section>
+          </div>
 
-      <section className="stages">
-        <h2>Etapas</h2>
-        {record.stages.map((stage) => (
-          <StageCard
-            key={stage.index}
-            stage={stage}
-            open={openStages.has(stage.index)}
-            onToggle={() => toggle(stage.index)}
-            totalCompetitors={totalCompetitors}
-          />
-        ))}
-      </section>
+          <div className="section-label">Heatmap de posições</div>
+          <div className="heat-legend">
+            <span>1º melhor</span>
+            <span className="bar" />
+            <span>último</span>
+            <span style={{ marginLeft: 4 }}>·&nbsp;· = não ranqueado</span>
+          </div>
+          <div className="heat-card">
+            <div className="heat-inner">
+              <div className="heat-row head">
+                <div className="heat-spacer" />
+                {record.stages.map((s) => (
+                  <div className="heat-col" key={s.index}>{s.index + 1}</div>
+                ))}
+              </div>
+              {competitorIds.map((modelId) => (
+                <div className="heat-row" key={modelId}>
+                  <div className="heat-label">{modelId}</div>
+                  {record.stages.map((s) => {
+                    const ranking = s.judge?.rankedModelIds ?? [];
+                    const pos = ranking.indexOf(modelId);
+                    if (pos < 0) {
+                      return (
+                        <div className="heat-cell-wrap" key={s.index} title={`Etapa ${s.index + 1}: não ranqueado`}>
+                          <span className="heat-cell" style={{ background: 'var(--subtle)', color: 'var(--faint)' }}>·</span>
+                        </div>
+                      );
+                    }
+                    const rc = rankColor(pos + 1, totalCompetitors, dark);
+                    return (
+                      <div className="heat-cell-wrap" key={s.index} title={`Etapa ${s.index + 1}: posição ${pos + 1}`}>
+                        <span className="heat-cell" style={{ background: rc.soft, color: rc.text }}>{pos + 1}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+
+      {showStages && (
+        <>
+          <div className="section-label">Etapas</div>
+          {record.stages.length === 0 && (
+            <div className="card" style={{ color: 'var(--text-3)' }}>Aguardando a primeira etapa…</div>
+          )}
+          {record.stages.map((stage) => (
+            <StageCard
+              key={stage.index}
+              stage={stage}
+              open={openStages.has(stage.index)}
+              onToggle={() => toggle(stage.index)}
+              totalCompetitors={totalCompetitors}
+              dark={dark}
+            />
+          ))}
+        </>
+      )}
     </div>
   );
 }
@@ -283,11 +353,13 @@ function StageCard({
   open,
   onToggle,
   totalCompetitors,
+  dark,
 }: {
   stage: StageRecord;
   open: boolean;
   onToggle: () => void;
   totalCompetitors: number;
+  dark: boolean;
 }) {
   const ranking = stage.judge?.rankedModelIds ?? [];
   const blindMap = stage.judge?.blindMap ?? {};
@@ -298,129 +370,136 @@ function StageCard({
   const verdictByModel: Record<string, { acceptable: boolean; justification: string }> = {};
   for (const v of ev?.verdicts ?? []) verdictByModel[v.modelId] = v;
 
+  const badge = stageStatus(stage, totalCompetitors);
+  const numLabel = String(stage.index + 1).padStart(2, '0');
+  const snippet = stage.error
+    ? stage.spec ? trunc(stage.spec.question, 76) : 'Etapa pulada'
+    : stage.spec ? trunc(stage.spec.question, 76) : 'Gerando cenário…';
+
+  const liveValues = stage.live ? Object.values(stage.live) : [];
+  const showLive = !stage.judge && !stage.error && liveValues.length > 0;
+  const liveActive = liveValues.some((l) => !l.done);
+
+  const sortedResponses = stage.responses
+    .slice()
+    .sort((a, b) => {
+      const pa = ranking.indexOf(a.modelId);
+      const pb = ranking.indexOf(b.modelId);
+      return (pa < 0 ? Infinity : pa) - (pb < 0 ? Infinity : pb);
+    });
+
   return (
     <div className="stage-card">
-      <div className="stage-head" onClick={onToggle}>
-        <div>
-          <strong>Etapa {stage.index + 1}</strong>
-          {stage.error ? (
-            <span className="muted"> — falhou (pulada)</span>
-          ) : stage.spec ? (
-            <span className="muted"> — {stage.spec.question.slice(0, 80)}</span>
-          ) : (
-            <span className="muted"> — gerando…</span>
-          )}
-        </div>
-        <div>
-          {stage.error && <span className="badge inconclusive">falhou</span>}
-          {!stage.error && stage.judge?.inconclusive && <span className="badge inconclusive">inconclusivo</span>}
-          {!stage.error && stage.judge && !stage.judge.inconclusive && <span className="badge ok">julgado</span>}
-          {!stage.error && !stage.judge && stage.responses.length > 0 && <span className="badge pending">aguardando juiz</span>}
-        </div>
-      </div>
+      <button className="stage-head" onClick={onToggle}>
+        <span className="stage-head-left">
+          <span className="stage-num">{numLabel}</span>
+          <span className="stage-snippet">{snippet}</span>
+        </span>
+        <span className="stage-head-right">
+          <span className={`stage-badge ${badge.cls}`}>{badge.text}</span>
+          <span className={`stage-caret ${open ? 'open' : ''}`}>▶</span>
+        </span>
+      </button>
+
       {open && (
         <div className="stage-body">
           {stage.error && (
-            <div className="error-banner">
-              <strong>Etapa pulada:</strong> {stage.error}
-              <div className="muted small">
-                A run continuou normalmente nas demais etapas.
-              </div>
+            <div className="banner banner-neutral" style={{ marginTop: 16, marginBottom: 0 }}>
+              <strong>Etapa pulada:</strong> {stage.error} A run seguiu normalmente nas demais etapas.
             </div>
           )}
+
+          {!stage.error && !stage.spec && (
+            <div className="inline-status">
+              <span className="spinner" />
+              Gerando cenário com o modelo gerador…
+            </div>
+          )}
+
           {stage.spec && (
             <>
-              <h4>Pergunta</h4>
-              <p>{stage.spec.question}</p>
-              <h4>Contexto de produto</h4>
-              <pre className="context">{stage.spec.productContext}</pre>
+              <div className="stage-block">
+                <div className="label-mini">Pergunta</div>
+                <div className="q-text">{stage.spec.question}</div>
+              </div>
+              <div className="stage-block">
+                <div className="label-mini">Contexto de produto</div>
+                <pre className="context-pre">{stage.spec.productContext}</pre>
+              </div>
             </>
           )}
 
           {ev && !ev.inconclusive && (
-            <div className="evaluation">
-              <h4>Avaliação qualitativa</h4>
-              <p>
-                <span className="badge ok">vencedor</span>{' '}
-                <code>{ev.bestModelId}</code>
-              </p>
-              <p className="winner-reasons">{ev.bestReasons}</p>
+            <div className="evaluation-box">
+              <div className="evaluation-head">
+                <span className="winner-pill">Vencedor</span>
+                <span className="evaluation-model">{ev.bestModelId}</span>
+              </div>
+              <p className="evaluation-reasons">{ev.bestReasons}</p>
             </div>
           )}
           {ev?.inconclusive && (
-            <p className="muted small">Avaliação qualitativa indisponível nesta etapa.</p>
-          )}
-
-          {stage.spec && <h4>Respostas</h4>}
-
-          {/* Live progress (durante a etapa) */}
-          {stage.live && Object.values(stage.live).filter((l) => !l.done).length > 0 && (
-            <div className="live-grid">
-              {Object.values(stage.live)
-                .filter((l) => !l.done)
-                .map((l) => (
-                  <div key={l.modelId} className="live-card">
-                    <div className="live-head">
-                      <code>{l.modelId}</code>
-                      <span className="live-stats">
-                        {l.chars} chars · {l.charsPerSec.toFixed(1)} ch/s
-                      </span>
-                    </div>
-                    <pre className="live-preview">{l.preview || '…'}</pre>
-                  </div>
-                ))}
+            <div className="stage-block label-mini" style={{ letterSpacing: 0, textTransform: 'none', color: 'var(--text-3)', fontWeight: 400, fontSize: 13 }}>
+              Avaliação qualitativa indisponível nesta etapa.
             </div>
           )}
 
-          {stage.responses.length === 0 && !stage.live && <div className="muted">Aguardando competidores…</div>}
-          {stage.responses
-            .slice()
-            .sort((a, b) => ranking.indexOf(a.modelId) - ranking.indexOf(b.modelId))
-            .map((r) => {
-              const pos = ranking.indexOf(r.modelId);
-              const letter = modelToLetter[r.modelId];
-              return (
-                <div key={r.modelId} className="response">
-                  <div className="response-head">
-                    <div>
+          {showLive && (
+            <div className="live-cards">
+              {liveValues.map((l) => (
+                <div className="live-card" key={l.modelId}>
+                  <div className="live-head">
+                    <span className="live-model">{l.modelId}</span>
+                    <span className="live-counter">{l.chars} chars · {l.charsPerSec.toFixed(1)} ch/s</span>
+                  </div>
+                  <div className="live-preview">
+                    {l.preview || '…'}
+                    {!l.done && <span className="live-caret" />}
+                  </div>
+                </div>
+              ))}
+              {!liveActive && (
+                <div className="judging-row">
+                  <span className="spinner spinner-muted" />
+                  Respostas enviadas ao juiz — aguardando ranking às cegas…
+                </div>
+              )}
+            </div>
+          )}
+
+          {stage.judge && sortedResponses.length > 0 && (
+            <div className="answers">
+              {sortedResponses.map((r) => {
+                const pos = ranking.indexOf(r.modelId);
+                const letter = modelToLetter[r.modelId];
+                const verdict = verdictByModel[r.modelId];
+                return (
+                  <div className="answer-card" key={r.modelId}>
+                    <div className="answer-head">
                       {pos >= 0 && (
-                        <span
-                          className="rank-badge"
-                          style={{ background: rankColor(pos, totalCompetitors) }}
-                        >
+                        <span className="rank-badge" style={{ background: rankColor(pos + 1, totalCompetitors, dark).solid }}>
                           #{pos + 1}
                         </span>
                       )}
-                      <code>{r.modelId}</code>
-                      {letter && <span className="muted"> (era {letter})</span>}
-                      {verdictByModel[r.modelId] && (
-                        <span
-                          className={
-                            verdictByModel[r.modelId].acceptable
-                              ? 'badge verdict-ok'
-                              : 'badge verdict-bad'
-                          }
-                        >
-                          {verdictByModel[r.modelId].acceptable
-                            ? 'aceitável p/ o trabalho'
-                            : 'não aceitável'}
+                      <span className="answer-model">{r.modelId}</span>
+                      {letter && <span className="answer-blind">(era {letter})</span>}
+                      {verdict && (
+                        <span className={`verdict-pill ${verdict.acceptable ? 'ok' : 'bad'}`}>
+                          {verdict.acceptable ? 'aceitável p/ o trabalho' : 'não aceitável'}
                         </span>
                       )}
                     </div>
-                    <div className="response-meta muted">
+                    <div className="answer-meta">
                       {formatMs(r.latencyMs)} · {r.tokensIn}→{r.tokensOut} tok · {r.text.length} chars · {formatUsd(r.costUsd)}
-                      {r.status === 'error' && <span className="error"> · ERRO: {r.errorMsg}</span>}
+                      {r.status === 'error' && <span className="err"> · ERRO: {r.errorMsg}</span>}
                     </div>
+                    {verdict?.justification && <div className="answer-note">{verdict.justification}</div>}
+                    {r.status === 'ok' && <pre className="answer-text">{r.text}</pre>}
                   </div>
-                  {verdictByModel[r.modelId]?.justification && (
-                    <p className="verdict-justification">
-                      {verdictByModel[r.modelId].justification}
-                    </p>
-                  )}
-                  {r.status === 'ok' && <pre className="response-text">{r.text}</pre>}
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
     </div>
