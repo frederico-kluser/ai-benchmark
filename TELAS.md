@@ -7,6 +7,12 @@ um todo (arquitetura, API, como rodar), veja o [`README.md`](./README.md).
 A interface é uma **SPA em React + React Router** (`web/`), com **tema escuro** e CSS próprio
 (`web/src/styles.css`). São **4 telas** mais um *gate* de chave e dois componentes reutilizáveis.
 
+> **Nota (modo client-side / deploy estático):** no deploy estático (Vercel) **não há backend** — o
+> pipeline roda no próprio navegador (`web/src/engine/`). As telas são as mesmas, mas: o tempo real
+> vem de um **barramento em memória** (não SSE), o histórico fica no **IndexedDB** do navegador, e a
+> key vai **direto ao OpenRouter** (não a um backend). Onde este guia disser "backend/servidor/SSE",
+> leia "engine na aba" no modo client-side.
+
 ---
 
 ## Sumário
