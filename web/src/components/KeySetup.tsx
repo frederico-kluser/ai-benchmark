@@ -2,11 +2,6 @@ import { useEffect, useState } from 'react';
 import type { ValidateKeyResponse } from '../api';
 import { getStoredKey, setStoredKey, validateKey } from '../api';
 
-interface Props {
-  onSaved?: () => void;
-  compact?: boolean;
-}
-
 type Status = 'idle' | 'validating' | 'valid' | 'invalid';
 
 function usd(v: number): string {
@@ -14,20 +9,18 @@ function usd(v: number): string {
 }
 
 function describeKey(res: ValidateKeyResponse): string {
-  const parts: string[] = ['Key válida'];
+  const parts: string[] = ['✓ Key válida'];
   if (res.label) parts.push(`(${res.label})`);
   if (typeof res.usageUsd === 'number') {
     const limit =
-      res.limitUsd === null || res.limitUsd === undefined
-        ? 'sem limite'
-        : `limite ${usd(res.limitUsd)}`;
+      res.limitUsd === null || res.limitUsd === undefined ? 'sem limite' : `limite ${usd(res.limitUsd)}`;
     parts.push(`— uso ${usd(res.usageUsd)} / ${limit}`);
   }
   if (res.isFreeTier) parts.push('· tier gratuito');
   return parts.join(' ') + '.';
 }
 
-export function KeySetup({ onSaved, compact }: Props) {
+export function KeySetup({ onSaved }: { onSaved?: () => void }) {
   const [key, setKey] = useState(getStoredKey());
   const [status, setStatus] = useState<Status>(getStoredKey() ? 'valid' : 'idle');
   const [message, setMessage] = useState<string | null>(null);
@@ -55,7 +48,7 @@ export function KeySetup({ onSaved, compact }: Props) {
       } else {
         setStoredKey('');
         setStatus('invalid');
-        setMessage(res.error ?? 'Key invalida.');
+        setMessage(res.error ?? 'Key inválida.');
       }
     } catch (err) {
       setStatus('invalid');
@@ -70,24 +63,22 @@ export function KeySetup({ onSaved, compact }: Props) {
     setMessage(null);
   }
 
-  return (
-    <div className={`key-setup ${compact ? 'compact' : ''}`}>
-      {!compact && (
-        <>
-          <h1>OpenRouter API Key</h1>
-          <p className="muted">
-            Cole sua key do{' '}
-            <a href="https://openrouter.ai/keys" target="_blank" rel="noreferrer">
-              OpenRouter
-            </a>
-            . Ela fica salva no <code>localStorage</code> do seu navegador e e enviada ao backend
-            apenas em requests desta tela.
-          </p>
-        </>
-      )}
+  const statusClass = status === 'valid' ? 'ok' : status === 'invalid' ? 'err' : 'neutral';
 
-      <div className="key-input-row">
+  return (
+    <div className="card settings-card">
+      <div className="settings-title">OpenRouter API Key</div>
+      <div className="settings-desc">
+        Cole sua key do OpenRouter. Ela fica salva no <code>localStorage</code> do seu navegador e é
+        enviada ao backend apenas nas requisições que precisam dela.{' '}
+        <a href="https://openrouter.ai/keys" target="_blank" rel="noreferrer">
+          openrouter.ai/keys&nbsp;↗
+        </a>
+      </div>
+
+      <div className="key-row">
         <input
+          className="input input-mono"
           type="password"
           autoComplete="off"
           placeholder="sk-or-v1-..."
@@ -104,32 +95,20 @@ export function KeySetup({ onSaved, compact }: Props) {
         />
         <button
           type="button"
-          className="primary"
+          className="key-validate"
           disabled={status === 'validating'}
           onClick={() => handleValidate()}
         >
           {status === 'validating' ? 'Validando…' : 'Validar e salvar'}
         </button>
         {status === 'valid' && (
-          <button type="button" className="ghost" onClick={handleClear}>
+          <button type="button" className="btn-secondary" onClick={handleClear}>
             Remover
           </button>
         )}
       </div>
 
-      {message && (
-        <div
-          className={
-            status === 'valid' ? 'key-status ok' : status === 'invalid' ? 'key-status err' : 'key-status'
-          }
-        >
-          {message}
-        </div>
-      )}
-
-      {!compact && status === 'valid' && (
-        <p className="muted small">Tudo certo — você já pode criar uma nova run.</p>
-      )}
+      {message && <div className={`key-status ${statusClass}`}>{message}</div>}
     </div>
   );
 }
@@ -138,7 +117,11 @@ export function KeyGate({ children }: { children: React.ReactNode }) {
   const [hasKey, setHasKey] = useState(!!getStoredKey());
   if (!hasKey) {
     return (
-      <div className="page">
+      <div className="screen">
+        <h1 className="page-title">Conecte sua chave</h1>
+        <p className="page-sub">
+          Para criar uma run, cole sua chave da OpenRouter. Ela fica salva só no seu navegador.
+        </p>
         <KeySetup onSaved={() => setHasKey(true)} />
       </div>
     );
