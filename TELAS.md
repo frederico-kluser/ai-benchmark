@@ -144,55 +144,53 @@ conteúdo (a Nova Run) imediatamente.
 
 ## Tela: Nova Run (`/new`)
 
-Formulário que monta a configuração da run (`web/src/pages/NewRun.tsx`). Vem **pré-preenchido**
-com defaults sensatos — todos editáveis.
+**Assistente em 5 passos** que monta a configuração da run (`web/src/pages/NewRun.tsx`). Em vez de
+mostrar tudo de uma vez, guia o usuário por etapas — cada uma com **texto explicando** o que faz —
+até o disparo. Tudo vem **pré-preenchido** com defaults sensatos; o passo só libera o próximo quando
+está completo. Largura focada (~760px, coluna única).
 
 ```
 Nova Run
+Monte seu benchmark em 5 passos. Cada etapa explica o que faz — no fim, é só disparar os robôs.
 
-Tema
-┌─────────────────────────────────────────────────────────────┐
-│ Assistente virtual de uma clínica de diagnósticos que…      │  ← textarea (3 linhas)
-└─────────────────────────────────────────────────────────────┘
+①Objetivo ─ ②Tema ─ ③Participantes ─ ④Avaliação ─ ⑤Revisar      ← trilha clicável
 
-Etapas   Concorrência   Timeout (ms)   Max output tokens
-[  5  ]  [    8     ]   [  60000   ]   [     500      ]        ← grade de 4 colunas
+┌─ Passo 1 de 5 ─────────────────────────────────────────────┐
+│ O que você quer descobrir?                                  │
+│ [⚖️ Comparar]  [🧬 Testar prompts]  [📈 Treinar prompt]      │  ← cartões escolhíveis
+│ Como roda: Gerador → Competidores → Juiz   (tutorial ↗)     │
+└────────────────────────────────────────────────────────────┘
 
-Competidores — 2 ou mais modelos
-[ openai/gpt-5-mini × ] [ openai/gpt-5-nano × ] …  + busca
-
-Gerador de cenários — exatamente 1 modelo
-[ deepseek/deepseek-v4-pro × ]  + busca
-
-Juiz — exatamente 1 modelo
-[ moonshotai/kimi-k2.6 × ]  + busca
-
-Gerador e juiz usam um único modelo cada. Um mesmo modelo não pode ocupar dois papéis.
-
-[ Iniciar benchmark ]
+                              [ ← Voltar ]            [ Continuar → ]
 ```
 
-**Campos:**
+**Os 5 passos** (`STEPS`):
 
-| Campo | Controle | Faixa / regra | Default |
+| # | Passo | Conteúdo | Regra para avançar |
 |---|---|---|---|
-| **Tema** | `textarea` (3 linhas) | obrigatório | um cenário de clínica de exames |
-| **Etapas** | número | 1–50 | 5 |
-| **Concorrência** | número | 1–32 | 8 |
-| **Timeout (ms)** | número (passo 1000) | 1.000–300.000 | 60.000 |
-| **Max output tokens** | número (passo 50) | 50–16.000 | 500 |
-| **Competidores** | ModelSelector (múltiplo) | **≥ 2**, distintos | 4 modelos GPT-5 |
-| **Gerador** | ModelSelector (único) | exatamente 1 | `deepseek/deepseek-v4-pro` |
-| **Juiz** | ModelSelector (único) | exatamente 1 | `moonshotai/kimi-k2.6` |
+| 1 | **Objetivo** | 3 cartões de modo (Comparar / Variação / Treino) + diagrama do pipeline + link p/ tutorial | sempre válido |
+| 2 | **Tema** | `textarea` do tema + presets; steppers **Etapas** e **Max tokens** (+ **Iterações** no Treino) | tema preenchido |
+| 3 | **Participantes** | *compare:* Competidores (≥2). *variação/treino:* Modelo sob teste + prompt base + toggle de otimização + técnicas/variantes manuais | ≥2 competidores **ou** 1 modelo + ≥2 variantes |
+| 4 | **Avaliação** | Gerador (1) + Juiz (1); toggle "Juiz em 2 ordens" (modos de 1 LLM); "Ajustes avançados" (concorrência, timeout) | 1 gerador + 1 juiz |
+| 5 | **Revisar** | Resumo (modo, nº de participantes, etapas, iterações, gerador, juiz, nº de chamadas) + **custo estimado** + tema | sempre válido |
+
+**Defaults:** Etapas 5 · Max tokens 500 · Concorrência 8 · Timeout 60.000 ms · Iterações 3 ·
+Competidores: 4 modelos GPT-5 · Gerador `deepseek/deepseek-v4-pro` · Juiz `moonshotai/kimi-k2.6`.
+Faixas (steppers): Etapas 1–50, Max tokens 50–16.000 (passo 50), Concorrência 1–32, Timeout
+1.000–300.000 (passo 1000), Iterações 2–10.
+
+**Navegação:** rodapé com **← Voltar** e **Continuar →**; no último passo o botão vira
+**🚀 Disparar os robôs** (ou *"Disparar o treino"*). A **trilha** no topo mostra o progresso
+(número → ✓ quando concluído) e permite pular para qualquer passo já alcançável; clicar num passo
+à frente que dependa de algo incompleto leva ao **primeiro passo pendente**, mostrando o que falta.
+Validação por passo aparece num banner vermelho acima do rodapé; `Enter` fora do último passo
+apenas avança o assistente (não dispara).
 
 **Exclusão mútua entre papéis:** cada seletor recebe `excludeIds` com os modelos já usados nos
-outros papéis. Na prática, um modelo escolhido como juiz **some** das opções de competidor e
-gerador (e vice-versa) — refletindo a regra "um modelo, um papel".
-
-**Validação:** ao enviar, o front checa tema preenchido, ≥ 2 competidores, 1 gerador e 1 juiz;
-erros aparecem num banner vermelho. O backend revalida tudo (Zod). Durante o envio o botão vira
-*"Iniciando…"*. Em sucesso, **navega para `/runs/:id`** (a Visão da Run), onde o acompanhamento
-ao vivo começa.
+outros papéis. Um modelo escolhido como juiz **some** das opções de competidor e gerador (e
+vice-versa) — a regra "um modelo, um papel". No passo 5, o botão é desabilitado durante o envio
+(*"Disparando…"*); o backend revalida tudo (Zod) e, em sucesso, **navega para `/runs/:id`** (ou
+`/training/:sessionId` no Treino), onde o acompanhamento ao vivo começa.
 
 ---
 

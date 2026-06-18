@@ -1,18 +1,23 @@
 import { EventEmitter } from 'node:events';
-import type { RunEvent } from './types.js';
+import type { RunEvent, SessionEvent } from './types.js';
 
-class RunBus extends EventEmitter {}
+class Bus extends EventEmitter {}
 
-const buses = new Map<string, RunBus>();
+const runBuses = new Map<string, Bus>();
+const sessionBuses = new Map<string, Bus>();
 
-export function getBus(runId: string): RunBus {
-  let bus = buses.get(runId);
+function getOrCreate(map: Map<string, Bus>, key: string): Bus {
+  let bus = map.get(key);
   if (!bus) {
-    bus = new RunBus();
+    bus = new Bus();
     bus.setMaxListeners(50);
-    buses.set(runId, bus);
+    map.set(key, bus);
   }
   return bus;
+}
+
+export function getBus(runId: string): Bus {
+  return getOrCreate(runBuses, runId);
 }
 
 export function emitEvent(event: RunEvent): void {
@@ -20,12 +25,37 @@ export function emitEvent(event: RunEvent): void {
   bus.emit('event', event);
   if (event.type === 'run.finished' || event.type === 'run.error') {
     // mantemos o bus por um curto periodo para SSE consumir o ultimo evento
-    setTimeout(() => buses.delete(event.runId), 5_000);
+    setTimeout(() => runBuses.delete(event.runId), 5_000);
   }
 }
 
 export function subscribe(runId: string, listener: (e: RunEvent) => void): () => void {
   const bus = getBus(runId);
+  bus.on('event', listener);
+  return () => bus.off('event', listener);
+}
+
+// ---------------------------------------------------------------------------
+// Barramento de sessao de treino (encadeia varias runs sob um sessionId)
+// ---------------------------------------------------------------------------
+
+export function getSessionBus(sessionId: string): Bus {
+  return getOrCreate(sessionBuses, sessionId);
+}
+
+export function emitSessionEvent(event: SessionEvent): void {
+  const bus = getSessionBus(event.sessionId);
+  bus.emit('event', event);
+  if (event.type === 'session.finished' || event.type === 'session.error') {
+    setTimeout(() => sessionBuses.delete(event.sessionId), 5_000);
+  }
+}
+
+export function subscribeSession(
+  sessionId: string,
+  listener: (e: SessionEvent) => void,
+): () => void {
+  const bus = getSessionBus(sessionId);
   bus.on('event', listener);
   return () => bus.off('event', listener);
 }

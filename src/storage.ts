@@ -1,9 +1,11 @@
 import { promises as fs } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
-import type { RunRecord } from './types.js';
+import { normalizeRunRecord } from './normalize.js';
+import type { RunMode, RunRecord, SessionRecord } from './types.js';
 
 const DATA_DIR = path.resolve(process.cwd(), 'data', 'runs');
+const SESSIONS_DIR = path.resolve(process.cwd(), 'data', 'sessions');
 
 async function ensureDir(): Promise<void> {
   await fs.mkdir(DATA_DIR, { recursive: true });
@@ -55,7 +57,7 @@ export async function saveRun(record: RunRecord): Promise<void> {
 export async function loadRun(runId: string): Promise<RunRecord | null> {
   try {
     const data = await fs.readFile(fileFor(runId), 'utf-8');
-    return JSON.parse(data) as RunRecord;
+    return normalizeRunRecord(JSON.parse(data));
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
     throw err;
@@ -65,12 +67,18 @@ export async function loadRun(runId: string): Promise<RunRecord | null> {
 export interface RunSummary {
   id: string;
   status: RunRecord['status'];
+  mode: RunMode;
   theme: string;
   stages: number;
+  /** Numero de contestants (modelos no compare; variantes no variation/training). */
+  contestants: number;
+  /** Alias retrocompativel de `contestants`. */
   competitors: number;
   totalCostUsd: number;
   startedAt: string;
   finishedAt?: string;
+  sessionId?: string;
+  iteration?: number;
 }
 
 export async function listRuns(): Promise<RunSummary[]> {
@@ -81,16 +89,20 @@ export async function listRuns(): Promise<RunSummary[]> {
     if (!f.endsWith('.json')) continue;
     try {
       const data = await fs.readFile(path.join(DATA_DIR, f), 'utf-8');
-      const r = JSON.parse(data) as RunRecord;
+      const r = normalizeRunRecord(JSON.parse(data));
       summaries.push({
         id: r.id,
         status: r.status,
+        mode: r.mode,
         theme: r.config.theme,
         stages: r.config.stages,
-        competitors: r.config.competitorModelIds.length,
+        contestants: r.contestants.length,
+        competitors: r.contestants.length,
         totalCostUsd: r.totalCostUsd,
         startedAt: r.startedAt,
         finishedAt: r.finishedAt,
+        sessionId: r.sessionId,
+        iteration: r.iteration,
       });
     } catch {
       // ignora arquivo corrompido
@@ -112,4 +124,95 @@ export async function markOrphansAsAborted(): Promise<void> {
       }
     }
   }
+  // Sessoes de treino orfas (processo reiniciou no meio): tambem abortadas.
+  const sessions = await listSessions();
+  for (const s of sessions) {
+    if (s.status === 'running') {
+      const rec = await loadSession(s.id);
+      if (rec && rec.status === 'running') {
+        rec.status = 'aborted';
+        rec.finishedAt = new Date().toISOString();
+        await saveSession(rec);
+      }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Sessoes de treino (data/sessions/<id>.json)
+// ---------------------------------------------------------------------------
+
+async function ensureSessionsDir(): Promise<void> {
+  await fs.mkdir(SESSIONS_DIR, { recursive: true });
+}
+
+function sessionFileFor(id: string): string {
+  return path.join(SESSIONS_DIR, `${id}.json`);
+}
+
+const sessionSaveQueues = new Map<string, Promise<unknown>>();
+
+export async function saveSession(record: SessionRecord): Promise<void> {
+  await ensureSessionsDir();
+  const target = sessionFileFor(record.id);
+  const data = JSON.stringify(record, null, 2);
+  const prev = sessionSaveQueues.get(record.id) ?? Promise.resolve();
+  const job = prev.then(
+    () => writeAtomic(target, data),
+    () => writeAtomic(target, data),
+  );
+  sessionSaveQueues.set(record.id, job);
+  try {
+    await job;
+  } finally {
+    if (sessionSaveQueues.get(record.id) === job) sessionSaveQueues.delete(record.id);
+  }
+}
+
+export async function loadSession(id: string): Promise<SessionRecord | null> {
+  try {
+    const data = await fs.readFile(sessionFileFor(id), 'utf-8');
+    return JSON.parse(data) as SessionRecord;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw err;
+  }
+}
+
+export interface SessionSummary {
+  id: string;
+  status: SessionRecord['status'];
+  theme: string;
+  iterationsPlanned: number;
+  iterationsDone: number;
+  totalCostUsd: number;
+  startedAt: string;
+  finishedAt?: string;
+}
+
+export async function listSessions(): Promise<SessionSummary[]> {
+  await ensureSessionsDir();
+  const files = await fs.readdir(SESSIONS_DIR);
+  const summaries: SessionSummary[] = [];
+  for (const f of files) {
+    if (!f.endsWith('.json')) continue;
+    try {
+      const data = await fs.readFile(path.join(SESSIONS_DIR, f), 'utf-8');
+      const r = JSON.parse(data) as SessionRecord;
+      summaries.push({
+        id: r.id,
+        status: r.status,
+        theme: r.config.theme,
+        iterationsPlanned: r.config.iterations,
+        iterationsDone: r.bestPromptByIteration?.length ?? 0,
+        totalCostUsd: r.totalCostUsd,
+        startedAt: r.startedAt,
+        finishedAt: r.finishedAt,
+      });
+    } catch {
+      // ignora arquivo corrompido
+    }
+  }
+  summaries.sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+  return summaries;
 }

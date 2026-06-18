@@ -1,13 +1,15 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter, Routes, Route, NavLink, useNavigate, Navigate } from 'react-router-dom';
 import { NewRun } from './pages/NewRun';
 import { RunView } from './pages/RunView';
 import { RunsList } from './pages/RunsList';
+import { TrainingView } from './pages/TrainingView';
 import { KeyGate } from './components/KeySetup';
 import { SettingsPage } from './pages/Settings';
 import { HelpModal } from './components/HelpModal';
 import { ThemeContext, type Theme, getStoredTheme, persistTheme, applyTheme } from './theme';
+import { HelpContext, markFirstOpen, type HelpTutorial } from './help';
 import './styles.css';
 
 function SunIcon() {
@@ -30,17 +32,23 @@ function MoonIcon() {
 function Layout({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
   const [theme, setTheme] = useState<Theme>(getStoredTheme);
-  const [helpOpen, setHelpOpen] = useState(false);
+  const [help, setHelp] = useState<HelpTutorial | null>(null);
 
   useEffect(() => {
     applyTheme(theme);
     persistTheme(theme);
   }, [theme]);
 
+  useEffect(() => {
+    markFirstOpen();
+  }, []);
+
+  const helpApi = useMemo(() => ({ open: (t: HelpTutorial) => setHelp(t) }), []);
   const isDark = theme === 'dark';
 
   return (
     <ThemeContext.Provider value={theme}>
+      <HelpContext.Provider value={helpApi}>
       <div className="app">
         <nav className="nav">
           <div className="nav-inner">
@@ -55,7 +63,7 @@ function Layout({ children }: { children: React.ReactNode }) {
               <span className="nav-divider" />
               <button
                 className="icon-btn"
-                onClick={() => setHelpOpen(true)}
+                onClick={() => setHelp('compare')}
                 title="Como funciona"
                 aria-label="Como funciona"
               >
@@ -73,8 +81,9 @@ function Layout({ children }: { children: React.ReactNode }) {
           </div>
         </nav>
         <main className="main">{children}</main>
-        {helpOpen && <HelpModal onClose={() => setHelpOpen(false)} />}
+        {help && <HelpModal tutorial={help} onClose={() => setHelp(null)} />}
       </div>
+      </HelpContext.Provider>
     </ThemeContext.Provider>
   );
 }
@@ -89,6 +98,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
           <Route path="/new" element={<KeyGate><NewRun /></KeyGate>} />
           <Route path="/runs" element={<RunsList />} />
           <Route path="/runs/:id" element={<RunView />} />
+          <Route path="/training/:sessionId" element={<TrainingView />} />
         </Routes>
       </Layout>
     </BrowserRouter>

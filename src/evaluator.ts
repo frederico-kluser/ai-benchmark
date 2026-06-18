@@ -77,7 +77,7 @@ export async function evaluateStage(params: EvaluateStageParams): Promise<StageE
   const failedVerdicts: EvaluationVerdict[] = responses
     .filter((r) => !(r.status === 'ok' && r.text.trim().length > 0))
     .map((r) => ({
-      modelId: r.modelId,
+      contestantId: r.contestantId,
       acceptable: false,
       justification: r.errorMsg
         ? `Resposta com erro: ${r.errorMsg}`
@@ -86,7 +86,7 @@ export async function evaluateStage(params: EvaluateStageParams): Promise<StageE
 
   if (okResponses.length === 0) {
     return {
-      bestModelId: '',
+      bestContestantId: '',
       bestReasons: '',
       verdicts: failedVerdicts,
       blindMap: {},
@@ -100,7 +100,7 @@ export async function evaluateStage(params: EvaluateStageParams): Promise<StageE
   const blocks: string[] = [];
   shuffled.forEach((r, idx) => {
     const letter = letterFor(idx);
-    blindMap[letter] = r.modelId;
+    blindMap[letter] = r.contestantId;
     blocks.push(`### Resposta ${letter}\n${r.text}`);
   });
 
@@ -144,32 +144,32 @@ Devolva o JSON com "best", "bestReasons" e "verdicts" para TODAS as letras: ${JS
   }
 
   const bestLetter = validated.data.best.trim().toUpperCase();
-  const bestModelId = blindMap[bestLetter] ?? Object.values(blindMap)[0] ?? '';
+  const bestContestantId = blindMap[bestLetter] ?? Object.values(blindMap)[0] ?? '';
 
   const seen = new Set<string>();
   const verdicts: EvaluationVerdict[] = [];
   for (const v of validated.data.verdicts) {
     const letter = v.label.trim().toUpperCase();
-    const modelId = blindMap[letter];
-    if (!modelId || seen.has(modelId)) continue;
-    seen.add(modelId);
-    verdicts.push({ modelId, acceptable: v.acceptable, justification: v.justification });
+    const contestantId = blindMap[letter];
+    if (!contestantId || seen.has(contestantId)) continue;
+    seen.add(contestantId);
+    verdicts.push({ contestantId, acceptable: v.acceptable, justification: v.justification });
   }
   // garante veredito para toda resposta OK que o modelo tenha omitido
   for (const letter of Object.keys(blindMap)) {
-    const modelId = blindMap[letter];
-    if (!seen.has(modelId)) {
-      seen.add(modelId);
+    const contestantId = blindMap[letter];
+    if (!seen.has(contestantId)) {
+      seen.add(contestantId);
       verdicts.push({
-        modelId,
-        acceptable: modelId === bestModelId,
+        contestantId,
+        acceptable: contestantId === bestContestantId,
         justification: 'Sem veredito explicito do avaliador.',
       });
     }
   }
 
   return {
-    bestModelId,
+    bestContestantId,
     bestReasons: validated.data.bestReasons,
     verdicts: [...verdicts, ...failedVerdicts],
     blindMap,
