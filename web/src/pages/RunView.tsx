@@ -19,6 +19,44 @@ function trunc(s: string, n: number): string {
   return s.length > n ? s.slice(0, n) + '…' : s;
 }
 
+// Export client-side (sem backend): gera o blob e dispara o download.
+function download(filename: string, text: string, type: string): void {
+  const blob = new Blob([text], { type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function csvEscape(value: unknown): string {
+  const s = value === undefined || value === null ? '' : String(value);
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function runToCsv(record: RunRecord, byId: Map<string, Contestant>): string {
+  const rows: string[] = [];
+  rows.push(
+    ['runId', 'sessionId', 'iteration', 'stageIndex', 'question', 'contestantId', 'label', 'technique', 'modelId', 'status', 'latencyMs', 'tokensIn', 'tokensOut', 'costUsd', 'rankPosition', 'errorMsg', 'text']
+      .map(csvEscape)
+      .join(','),
+  );
+  for (const stage of record.stages) {
+    const ranking = stage.judge?.rankedContestantIds ?? [];
+    for (const r of stage.responses) {
+      const rankPosition = ranking.indexOf(r.contestantId);
+      const c = byId.get(r.contestantId);
+      rows.push(
+        [record.id, record.sessionId ?? '', record.iteration ?? '', stage.index, stage.spec?.question ?? '', r.contestantId, c?.label ?? '', c?.techniqueId ?? '', r.modelId, r.status, r.latencyMs, r.tokensIn, r.tokensOut, r.costUsd, rankPosition >= 0 ? rankPosition + 1 : '', r.errorMsg ?? '', r.text]
+          .map(csvEscape)
+          .join(','),
+      );
+    }
+  }
+  return rows.join('\n');
+}
+
 interface RankColor {
   solid: string;
   soft: string;
@@ -238,8 +276,8 @@ export function RunView() {
             <div className="run-stat-label" style={{ marginBottom: 6 }}>Custo total</div>
             <div className="run-cost">{formatUsd(record.totalCostUsd)}</div>
             <div className="export-row">
-              <a className="export-btn" href={`/v1/benchmark/runs/${record.id}`} target="_blank" rel="noreferrer">JSON</a>
-              <a className="export-btn" href={`/v1/benchmark/runs/${record.id}/export.csv`}>CSV</a>
+              <button type="button" className="export-btn" onClick={() => download(`run-${record.id}.json`, JSON.stringify(record, null, 2), 'application/json')}>JSON</button>
+              <button type="button" className="export-btn" onClick={() => download(`run-${record.id}.csv`, runToCsv(record, byId), 'text/csv;charset=utf-8')}>CSV</button>
             </div>
           </div>
         </div>
