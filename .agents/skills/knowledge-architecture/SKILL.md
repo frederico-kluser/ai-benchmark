@@ -2,7 +2,7 @@
 name: knowledge-architecture
 description: Mapa do repositório ai-benchmark — layout do monorepo, separação backend/frontend, fluxo de dados ponta a ponta e comandos exatos de build/run. Use no início de qualquer tarefa para saber ONDE mora cada coisa antes de varrer o codebase, ou quando precisar entender como as peças se conectam.
 metadata:
-  version: 0.1.0
+  version: 0.2.0
   type: knowledge
 ---
 # Arquitetura — ai-benchmark
@@ -59,3 +59,18 @@ data/           runtime: runs/ e sessions/ (IGNORADO no git; ver /data/ no .giti
 `server.ts` resolve `web/dist` por `__dirname` (relativo ao arquivo). Mas **dados runtime e JSON
 de `src/data/` são lidos por `process.cwd()`** (ver `storage.ts` e `lgpd.ts`) — porque `tsc` não
 copia `.json` para `dist/`. Siga a convenção `process.cwd()` para ler qualquer arquivo de dados.
+
+## Deploy / serverless (gotcha)
+- **Produção = SPA estática client-side** (`vercel.json`: build `npm run web:build` → `web/dist`,
+  rewrite `/(.*) → /index.html`). O backend `src/` é só para `npm run dev` / self-host persistente.
+- **NUNCA publique `src/` (Express) em serverless/Vercel.** `storage.ts` persiste runs no filesystem
+  (`process.cwd()/data/runs/*.json`); no serverless o FS é efêmero, isolado por invocação e read-only
+  fora de `/tmp` → a run criada no `POST` some no `GET` e `GET /v1/benchmark/runs/:id` devolve
+  `404 {"error":"Run nao encontrada"}`. É o mesmo motivo de o backend não rodar lá (não é só pela run
+  longa: até **ler** uma run falha).
+- **Detectar deploy errado:** na SPA, `GET /health` cai no rewrite e devolve `index.html` (HTML). Se
+  devolver `{"status":"ok","service":"benchmark-arena"}` (= `server.ts:14`), há um deploy ANTIGO do
+  backend preso em produção — force um novo deploy estático (não é bug de código).
+- **Na SPA, runs vivem no IndexedDB do navegador** que as criou: não são compartilháveis entre
+  dispositivos/navegadores (link de `/runs/:id` em outro navegador → `Run nao encontrada` em `api.ts`).
+  Para compartilhar, trocaria `storage.ts`/engine por datastore compartilhado (Vercel KV/Postgres/Blob).

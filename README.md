@@ -391,7 +391,16 @@ navegador chama o OpenRouter **direto** (CORS liberado), orquestra os runs na pr
 no **IndexedDB** — sem backend stateful. Isso permite hospedar a SPA **estática** (ex.: Vercel) via
 [`vercel.json`](./vercel.json) (build `npm run web:build`, output `web/dist`, SPA rewrite). Por que
 isso importa: serverless é efêmero/stateless, então um servidor de run de minutos não roda lá; no
-client-side a aba é o "processo vivo". **Trade-offs:** a aba precisa ficar aberta durante a run, e o
+client-side a aba é o "processo vivo".
+
+> ⚠️ **Não publique o backend `src/` na Vercel.** Ele persiste runs no filesystem (`data/runs/*.json`
+> via `storage.ts`), que no serverless é efêmero/read-only e não-compartilhado entre invocações: o
+> deploy *parece* ok (serve a SPA e responde `/health`), mas `GET /v1/benchmark/runs/:id` devolve
+> `Run nao encontrada`. **Sintoma de deploy errado:** `/health` responde JSON
+> (`{"status":"ok",…}`) em vez do `index.html` da SPA — é um deploy antigo do backend preso em
+> produção; force um novo deploy estático.
+
+**Trade-offs:** a aba precisa ficar aberta durante a run, e o
 histórico é por navegador/dispositivo. O backend `src/` continua disponível como alternativa (host de
 processo persistente: Railway/Render/Fly), mas **não é usado** pela SPA estática.
 
