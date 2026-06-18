@@ -10,8 +10,14 @@ metadata:
 React 18 + Vite + TypeScript. Roteamento com `react-router-dom`. Sem testes, sem lib de UI.
 Dev em `:5173` com proxy de `/v1` e `/health` → `:3001` (`vite.config.ts`).
 
+## Engine client-side (`web/src/engine/`)
+- O pipeline roda **no navegador** (port de `src/`): `api.ts` delega ao engine — `createRun`/
+  `createSession` iniciam o run na aba; `openRunStream`/`openSessionStream` assinam o pub/sub em
+  memória (`engine/events.ts`); persistência em IndexedDB (`engine/storage.ts`). Sem backend para a
+  SPA estática (Vercel). Ver `knowledge-architecture` (código duplicado src/ ↔ engine/).
+
 ## Camada de API (`web/src/api.ts`)
-- Única porta para o backend. Toda chamada usa `authHeaders()` (`x-openrouter-key` do `localStorage`).
+- Porta única do app. No modo client-side delega ao engine; a key (`localStorage`) vai direto ao OpenRouter.
 - Tipos do domínio (`OpenRouterModel`, `RunConfig`, `RunRecord`…) são **espelhados** dos tipos do backend — ao mudar um, mude nos dois lados.
 - Padrão de novo endpoint: uma função `fetchX()` que faz `fetch('/v1/benchmark/...')`, checa `res.ok` com mensagem PT-BR e retorna `json.data` (ver `fetchTechniques`/`fetchLgpd`).
 
