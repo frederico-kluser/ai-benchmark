@@ -35,7 +35,9 @@ Express + TypeScript (ESM NodeNext). Entrypoint `src/server.ts` monta o router e
 - `subscribe(runId, cb)` / `publish`. As rotas SSE enviam `snapshot` inicial e fecham (`res.end()`) em eventos terminais (`run.finished`/`run.error`). Manter o `keepalive` de 15s.
 
 ## Pipeline (orquestrador)
-- `orchestrator.startRun(cfg, apiKey, {prepare?})` roda etapas: **gerador** (`datagen`) → **competidores** em paralelo (`competitor`) → **juiz** (`judge`) + avaliação qualitativa (`evaluator`). `trainer.ts` encadeia N iterações; `variator.ts` gera as variações de prompt. Ver `knowledge-benchmark-modes`.
+- `orchestrator.startRun(cfg, apiKey, {prepare?})`. `runLoop` roda em 2 fases: (1) **pré-gera todos os cenários em paralelo**; (2) **roda todas as etapas em paralelo** (`Promise.all`, cada uma isolada em try/catch). Em cada etapa: **competidores** (`competitor`) sem cap local → **juiz** (`judge`, listwise) + **avaliador** (`evaluator`). Placar aditivo (ordem-independente); `saveRun` com **throttle** + flush nos marcos.
+- A concorrência real de TODAS as chamadas é gateada pelo **limitador global adaptativo** em `openrouter.ts` (ver `knowledge-openrouter`) — não ponha cap local.
+- `trainer.ts` encadeia N iterações (sequenciais; etapas paralelas dentro de cada uma); `variator.ts` gera as variações de prompt. Ver `knowledge-benchmark-modes`.
 
 ## Ler dados/JSON em runtime
 Use `path.resolve(process.cwd(), 'src/data/<arquivo>.json')` + `fs.readFileSync` (padrão de `lgpd.ts`) —

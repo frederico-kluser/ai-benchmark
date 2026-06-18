@@ -21,6 +21,7 @@ Dev em `:5173` com proxy de `/v1` e `/health` → `:3001` (`vite.config.ts`).
 
 ## SSE ao vivo
 - `openRunStream(id, onEvent)` abre `EventSource` em `/runs/:id/events`. **Feche** o `EventSource` em eventos terminais — sem isso o browser reconecta infinitamente (há comentário explicando isso em `api.ts`).
+- `RunView` (`pages/RunView.tsx`): o reducer `applyEvent` é **agnóstico à ordem das etapas** (atualiza `stages[stageIndex]` isolado; cada etapa tem seu `live`). Enquanto `status === 'running'`, mostra o **ProcessMonitor** (lista de etapas em paralelo + previews ao vivo, classes `.process-*` reusando `.live-*`/`.stage-badge`); placar/heatmap/etapas detalhadas só quando a run **termina**. Use `stageStatus()` para o badge por etapa.
 
 ## ModelSelector (`components/ModelSelector.tsx`)
 - Recebe um catálogo **compartilhado** `models` (evita refetch por seletor) + `excludeIds` (esconde modelos já usados em outro papel). Busca fuzzy por id/nome. Para filtrar o catálogo (ex.: LGPD), passe um array `models` já filtrado.

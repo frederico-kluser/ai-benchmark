@@ -250,8 +250,13 @@ Estados: *"Nenhuma run ainda."* quando vazio; banner vermelho em caso de erro de
 
 ## Tela: Visão da Run (`/runs/:id`)
 
-A tela mais rica (`web/src/pages/RunView.tsx`). Mostra a run **ao vivo** (via SSE) e, quando
-terminada, o resultado completo. Layout, de cima para baixo:
+A tela mais rica (`web/src/pages/RunView.tsx`). As **etapas rodam todas em paralelo**, então a tela
+tem dois momentos: **enquanto a run roda**, mostra um **visualizador de processo** (uma lista com
+todas as etapas, seu status — gerando / respondendo / aguardando juiz / julgado — e os **previews ao
+vivo** dos competidores em streaming, mais uma barra de progresso `X/N`); **quando a run termina**,
+revela o **resultado completo** (classificação, heatmap, etapas detalhadas). O placar/heatmap **não**
+aparecem no meio (com etapas terminando fora de ordem, um placar parcial seria enganoso). Layout do
+resultado final, de cima para baixo:
 
 ```
 Run a1b2c3d4                                    Status: running
@@ -367,11 +372,13 @@ local (sem recarregar). O mapeamento evento → UI:
 | `competitor.progress` | Atualiza contadores (`chars`, `ch/s`) e o *preview* ao vivo |
 | `competitor.finished` | Substitui o *card* ao vivo pela **resposta final**; soma custo |
 | `stage.judging` | Etapa passa a *"aguardando juiz"* |
-| `stage.judged` | Preenche ranking, avaliação, **placar** e **heatmap**; badge *"julgado"* |
-| `stage.failed` | Marca a etapa como **pulada** (badge *"falhou"* + banner) |
-| `run.finished` / `run.error` | Estado final; o `EventSource` é fechado |
+| `stage.judged` | Marca a etapa como *"julgado"* no monitor de processo (o **placar/heatmap** só são montados no fim) |
+| `stage.failed` | Marca a etapa como **pulada** (badge *"falhou"*) |
+| `run.finished` / `run.error` | Estado final; revela os resultados; o `EventSource` é fechado |
 
-Se a conexão SSE cair, a tela faz um *fetch* de fallback do record para se ressincronizar.
+Como as etapas rodam **em paralelo**, vários `stage.*`/`competitor.*` chegam **concorrentemente** —
+o reducer aplica cada um ao seu `stageIndex` isolado, então o monitor mostra várias etapas ativas ao
+mesmo tempo. Se a conexão SSE cair, a tela faz um *fetch* de fallback para se ressincronizar.
 Runs **já terminadas** não mantêm stream aberto — o servidor envia o estado final e encerra.
 
 ---

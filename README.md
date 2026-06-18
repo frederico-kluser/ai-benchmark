@@ -66,10 +66,13 @@ flowchart LR
    - **Juiz (ranking):** ordena da melhor para a pior. Vira pontos no placar e cores no heatmap.
    - **Avaliador (qualitativo):** escolhe o vencedor + explica *por que* venceu e dá, para cada
      resposta, um veredito de **aceitabilidade** ("dá para usar em produção sem causar erro/dano?").
-4. Repete para todas as etapas, acumulando placar e custo; ao final a run é `finished` e fica no
-   histórico (com export JSON/CSV).
+4. **Todas as etapas rodam em paralelo** (cenários pré-gerados juntos; execução concorrente
+   limitada por um semáforo global adaptativo). O placar é aditivo, então a ordem de término não
+   importa; ao final a run é `finished` e fica no histórico (com export JSON/CSV).
 
-Tudo é transmitido ao navegador em tempo real via **Server-Sent Events (SSE)**.
+Tudo é transmitido ao navegador em tempo real via **Server-Sent Events (SSE)**: durante a run a tela
+mostra um **visualizador de processo** (etapas em paralelo + previews ao vivo) e revela o **placar /
+heatmap só quando tudo termina**. Detalhes do motor em [`FUNCIONAMENTO.md`](./FUNCIONAMENTO.md).
 
 ---
 
@@ -337,6 +340,7 @@ Variáveis **opcionais** (veja `.env.example`):
 | `OPENROUTER_APP_URL` | `http://localhost:3000` | Header `HTTP-Referer` de atribuição |
 | `OPENROUTER_APP_TITLE` | `Benchmark Arena` | Header `X-Title` de atribuição |
 | `BENCHMARK_PORT` | `3001` | Porta do backend |
+| `OPENROUTER_MAX_CONCURRENCY` | `32` | Teto do limitador global adaptativo de chamadas ao OpenRouter |
 
 Parâmetros da **run** (na tela de Nova Run, validados no backend):
 
@@ -349,6 +353,10 @@ Parâmetros da **run** (na tela de Nova Run, validados no backend):
 | `maxOutputTokens` | 50–16.000 | 500 |
 
 `maxOutputTokens` é um **teto absoluto**; o efetivo é `min(maxOutputTokens, maxTokens do datagen)`.
+
+> A concorrência efetiva das chamadas ao OpenRouter é governada por um **limitador global
+> adaptativo** (`OPENROUTER_MAX_CONCURRENCY`); o campo `concurrency` por run é legado (não limita
+> mais o paralelismo). Ver [`FUNCIONAMENTO.md`](./FUNCIONAMENTO.md).
 
 ---
 

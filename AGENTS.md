@@ -15,6 +15,8 @@ Monorepo TypeScript: backend Express (`src/`) + frontend React/Vite (`web/`). UI
 - Tipos de domínio são **duplicados** em `src/types.ts` e `web/src/api.ts` — mantenha sincronizados.
 - Em SSE, feche o `EventSource` em eventos terminais (senão o browser reconecta infinitamente).
 - OpenRouter: `/models` e `/endpoints/zdr` são **públicos**; valide a key por `/key`.
+- Toda chamada de LLM passa por `chatCompletion`/`chatCompletionStream` (`openrouter.ts`), que têm um **limitador global adaptativo** (semáforo + backoff em 429). Não chame o OpenRouter por fora nem ponha cap de concorrência local — confie no limitador. Teto via `OPENROUTER_MAX_CONCURRENCY`.
+- O pipeline roda **todas as etapas em paralelo** (`orchestrator.ts`); o placar é aditivo (ordem-independente) e o `saveRun` é throttled.
 
 ## Skills (leia primeiro)
 Toda tarefa passa por **`.agents/skills/project-router`**, que carrega as skills de conhecimento/tarefa

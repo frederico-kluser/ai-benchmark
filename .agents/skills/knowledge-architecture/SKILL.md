@@ -43,6 +43,7 @@ data/           runtime: runs/ e sessions/ (IGNORADO no git; ver /data/ no .giti
 2. Backend valida (`requireKey`), chama o OpenRouter, persiste o `RunRecord` em `data/runs/<id>.json`.
 3. Progresso ao vivo via **SSE** (`GET /v1/benchmark/runs/:id/events`); o frontend espelha em IndexedDB (fallback offline).
 4. Catálogo de modelos: cache de 24h no backend + IndexedDB no cliente.
+5. As **etapas de uma run rodam todas em paralelo**; a concorrência das chamadas ao OpenRouter é gateada por um **limitador global adaptativo** em `openrouter.ts` (env `OPENROUTER_MAX_CONCURRENCY`). Ver `knowledge-benchmark-modes` / `knowledge-openrouter`.
 
 ## Gotcha de path
 `server.ts` resolve `web/dist` por `__dirname` (relativo ao arquivo). Mas **dados runtime e JSON
