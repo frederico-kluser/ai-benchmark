@@ -19,6 +19,19 @@ function trunc(s: string, n: number): string {
   return s.length > n ? s.slice(0, n) + '…' : s;
 }
 
+// Nome curto do modelo de um juiz (tira o prefixo do provider) p/ a UI compacta.
+function shortModel(id: string): string {
+  const slash = id.indexOf('/');
+  return slash >= 0 ? id.slice(slash + 1) : id;
+}
+
+// Etapas sem buracos (array pode ficar esparso/fora de ordem sob execucao
+// paralela) e ordenadas por index. Toda a UI de resultados usa isto — sem o
+// filtro, `stages.map(s => s.index)` quebra em buracos (foi o bug do heatmap).
+function denseStages(stages: StageRecord[]): StageRecord[] {
+  return stages.filter((s): s is StageRecord => Boolean(s)).slice().sort((a, b) => a.index - b.index);
+}
+
 // Export client-side (sem backend): gera o blob e dispara o download.
 function download(filename: string, text: string, type: string): void {
   const blob = new Blob([text], { type });
@@ -43,6 +56,7 @@ function runToCsv(record: RunRecord, byId: Map<string, Contestant>): string {
       .join(','),
   );
   for (const stage of record.stages) {
+    if (!stage) continue;
     const ranking = stage.judge?.rankedContestantIds ?? [];
     for (const r of stage.responses) {
       const rankPosition = ranking.indexOf(r.contestantId);
@@ -96,15 +110,20 @@ function computeStandings(record: RunRecord): Standing[] {
     let evaluated = 0;
     let errors = 0;
     for (const s of record.stages) {
+      if (!s) continue;
       const pos = (s.judge?.rankedContestantIds ?? []).indexOf(c.id);
       if (pos >= 0) {
         positions.push(pos);
         if (pos === 0) firstPlaces++;
       }
       if (s.responses.some((r) => r.contestantId === c.id && r.status === 'error')) errors++;
-      const ev = s.evaluation;
-      if (ev && !ev.inconclusive) {
-        const v = ev.verdicts.find((x) => x.contestantId === c.id);
+      // Aceitabilidade: vem do juiz (maioria). Retrocompat: estagio "evaluation" antigo.
+      const accBy = s.judge?.acceptableByContestant;
+      if (accBy && c.id in accBy) {
+        evaluated++;
+        if (accBy[c.id]) acceptable++;
+      } else if (s.evaluation && !s.evaluation.inconclusive) {
+        const v = s.evaluation.verdicts.find((x) => x.contestantId === c.id);
         if (v) {
           evaluated++;
           if (v.acceptable) acceptable++;
@@ -152,7 +171,8 @@ export function RunView() {
   const dark = theme === 'dark';
   const [record, setRecord] = useState<RunRecord | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [openStages, setOpenStages] = useState<Set<number>>(new Set());
+  // Carrossel das etapas: no maximo UMA aberta por vez (null = todas fechadas).
+  const [openStage, setOpenStage] = useState<number | null>(null);
   const [tab, setTab] = useState<'resumo' | 'etapas' | null>(null);
 
   useEffect(() => {
@@ -172,9 +192,6 @@ export function RunView() {
           void cacheRun(event.record);
           return;
         }
-        if (event.type === 'stage.generating' || event.type === 'competitor.started') {
-          setOpenStages((prev) => new Set(prev).add(event.stageIndex));
-        }
         if (event.type === 'run.finished') void cacheRun(event.record);
         setRecord((prev) => prev && applyEvent(prev, event));
       },
@@ -189,13 +206,8 @@ export function RunView() {
     };
   }, [id]);
 
-  function toggle(idx: number) {
-    setOpenStages((prev) => {
-      const next = new Set(prev);
-      if (next.has(idx)) next.delete(idx);
-      else next.add(idx);
-      return next;
-    });
+  function toggleStage(idx: number) {
+    setOpenStage((prev) => (prev === idx ? null : idx));
   }
 
   const contestants = useMemo(() => (record ? normalizeContestants(record) : []), [record]);
@@ -204,6 +216,8 @@ export function RunView() {
     [contestants],
   );
   const standings = useMemo(() => (record ? computeStandings(record) : []), [record]);
+  // Etapas densas (sem buracos) e ordenadas — base de toda a UI de resultados.
+  const stages = useMemo(() => (record ? denseStages(record.stages) : []), [record]);
 
   if (error) return <div className="screen center-screen"><div className="banner banner-error">{error}</div></div>;
   if (!record) return <div className="screen center-screen"><div className="loading-note">Carregando…</div></div>;
@@ -211,14 +225,14 @@ export function RunView() {
   const mode = runMode(record);
   const totalCompetitors = contestants.length;
   const totalStages = record.config.stages;
-  const doneStages = record.stages.filter((s) => s.judge || s.error).length;
+  const doneStages = stages.filter((s) => s.judge || s.error).length;
   const hasRing = record.status === 'running' || record.status === 'finished';
   const ringOffset = RING_C * (1 - (totalStages ? doneStages / totalStages : 0));
 
   const isRunning = record.status === 'running';
   // Resultados (placar/heatmap/etapas detalhadas) só aparecem quando a run TERMINA.
   // Enquanto roda, mostramos o visualizador de processo (todas as etapas em paralelo).
-  const hasScoreboard = record.stages.some((s) => s.judge);
+  const hasScoreboard = stages.some((s) => s.judge);
   const effectiveTab = tab ?? (hasScoreboard ? 'resumo' : 'etapas');
   const showScoreboard = hasScoreboard && effectiveTab === 'resumo';
   const showStages = !hasScoreboard || effectiveTab === 'etapas';
@@ -335,8 +349,9 @@ export function RunView() {
               );
             })}
             <div className="score-foot">
-              Pontos somam o esquema corrida (1º = N−1, … último = 0) de todas as etapas.
-              “Aceitável” = a resposta resolve a necessidade de forma correta e segura, mesmo sem ser a melhor.
+              Pontos somam o esquema corrida (1º = N−1, … último = 0) de todas as etapas — e de
+              cada juiz (com vários juízes, cada um pontua). “Aceitável” = a resposta resolve a
+              necessidade de forma correta e segura (maioria dos juízes), mesmo sem ser a melhor.
             </div>
           </div>
 
@@ -351,14 +366,14 @@ export function RunView() {
             <div className="heat-inner">
               <div className="heat-row head">
                 <div className="heat-spacer" />
-                {record.stages.map((s) => (
+                {stages.map((s) => (
                   <div className="heat-col" key={s.index}>{s.index + 1}</div>
                 ))}
               </div>
               {contestants.map((c) => (
                 <div className="heat-row" key={c.id}>
                   <div className="heat-label">{c.label}</div>
-                  {record.stages.map((s) => {
+                  {stages.map((s) => {
                     const ranking = s.judge?.rankedContestantIds ?? [];
                     const pos = ranking.indexOf(c.id);
                     if (pos < 0) {
@@ -385,18 +400,21 @@ export function RunView() {
       {!isRunning && showStages && (
         <>
           <div className="section-label">Etapas</div>
-          {record.stages.length === 0 && (
+          {stages.length === 0 && (
             <div className="card" style={{ color: 'var(--text-3)' }}>Aguardando a primeira etapa…</div>
           )}
-          {record.stages.map((stage) => (
+          {stages.map((stage, i) => (
             <StageCard
               key={stage.index}
               stage={stage}
               byId={byId}
-              open={openStages.has(stage.index)}
-              onToggle={() => toggle(stage.index)}
+              open={openStage === stage.index}
+              onToggle={() => toggleStage(stage.index)}
               totalCompetitors={totalCompetitors}
               dark={dark}
+              position={`${i + 1} / ${stages.length}`}
+              onPrev={i > 0 ? () => setOpenStage(stages[i - 1].index) : undefined}
+              onNext={i < stages.length - 1 ? () => setOpenStage(stages[i + 1].index) : undefined}
             />
           ))}
         </>
@@ -415,9 +433,9 @@ function ProcessMonitor({
   totalCompetitors: number;
 }) {
   const total = record.config.stages;
-  const done = record.stages.filter((s) => s.judge || s.error).length;
+  const stages = denseStages(record.stages);
+  const done = stages.filter((s) => s.judge || s.error).length;
   const pct = total ? Math.round((done / total) * 100) : 0;
-  const stages = record.stages.slice().sort((a, b) => a.index - b.index);
   return (
     <>
       <div className="section-label">Processo ao vivo</div>
@@ -529,6 +547,9 @@ function StageCard({
   onToggle,
   totalCompetitors,
   dark,
+  position,
+  onPrev,
+  onNext,
 }: {
   stage: StageRecord;
   byId: Map<string, Contestant>;
@@ -536,15 +557,27 @@ function StageCard({
   onToggle: () => void;
   totalCompetitors: number;
   dark: boolean;
+  /** Posicao no carrossel, ex.: "2 / 5". */
+  position?: string;
+  /** Abre a etapa anterior (undefined = nao ha). */
+  onPrev?: () => void;
+  /** Abre a proxima etapa (undefined = nao ha). */
+  onNext?: () => void;
 }) {
-  const ranking = stage.judge?.rankedContestantIds ?? [];
-  const blindMap = stage.judge?.blindMap ?? {};
+  const judge = stage.judge;
+  const ranking = judge?.rankedContestantIds ?? [];
+  const blindMap = judge?.blindMap ?? {};
   const contestantToLetter: Record<string, string> = {};
   for (const [letter, cid] of Object.entries(blindMap)) contestantToLetter[cid] = letter;
 
+  // Aceitabilidade (consenso = maioria) + vereditos por juiz (novo formato).
+  const acceptableBy = judge?.acceptableByContestant ?? {};
+  const judges = judge?.judges ?? [];
+  // Retrocompat: records antigos guardavam aceitabilidade/justificativa num
+  // estagio "evaluation" separado (hoje fundido no juiz).
   const ev = stage.evaluation;
-  const verdictByContestant: Record<string, { acceptable: boolean; justification: string }> = {};
-  for (const v of ev?.verdicts ?? []) verdictByContestant[v.contestantId] = v;
+  const oldVerdictBy: Record<string, { acceptable: boolean; justification: string }> = {};
+  for (const v of ev?.verdicts ?? []) oldVerdictBy[v.contestantId] = v;
 
   const labelFor = (cid: string, fallback: string) => byId.get(cid)?.label ?? fallback;
 
@@ -581,6 +614,17 @@ function StageCard({
 
       {open && (
         <div className="stage-body">
+          {(onPrev || onNext) && (
+            <div className="stage-carousel-nav">
+              <button type="button" className="carousel-btn" disabled={!onPrev} onClick={onPrev}>
+                ‹ Anterior
+              </button>
+              {position && <span className="stage-carousel-pos">Etapa {position}</span>}
+              <button type="button" className="carousel-btn" disabled={!onNext} onClick={onNext}>
+                Próxima ›
+              </button>
+            </div>
+          )}
           {stage.error && (
             <div className="banner banner-neutral" style={{ marginTop: 16, marginBottom: 0 }}>
               <strong>Etapa pulada:</strong> {stage.error} A run seguiu normalmente nas demais etapas.
@@ -650,7 +694,11 @@ function StageCard({
               {sortedResponses.map((r) => {
                 const pos = ranking.indexOf(r.contestantId);
                 const letter = contestantToLetter[r.contestantId];
-                const verdict = verdictByContestant[r.contestantId];
+                const accepted = acceptableBy[r.contestantId] ?? oldVerdictBy[r.contestantId]?.acceptable;
+                // veredito de CADA juiz para esta resposta (motivo de 1 frase).
+                const perJudge = judges
+                  .map((j) => ({ model: j.judgeModelId, v: j.verdicts.find((x) => x.contestantId === r.contestantId) }))
+                  .filter((x): x is { model: string; v: { contestantId: string; acceptable: boolean; motivo: string } } => Boolean(x.v));
                 return (
                   <div className="answer-card" key={r.contestantId}>
                     <div className="answer-head">
@@ -661,9 +709,10 @@ function StageCard({
                       )}
                       <span className="answer-model">{labelFor(r.contestantId, r.modelId)}</span>
                       {letter && <span className="answer-blind">(era {letter})</span>}
-                      {verdict && (
-                        <span className={`verdict-pill ${verdict.acceptable ? 'ok' : 'bad'}`}>
-                          {verdict.acceptable ? 'aceitável p/ o trabalho' : 'não aceitável'}
+                      {accepted !== undefined && (
+                        <span className={`verdict-pill ${accepted ? 'ok' : 'bad'}`}>
+                          {accepted ? 'aceitável p/ o trabalho' : 'não aceitável'}
+                          {judges.length > 1 ? ` · maioria de ${judges.length}` : ''}
                         </span>
                       )}
                     </div>
@@ -671,7 +720,23 @@ function StageCard({
                       {formatMs(r.latencyMs)} · {r.tokensIn}→{r.tokensOut} tok · {r.text.length} chars · {formatUsd(r.costUsd)}
                       {r.status === 'error' && <span className="err"> · ERRO: {r.errorMsg}</span>}
                     </div>
-                    {verdict?.justification && <div className="answer-note">{verdict.justification}</div>}
+                    {perJudge.length > 0 ? (
+                      <div className="judge-verdicts">
+                        {perJudge.map(({ model, v }) => (
+                          <div className="judge-verdict" key={model}>
+                            <span className={`verdict-dot ${v.acceptable ? 'ok' : 'bad'}`} />
+                            <span className="judge-verdict-model" title={model}>{shortModel(model)}</span>
+                            <span className="judge-verdict-motivo">
+                              {v.motivo || (v.acceptable ? 'aceitável' : 'não aceitável')}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      oldVerdictBy[r.contestantId]?.justification && (
+                        <div className="answer-note">{oldVerdictBy[r.contestantId].justification}</div>
+                      )
+                    )}
                     {r.status === 'ok' && <pre className="answer-text">{r.text}</pre>}
                   </div>
                 );
@@ -700,8 +765,14 @@ function applyEvent(prev: RunRecord, event: any): RunRecord {
     case 'variants.generated':
       return { ...next, contestants: event.contestants };
     case 'stage.generating': {
+      // Coloca POR INDICE (nao push): sob execucao paralela os eventos chegam
+      // fora de ordem; o push desalinhava o array (era o bug do heatmap/resumo).
       if (!next.stages[event.stageIndex]) {
-        next.stages.push({ index: event.stageIndex, responses: [], startedAt: new Date().toISOString() });
+        next.stages[event.stageIndex] = {
+          index: event.stageIndex,
+          responses: [],
+          startedAt: new Date().toISOString(),
+        };
       }
       return next;
     }
@@ -773,7 +844,6 @@ function applyEvent(prev: RunRecord, event: any): RunRecord {
       const s = next.stages[event.stageIndex];
       if (s) {
         s.judge = event.judge;
-        s.evaluation = event.evaluation;
         s.finishedAt = new Date().toISOString();
         s.live = undefined;
       }

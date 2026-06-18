@@ -26,8 +26,8 @@ function pickWinner(run: RunRecord): { contestantId: string; points: number } | 
   if (!run.contestants.length) return null;
   const acc: Record<string, number> = {};
   for (const s of run.stages) {
-    for (const v of s.evaluation?.verdicts ?? []) {
-      if (v.acceptable) acc[v.contestantId] = (acc[v.contestantId] ?? 0) + 1;
+    for (const [cid, ok] of Object.entries(s.judge?.acceptableByContestant ?? {})) {
+      if (ok) acc[cid] = (acc[cid] ?? 0) + 1;
     }
   }
   let bestId = '';
@@ -67,7 +67,11 @@ export async function analyzeIteration(p: AnalyzeIterationParams): Promise<strin
     const ranking = s.judge?.rankedContestantIds ?? [];
     const pos = ranking.indexOf(p.winnerContestantId);
     const total = ranking.length;
-    const verdict = s.evaluation?.verdicts.find((v) => v.contestantId === p.winnerContestantId);
+    const acceptable = s.judge?.acceptableByContestant?.[p.winnerContestantId];
+    // motivos curtos dos juizes para a vencedora (1 frase cada).
+    const motivos = (s.judge?.judges ?? [])
+      .map((j) => j.verdicts.find((v) => v.contestantId === p.winnerContestantId)?.motivo)
+      .filter((m): m is string => Boolean(m && m.trim()));
     const topId = ranking[0];
     const topResp =
       topId && topId !== p.winnerContestantId
@@ -75,8 +79,8 @@ export async function analyzeIteration(p: AnalyzeIterationParams): Promise<strin
         : undefined;
     lines.push(
       `Etapa ${s.index + 1}: pos=${pos >= 0 ? pos + 1 : '?'}/${total}; aceitavel=${
-        verdict ? verdict.acceptable : '?'
-      }; ${verdict?.justification ?? ''}` +
+        acceptable === undefined ? '?' : acceptable
+      }; ${motivos.join(' | ')}` +
         (topResp ? ` | resposta que superou: ${topResp.text.slice(0, 220)}` : ''),
     );
   }
@@ -139,7 +143,7 @@ function variationConfigFrom(cfg: TrainingConfig): VariationConfig {
     theme: cfg.theme,
     stages: cfg.stages,
     datagenModelId: cfg.datagenModelId,
-    judgeModelId: cfg.judgeModelId,
+    judgeModelIds: cfg.judgeModelIds,
     concurrency: cfg.concurrency,
     timeoutMs: cfg.timeoutMs,
     maxOutputTokens: cfg.maxOutputTokens,

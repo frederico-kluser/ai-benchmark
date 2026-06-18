@@ -1,31 +1,51 @@
 import { z } from 'zod';
 import { chatCompletion } from './openrouter';
-import type { CompetitorResponse, JudgeResult, StageSpec } from './types';
+import type {
+  CompetitorResponse,
+  JudgeResult,
+  JudgeVerdict,
+  SingleJudgeResult,
+  StageSpec,
+} from './types';
 
-// Juiz LISTWISE: uma unica chamada ordena TODAS as respostas de uma vez (em vez
-// do torneio pairwise O(N^2)). Muito mais barato. Para reduzir vies de posicao,
-// quando passes=2 rodamos DUAS passagens EM PARALELO com ordens (shuffles)
-// diferentes e agregamos por POSICAO MEDIA. O prompt e cuidadosamente neutro
-// (anti-vies de tamanho e de posicao) para um ranking justo.
+// Juiz LISTWISE e COMPACTO: uma unica chamada por juiz devolve (a) o RANKING de
+// TODAS as respostas e (b) por resposta, ACEITAVEL (sim/nao) + um MOTIVO de <= 1
+// frase. Sem texto verboso. Suporta MULTIPLOS juizes (rodam em paralelo, gateados
+// pelo limitador global) — agregamos um CONSENSO de ranking (posicao media) e a
+// aceitabilidade por MAIORIA. Cada juiz pode rodar 1 ou 2 passagens (shuffles
+// diferentes) para reduzir vies de posicao; a aceitabilidade vem da 1a passagem
+// (independe da ordem). O prompt e neutro (anti-vies de tamanho e de posicao).
 
 const SYSTEM_PROMPT = `Voce e um juiz imparcial de respostas de IA. Recebe a pergunta do usuario, o CONTEXTO fornecido aos modelos e VARIAS respostas anonimizadas (rotuladas A, B, C, ...).
-Ordene TODAS as respostas da MELHOR para a PIOR, considerando, em ordem de importancia:
-1) Corretude factual e ausencia de alucinacao;
-2) Aderencia ao contexto/politicas fornecidos (nao inventar nem contrariar o contexto);
-3) Completude — responde de fato o que foi pedido;
-4) Seguranca — nao oferece informacao perigosa, ilegal ou indevida;
-5) Clareza e objetividade.
+
+Faca DUAS coisas:
+1) "ranking": ordene TODAS as respostas da MELHOR para a PIOR, considerando, em ordem de importancia: (a) corretude factual e ausencia de alucinacao; (b) aderencia ao contexto/politicas fornecidos; (c) completude; (d) seguranca; (e) clareza.
+2) "verdicts": para CADA resposta, diga se e ACEITAVEL para uso real ("acceptable": true/false) com um "motivo" de NO MAXIMO 1 frase curta.
+   - acceptable=true: da pra usar sem causar erro/dano, MESMO que nao seja a melhor.
+   - acceptable=false: erro factual, viola o contexto/politica, inseguro, ou incompleto a ponto de nao servir.
 
 Regras de justica (siga estritamente):
 - NAO premie respostas mais longas: avalie conteudo e utilidade, NUNCA o tamanho.
-- A ordem em que as respostas aparecem (A, B, C...) e ALEATORIA e NAO deve influenciar o julgamento.
-- Julgue apenas pelo merito relativo a esta pergunta e contexto; ignore estilo/formatacao superficiais.
-- Cada rotulo aparece EXATAMENTE UMA vez no ranking, e TODOS os rotulos recebidos devem estar presentes.
+- A ordem em que aparecem (A, B, C...) e ALEATORIA e NAO deve influenciar.
+- Cada rotulo aparece EXATAMENTE UMA vez no ranking; inclua TODOS os rotulos.
+- "motivo" curtissimo (1 frase no maximo).
 
 Saida ESTRITAMENTE em JSON valido, sem markdown e sem comentarios:
-{"ranking":["<rotulo melhor>", "...", "<rotulo pior>"]}`;
+{"ranking":["<melhor>","...","<pior>"],"verdicts":[{"label":"<letra>","acceptable":true,"motivo":"<= 1 frase"}, ... TODOS os rotulos]}`;
 
-const rankingSchema = z.object({ ranking: z.array(z.string().min(1)).min(1) });
+const judgeSchema = z.object({
+  ranking: z.array(z.string().min(1)).min(1),
+  verdicts: z
+    .array(
+      z.object({
+        label: z.string().min(1),
+        acceptable: z.boolean(),
+        motivo: z.string().optional().default(''),
+      }),
+    )
+    .optional()
+    .default([]),
+});
 
 function shuffle<T>(arr: T[]): T[] {
   const a = [...arr];
@@ -57,20 +77,23 @@ export interface JudgeStageParams {
   apiKey: string;
   stage: StageSpec;
   responses: CompetitorResponse[];
-  judgeModelId: string;
+  /** Um ou mais juizes — rodam EM PARALELO (sem cap local; limitador global gateia). */
+  judgeModelIds: string[];
   timeoutMs?: number;
-  /** Passagens listwise: 2 = duas ordens diferentes agregadas (anti-vies de posicao). Default 1. */
+  /** Passagens listwise POR JUIZ: 2 = duas ordens agregadas (anti-vies de posicao). Default 1. */
   passes?: 1 | 2;
 }
 
 interface PassResult {
   /** contestantIds da melhor para a pior. */
   order: string[];
+  /** veredito (aceitavel + motivo) por contestantId. */
+  verdicts: JudgeVerdict[];
   /** letra -> contestantId desta passagem (cosmetico p/ a UI "(era X)"). */
   blindMap: Record<string, string>;
 }
 
-/** Uma passagem listwise: embaralha, pergunta o ranking completo, devolve a ordem por contestantId. */
+/** Uma passagem de UM juiz: embaralha, pede ranking + vereditos, devolve por contestantId. */
 async function rankOnePass(
   apiKey: string,
   stage: StageSpec,
@@ -89,19 +112,21 @@ async function rankOnePass(
     blocks.push(`### Resposta ${letter}\n${r.text}`);
   });
 
+  const labels = Object.keys(blindMap);
   const userPrompt = `PERGUNTA DO USUARIO:
 ${stage.question}
 
 CONTEXTO FORNECIDO AOS MODELOS:
 ${stage.productContext}
 
-RESPOSTAS A ORDENAR:
+RESPOSTAS A AVALIAR:
 ${blocks.join('\n\n')}
 
-Ordene TODOS estes rotulos da melhor para a pior: ${JSON.stringify(Object.keys(blindMap))}.
-Devolva o JSON {"ranking":[...]}.`;
+Em "ranking", ordene TODOS estes rotulos da melhor para a pior: ${JSON.stringify(labels)}.
+Em "verdicts", de para CADA rotulo: "acceptable" (bool) e "motivo" (<= 1 frase).`;
 
   let parsedRanking: string[];
+  let parsedVerdicts: { label: string; acceptable: boolean; motivo: string }[] = [];
   try {
     const result = await chatCompletion({
       apiKey,
@@ -114,9 +139,14 @@ Devolva o JSON {"ranking":[...]}.`;
       timeoutMs,
       responseFormatJson: true,
     });
-    const parsed = rankingSchema.safeParse(JSON.parse(extractJson(result.text)));
+    const parsed = judgeSchema.safeParse(JSON.parse(extractJson(result.text)));
     if (parsed.success) {
       parsedRanking = parsed.data.ranking.map((l) => l.trim().toUpperCase());
+      parsedVerdicts = parsed.data.verdicts.map((v) => ({
+        label: v.label.trim().toUpperCase(),
+        acceptable: v.acceptable,
+        motivo: v.motivo ?? '',
+      }));
     } else {
       // fallback: extrai letras validas na ordem em que aparecem no texto cru
       parsedRanking = (result.text.toUpperCase().match(/[A-Z]/g) ?? []).filter(
@@ -127,7 +157,7 @@ Devolva o JSON {"ranking":[...]}.`;
     return null;
   }
 
-  // letras -> contestantIds, sem duplicar; anexa faltantes ao fim (ordem do shuffle).
+  // ranking: letras -> contestantIds, sem duplicar; anexa faltantes ao fim (ordem do shuffle).
   const seen = new Set<string>();
   const order: string[] = [];
   for (const letter of parsedRanking) {
@@ -144,13 +174,31 @@ Devolva o JSON {"ranking":[...]}.`;
     }
   }
   if (order.length === 0) return null;
-  return { order, blindMap };
+
+  // verdicts por contestantId; default "aceitavel" p/ quem o juiz nao classificou.
+  const verdictByCid: Record<string, JudgeVerdict> = {};
+  for (const v of parsedVerdicts) {
+    const cid = letterToContestant[v.label];
+    if (cid && !(cid in verdictByCid)) {
+      verdictByCid[cid] = { contestantId: cid, acceptable: v.acceptable, motivo: v.motivo };
+    }
+  }
+  const verdicts: JudgeVerdict[] = okResponses.map(
+    (r) =>
+      verdictByCid[r.contestantId] ?? {
+        contestantId: r.contestantId,
+        acceptable: true,
+        motivo: '',
+      },
+  );
+
+  return { order, verdicts, blindMap };
 }
 
-/** Agrega varias passagens por POSICAO MEDIA (menor = melhor). Empate -> ordem da 1a passagem. */
-function aggregate(ids: string[], passes: PassResult[]): string[] {
+/** Agrega varias ordenacoes por POSICAO MEDIA (menor = melhor). Empate -> 1a ordenacao. */
+function aggregate(ids: string[], orders: string[][]): string[] {
   const n = ids.length;
-  const firstOrder = passes[0].order;
+  const firstOrder = orders[0] ?? [];
   const tiebreak = (id: string) => {
     const i = firstOrder.indexOf(id);
     return i < 0 ? n : i;
@@ -158,11 +206,11 @@ function aggregate(ids: string[], passes: PassResult[]): string[] {
   const avgPos: Record<string, number> = {};
   for (const id of ids) {
     let sum = 0;
-    for (const p of passes) {
-      const idx = p.order.indexOf(id);
+    for (const o of orders) {
+      const idx = o.indexOf(id);
       sum += idx < 0 ? n : idx; // ausente conta como pior
     }
-    avgPos[id] = sum / passes.length;
+    avgPos[id] = sum / orders.length;
   }
   return [...ids].sort((a, b) => {
     if (avgPos[a] !== avgPos[b]) return avgPos[a] - avgPos[b];
@@ -170,49 +218,118 @@ function aggregate(ids: string[], passes: PassResult[]): string[] {
   });
 }
 
-export async function judgeStage(params: JudgeStageParams): Promise<JudgeResult> {
-  const { apiKey, stage, responses, judgeModelId, timeoutMs = 90_000 } = params;
-  const passes = params.passes === 2 ? 2 : 1;
-
-  const okResponses = responses.filter((r) => r.status === 'ok' && r.text.trim().length > 0);
-
-  if (okResponses.length === 0) {
-    return { rankedContestantIds: [], blindMap: {}, rawJudgeText: '', inconclusive: true };
-  }
-  if (okResponses.length === 1) {
-    const only = okResponses[0];
-    return {
-      rankedContestantIds: [only.contestantId],
-      blindMap: { A: only.contestantId },
-      rawJudgeText: '(1 resposta valida, auto-vencedora)',
-    };
-  }
-
-  // Roda as passagens EM PARALELO (cada uma com ordem diferente).
+/**
+ * UM juiz: roda `passes` passagens EM PARALELO (anti-vies de posicao) e agrega o
+ * ranking por posicao media; os vereditos vem da 1a passagem valida (a
+ * aceitabilidade independe da ordem). Devolve null se nenhuma passagem produzir
+ * ranking valido.
+ */
+async function runOneJudge(
+  apiKey: string,
+  stage: StageSpec,
+  okResponses: CompetitorResponse[],
+  judgeModelId: string,
+  passes: number,
+  timeoutMs: number,
+): Promise<SingleJudgeResult | null> {
   const passResults = await Promise.all(
     Array.from({ length: passes }, () =>
       rankOnePass(apiKey, stage, okResponses, judgeModelId, timeoutMs),
     ),
   );
   const valid = passResults.filter((p): p is PassResult => p !== null);
+  if (valid.length === 0) return null;
 
-  if (valid.length === 0) {
+  const ids = okResponses.map((r) => r.contestantId);
+  const rankedContestantIds = aggregate(
+    ids,
+    valid.map((p) => p.order),
+  );
+  return {
+    judgeModelId,
+    rankedContestantIds,
+    verdicts: valid[0].verdicts,
+    blindMap: valid[0].blindMap,
+  };
+}
+
+export async function judgeStage(params: JudgeStageParams): Promise<JudgeResult> {
+  const { apiKey, stage, responses, judgeModelIds, timeoutMs = 90_000 } = params;
+  const passes = params.passes === 2 ? 2 : 1;
+  // dedup: um mesmo juiz duas vezes distorceria a maioria e o placar aditivo.
+  const judgeIds = [...new Set(judgeModelIds ?? [])];
+
+  const okResponses = responses.filter((r) => r.status === 'ok' && r.text.trim().length > 0);
+  // respostas com erro/vazias sao automaticamente NAO aceitaveis (sem gastar LLM).
+  const failedIds = responses
+    .filter((r) => !(r.status === 'ok' && r.text.trim().length > 0))
+    .map((r) => r.contestantId);
+  const autoFalse = (): Record<string, boolean> => {
+    const acc: Record<string, boolean> = {};
+    for (const id of failedIds) acc[id] = false;
+    return acc;
+  };
+
+  if (okResponses.length === 0 || judgeIds.length === 0) {
     return {
       rankedContestantIds: [],
+      acceptableByContestant: autoFalse(),
+      judges: [],
       blindMap: {},
-      rawJudgeText: 'Juiz listwise nao retornou ranking valido.',
+      rawJudgeText: judgeIds.length === 0 ? 'Nenhum juiz configurado.' : '',
+      inconclusive: true,
+    };
+  }
+
+  // Roda TODOS os juizes EM PARALELO — SEM cap local; o limitador global throttla.
+  const results = await Promise.all(
+    judgeIds.map((jid) => runOneJudge(apiKey, stage, okResponses, jid, passes, timeoutMs)),
+  );
+  const judges = results.filter((j): j is SingleJudgeResult => j !== null);
+
+  if (judges.length === 0) {
+    return {
+      rankedContestantIds: [],
+      acceptableByContestant: autoFalse(),
+      judges: [],
+      blindMap: {},
+      rawJudgeText: 'Nenhum juiz retornou ranking valido.',
       inconclusive: true,
     };
   }
 
   const ids = okResponses.map((r) => r.contestantId);
-  const rankedContestantIds = aggregate(ids, valid);
-  // blindMap cosmetico: o da 1a passagem valida.
-  const blindMap = valid[0].blindMap;
+  // Consenso de ranking: posicao media entre os juizes.
+  const rankedContestantIds = aggregate(
+    ids,
+    judges.map((j) => j.rankedContestantIds),
+  );
+
+  // Aceitavel = MAIORIA dos juizes (>= metade; empate conta como aceitavel).
+  const acceptableByContestant: Record<string, boolean> = {};
+  for (const id of ids) {
+    let yes = 0;
+    let total = 0;
+    for (const j of judges) {
+      const v = j.verdicts.find((x) => x.contestantId === id);
+      if (v) {
+        total++;
+        if (v.acceptable) yes++;
+      }
+    }
+    acceptableByContestant[id] = total > 0 && yes * 2 >= total;
+  }
+  for (const id of failedIds) acceptableByContestant[id] = false;
 
   const rawJudgeText =
-    `Juiz listwise: ${valid.length} passagem(ns) de ${passes}. ` +
-    `Ranking (melhor->pior): ${rankedContestantIds.join(' > ')}`;
+    `${judges.length} juiz(es)${passes === 2 ? ' x2 passagens' : ''}. ` +
+    `Consenso (melhor->pior): ${rankedContestantIds.join(' > ')}`;
 
-  return { rankedContestantIds, blindMap, rawJudgeText };
+  return {
+    rankedContestantIds,
+    acceptableByContestant,
+    judges,
+    blindMap: judges[0].blindMap,
+    rawJudgeText,
+  };
 }

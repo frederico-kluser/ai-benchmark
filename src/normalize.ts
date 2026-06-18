@@ -34,6 +34,10 @@ export function normalizeRunRecord(raw: any): RunRecord {
   const config = raw?.config ?? {};
   const mode: RunMode = raw?.mode ?? config.mode ?? 'compare';
   config.mode = config.mode ?? mode;
+  // Retrocompat: juiz unico (judgeModelId: string) -> judgeModelIds: string[].
+  if (!Array.isArray(config.judgeModelIds)) {
+    config.judgeModelIds = typeof config.judgeModelId === 'string' ? [config.judgeModelId] : [];
+  }
 
   const contestants: Contestant[] =
     raw?.contestants ??
@@ -71,10 +75,22 @@ function normalizeStage(raw: any): StageRecord {
 
   let judge = raw?.judge;
   if (judge) {
+    // Retrocompat: records antigos so tinham ranking; a aceitabilidade vinha do
+    // estagio "evaluation" separado. Derivamos acceptableByContestant dele.
+    const acceptableByContestant: Record<string, boolean> = judge.acceptableByContestant ?? {};
+    if (!judge.acceptableByContestant && Array.isArray(raw?.evaluation?.verdicts)) {
+      for (const v of raw.evaluation.verdicts) {
+        const cid = v.contestantId ?? v.modelId;
+        if (cid) acceptableByContestant[cid] = Boolean(v.acceptable);
+      }
+    }
     judge = {
       ...judge,
       rankedContestantIds: judge.rankedContestantIds ?? judge.rankedModelIds ?? [],
+      acceptableByContestant,
+      judges: Array.isArray(judge.judges) ? judge.judges : [],
       blindMap: judge.blindMap ?? {},
+      rawJudgeText: judge.rawJudgeText ?? '',
     };
   }
 

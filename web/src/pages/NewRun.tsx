@@ -378,22 +378,26 @@ export function NewRun() {
         ? new Array(n).fill(contestantModel[0])
         : []
       : competitors;
+    // passes do juiz so se aplica nos modos de 1 LLM (toggle visivel la).
+    const passes = isSingle && twoPassJudge ? 2 : 1;
     let perStage = 0;
     for (const id of contestantIds) perStage += costOf(id, ctxIn, maxOutputTokens);
     if (datagen[0]) perStage += costOf(datagen[0], 300, 450);
-    if (judge[0]) perStage += costOf(judge[0], ctxIn + n * maxOutputTokens, 350);
+    // cada juiz le o contexto + todas as respostas; com 2 passagens, conta x2.
+    for (const jid of judge) perStage += costOf(jid, ctxIn + n * maxOutputTokens, 350) * passes;
     const iters = mode === 'training' ? iterations : 1;
     const point = perStage * stages * iters;
+    const judgeCalls = judge.length * passes;
     return {
       n,
       stages,
       iters,
-      calls: stages * (n + 2) * iters,
+      calls: stages * (n + 1 + judgeCalls) * iters,
       low: point * 0.45,
       high: point,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, isSingle, competitors, contestantModel, variantCount, datagen, judge, stages, maxOutputTokens, iterations, priceById]);
+  }, [mode, isSingle, competitors, contestantModel, variantCount, datagen, judge, twoPassJudge, stages, maxOutputTokens, iterations, priceById]);
 
   function step(key: keyof typeof RANGES, current: number, setter: (v: number) => void, dir: 1 | -1) {
     const [min, max, by] = RANGES[key];
@@ -418,7 +422,7 @@ export function NewRun() {
         return null;
       case 'eval':
         if (datagen.length !== 1) return 'Selecione 1 modelo gerador.';
-        if (judge.length !== 1) return 'Selecione 1 modelo juiz.';
+        if (judge.length < 1) return 'Selecione ao menos 1 modelo juiz.';
         return null;
       case 'review':
         return null;
@@ -463,7 +467,7 @@ export function NewRun() {
     setError(null);
     if (!theme.trim()) return setError('Defina um tema.');
     if (datagen.length !== 1) return setError('Selecione 1 modelo para gerador.');
-    if (judge.length !== 1) return setError('Selecione 1 modelo para juiz.');
+    if (judge.length < 1) return setError('Selecione ao menos 1 modelo para juiz.');
 
     if (mode === 'compare') {
       if (competitors.length < 2) return setError('Selecione pelo menos 2 competidores.');
@@ -482,7 +486,7 @@ export function NewRun() {
       theme: theme.trim(),
       stages,
       datagenModelId: datagen[0],
-      judgeModelId: judge[0],
+      judgeModelIds: judge,
       concurrency,
       timeoutMs,
       maxOutputTokens,
@@ -809,9 +813,10 @@ export function NewRun() {
         {stepId === 'eval' && (
           <>
             <StepIntro step={4} title="Quem cria as perguntas e quem julga?">
-              Dois modelos de apoio: o <strong>gerador</strong> inventa os cenários do benchmark e o <strong>juiz</strong>{' '}
-              compara as respostas às cegas, apontando a melhor. Eles não competem
-              {isSingle ? ' — e o juiz nunca é o modelo sob teste, para evitar viés.' : '.'}
+              Modelos de apoio: o <strong>gerador</strong> inventa os cenários e o(s) <strong>juiz(es)</strong>{' '}
+              ranqueiam as respostas às cegas e dizem se cada uma é aceitável. Vários juízes rodam em paralelo e o
+              placar combina os votos. Eles não competem
+              {isSingle ? ' — e nenhum juiz é o modelo sob teste, para evitar viés.' : '.'}
             </StepIntro>
 
             <ModelSelector
@@ -826,9 +831,9 @@ export function NewRun() {
             />
 
             <ModelSelector
-              multi={false}
-              title="Juiz"
-              hint="Exatamente 1 modelo — ranqueia às cegas e avalia a aceitabilidade."
+              multi
+              title="Juiz(es)"
+              hint="Um ou mais modelos — cada juiz ranqueia às cegas e diz se cada resposta é aceitável. Rodam em paralelo; mais juízes = mais robusto (e mais caro)."
               value={judge}
               onChange={setJudge}
               excludeIds={[...(mode === 'compare' ? competitors : contestantModel)]}
@@ -838,8 +843,8 @@ export function NewRun() {
 
             <div className="roles-note">
               {mode === 'compare'
-                ? 'Gerador e juiz podem ser o MESMO modelo (repetição permitida) e não entram como competidores. Os filtros de área/preço NÃO afetam estes dois — eles veem o catálogo completo.'
-                : 'Gerador e juiz podem ser o MESMO modelo (repetição permitida); o juiz ainda não pode ser o modelo sob teste (evita viés). Os filtros de área/preço NÃO afetam gerador nem juiz.'}
+                ? 'Gerador e juízes podem repetir o mesmo modelo e não entram como competidores. Os filtros de área/preço NÃO afetam estes — eles veem o catálogo completo.'
+                : 'Gerador e juízes podem repetir o mesmo modelo; nenhum juiz pode ser o modelo sob teste (evita viés). Os filtros de área/preço NÃO afetam gerador nem juízes.'}
             </div>
 
             {isSingle && (
@@ -916,8 +921,8 @@ export function NewRun() {
                     <span className="v v-mono">{datagen[0] ?? '—'}</span>
                   </div>
                   <div className="summary-row">
-                    <span className="k">Juiz</span>
-                    <span className="v v-mono">{judge[0] ?? '—'}</span>
+                    <span className="k">{judge.length > 1 ? `Juízes (${judge.length})` : 'Juiz'}</span>
+                    <span className="v v-mono">{judge.length ? judge.join(', ') : '—'}</span>
                   </div>
                   <div className="summary-row">
                     <span className="k">Chamadas de modelo</span>

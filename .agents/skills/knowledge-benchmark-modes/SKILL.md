@@ -2,7 +2,7 @@
 name: knowledge-benchmark-modes
 description: Os três modos de benchmark do ai-benchmark (compare, variation, training), o conceito de "contestant" e o pipeline gerador→competidores→juiz. Use ao mexer em orchestrator/trainer/variator/datagen/competitor/judge, ao alterar RunConfig, ou ao trabalhar com placar, iterações e a tela de resultados.
 metadata:
-  version: 0.1.0
+  version: 0.2.0
   type: knowledge
 ---
 # Modos de benchmark — ai-benchmark
@@ -12,16 +12,21 @@ o pipeline, mas diferem no que é o "contestant".
 
 ## Pipeline (comum)
 **Gerador** (`datagen.ts`) cria N cenários/perguntas a partir do `theme` → **Competidores**
-(`competitor.ts`) respondem em paralelo → **Juiz** (`judge.ts`) ranqueia às cegas + **Avaliador**
-(`evaluator.ts`) dá veredito qualitativo de aceitabilidade. Resultado: `scoreboard` por contestant.
+(`competitor.ts`) respondem em paralelo → **Juiz(es)** (`judge.ts`) ranqueiam às cegas. O juiz é
+**compacto**: 1 chamada por juiz devolve, por resposta, `{ranking, acceptable, motivo (<=1 frase)}`
+— sem texto verboso. O antigo estágio `evaluator.ts` foi **removido e fundido no juiz** (2026-06-18).
+Resultado: `scoreboard` por contestant + aceitabilidade.
 
 ## Execução paralela (desde 2026-06-18)
 `runLoop` (`orchestrator.ts`) roda em 2 fases: (1) **pré-gera todos os cenários em paralelo**
 (`Promise.all`); (2) **roda todas as etapas em paralelo** (`Promise.all`, cada uma isolada em
 try/catch). O placar é aditivo (`applyScoreboard`), então a ordem de término não importa. A
 concorrência real é gateada pelo **limitador global adaptativo** em `openrouter.ts` (ver
-`knowledge-openrouter`); `saveRun` é throttled. O **juiz é listwise** (1 chamada, ou 2 passes
-paralelos agregados por posição média quando `judgePasses=2`) — não mais pairwise O(N²). No
+`knowledge-openrouter`); `saveRun` é throttled. **Múltiplos juízes** (`judgeModelIds: string[]`)
+rodam **em paralelo** (sem cap local); o ranking final é o **consenso** (posição média entre juízes)
+e a aceitabilidade é por **maioria**. O **placar é aditivo POR JUIZ** (cada juiz pontua seu próprio
+ranking) — com 2 juízes e 3 competidores há até 6 pontuações/etapa. Cada juiz é **listwise** (1
+chamada, ou 2 passes agregados por posição média quando `judgePasses=2`) — não mais pairwise O(N²). No
 **training**, as iterações seguem sequenciais (dependência de dados), mas as etapas de cada
 iteração paralelizam. Na UI, `RunView` mostra um visualizador de processo ao vivo enquanto roda e
 revela placar/heatmap só ao terminar.
@@ -41,8 +46,10 @@ Competidor genérico com `id`, `label`, `modelId`, `systemPrompt?`, `techniqueId
 - **training** (`POST /sessions`): como variation, porém **N `iterations`** encadeadas (`trainer.ts`) — a melhor variação de cada rodada evolui para a próxima. Sessão (`SessionRecord`) agrega as runs; `pinnedStages` congela os cenários após a iteração 0.
 
 ## Papéis de modelo numa run
-`datagenModelId` (gerador), `judgeModelId` (juiz), e os competidores/contestant. `optimizerModelId`
-default = `datagenModelId`. `judgePasses: 2` avalia em duas ordens (anti-viés de posição).
+`datagenModelId` (gerador), `judgeModelIds: string[]` (um ou mais juízes), e os competidores/contestant.
+`optimizerModelId` default = `datagenModelId`. `judgePasses: 2` = duas ordens POR JUIZ (anti-viés de
+posição). **Tipos de domínio (RunConfig/JudgeResult) vivem em TRÊS arquivos** que devem ficar em
+sincronia: `src/types.ts`, `web/src/engine/types.ts` **e** `web/src/api.ts` (não só os dois últimos).
 
 ## Persistência e tempo real
 Cada run vira `data/runs/<id>.json`; progresso por SSE (ver `knowledge-backend`). A tela

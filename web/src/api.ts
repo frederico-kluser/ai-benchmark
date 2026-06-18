@@ -21,6 +21,8 @@ export interface OpenRouterModel {
   name: string;
   contextLength?: number;
   pricing: { prompt: number; completion: number };
+  /** `supported_parameters` do OpenRouter — usado p/ determinismo por modelo. */
+  supportedParameters?: string[];
 }
 
 export type RunMode = 'compare' | 'variation' | 'training';
@@ -67,7 +69,8 @@ export interface RunConfig {
   compliance?: { area: string; includeRessalvas: boolean };
   // meta:
   datagenModelId: string;
-  judgeModelId: string;
+  /** Um ou mais juizes — rodam em paralelo. */
+  judgeModelIds: string[];
   concurrency?: number;
   timeoutMs?: number;
   maxOutputTokens?: number;
@@ -91,19 +94,41 @@ export interface StageSpec {
   maxTokens: number;
 }
 
-export interface JudgeResult {
+export interface JudgeVerdict {
+  contestantId: string;
+  acceptable: boolean;
+  /** Motivo curtissimo (<= 1 frase). */
+  motivo: string;
+}
+
+export interface SingleJudgeResult {
+  judgeModelId: string;
   rankedContestantIds: string[];
+  verdicts: JudgeVerdict[];
+  blindMap: Record<string, string>;
+  inconclusive?: boolean;
+}
+
+export interface JudgeResult {
+  /** Consenso entre juizes (posicao media): melhor -> pior. */
+  rankedContestantIds: string[];
+  /** Aceitavel por contestant = maioria dos juizes. */
+  acceptableByContestant: Record<string, boolean>;
+  /** Resultado individual de cada juiz. */
+  judges: SingleJudgeResult[];
   blindMap: Record<string, string>;
   rawJudgeText: string;
   inconclusive?: boolean;
 }
 
+/** @deprecated Avaliador fundido no juiz; mantido p/ ler records antigos. */
 export interface EvaluationVerdict {
   contestantId: string;
   acceptable: boolean;
   justification: string;
 }
 
+/** @deprecated Avaliador fundido no juiz; mantido p/ ler records antigos. */
 export interface StageEvaluation {
   bestContestantId: string;
   bestReasons: string;
@@ -119,7 +144,7 @@ export interface StageRecord {
   responses: CompetitorResponse[];
   live?: Record<string, CompetitorLiveState>;
   judge?: JudgeResult;
-  /** Avaliacao qualitativa paralela: motivos do vencedor + aceitabilidade. */
+  /** @deprecated Avaliador fundido no juiz. Presente so em records antigos. */
   evaluation?: StageEvaluation;
   /** Preenchido quando a etapa falhou (datagen/imprevisto) e foi pulada. */
   error?: string;

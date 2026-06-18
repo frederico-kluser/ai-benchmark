@@ -423,6 +423,25 @@ code, .mono { font-family: ui-monospace, 'SF Mono', Menlo, monospace; }
 .answer-note { font-size: 13px; color: var(--text-2); border-left: 2px solid var(--line2); padding-left: 12px; margin-bottom: 11px; line-height: 1.5; }
 .answer-text { margin: 0; background: var(--subtle); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; font-size: 13px; line-height: 1.6; color: var(--text); white-space: pre-wrap; font-family: inherit; }
 
+/* vereditos por juiz (juiz compacto: aceitavel + motivo de 1 frase, por juiz) */
+.judge-verdicts { display: flex; flex-direction: column; gap: 5px; margin-bottom: 11px; }
+.judge-verdict { display: flex; align-items: baseline; gap: 8px; font-size: 12px; line-height: 1.45; }
+.verdict-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; transform: translateY(1px); }
+.verdict-dot.ok { background: var(--ok); }
+.verdict-dot.bad { background: var(--err); }
+.judge-verdict-model { flex: none; font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-weight: 600; color: var(--text-2); }
+.judge-verdict-motivo { color: var(--text-2); }
+
+/* carrossel das etapas: uma aberta por vez, com navegacao anterior/proxima */
+.stage-carousel-nav { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 2px 0 14px; }
+.carousel-btn {
+  appearance: none; background: var(--subtle); border: 1px solid var(--btn-border); color: var(--accent); cursor: pointer;
+  font-size: 12px; font-weight: 600; padding: 5px 12px; border-radius: 8px; font-family: inherit;
+}
+.carousel-btn:hover:not(:disabled) { background: var(--hover); }
+.carousel-btn:disabled { opacity: 0.4; cursor: default; }
+.stage-carousel-pos { font-size: 12px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+
 /* live competitor cards */
 .live-cards { margin-top: 18px; display: flex; flex-direction: column; gap: 12px; }
 .live-card { border: 1px solid rgba(10, 132, 255, 0.3); background: rgba(10, 132, 255, 0.035); border-radius: 12px; padding: 13px 15px; }

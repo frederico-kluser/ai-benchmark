@@ -2,7 +2,7 @@
 name: knowledge-frontend
 description: Padrões do frontend React/Vite do ai-benchmark — camada api.ts, cache IndexedDB, o componente ModelSelector, o assistente Nova Run em passos, SSE ao vivo e design tokens CSS. Use ao adicionar/alterar qualquer coisa em web/src/ (telas, componentes, chamadas de API, estilos).
 metadata:
-  version: 0.1.0
+  version: 0.2.0
   type: knowledge
 ---
 # Frontend — ai-benchmark
@@ -28,6 +28,7 @@ Dev em `:5173` com proxy de `/v1` e `/health` → `:3001` (`vite.config.ts`).
 ## SSE ao vivo
 - `openRunStream(id, onEvent)` abre `EventSource` em `/runs/:id/events`. **Feche** o `EventSource` em eventos terminais — sem isso o browser reconecta infinitamente (há comentário explicando isso em `api.ts`).
 - `RunView` (`pages/RunView.tsx`): o reducer `applyEvent` é **agnóstico à ordem das etapas** (atualiza `stages[stageIndex]` isolado; cada etapa tem seu `live`). Enquanto `status === 'running'`, mostra o **ProcessMonitor** (lista de etapas em paralelo + previews ao vivo, classes `.process-*` reusando `.live-*`/`.stage-badge`); placar/heatmap/etapas detalhadas só quando a run **termina**. Use `stageStatus()` para o badge por etapa.
+- **Etapas chegam fora de ordem** (execução paralela): o reducer coloca etapas **por índice** (`stages[i] = …`, NUNCA `push` — push desalinha → array **esparso** → `record.stages.map(s => s.index)` quebra; foi o bug do heatmap/resumo). A UI de resultados deriva uma lista **densa e ordenada** (`denseStages`) e renderiza só dela. As etapas abrem **uma por vez** (carrossel: estado `openStage` + botões anterior/próxima), não todas expandidas.
 
 ## ModelSelector (`components/ModelSelector.tsx`)
 - Recebe um catálogo **compartilhado** `models` (evita refetch por seletor) + `excludeIds` (esconde modelos já usados em outro papel). Busca fuzzy por id/nome. Para filtrar o catálogo (ex.: LGPD), passe um array `models` já filtrado.

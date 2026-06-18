@@ -22,6 +22,49 @@ function cacheKey(apiKey: string): string {
   return apiKey.slice(-12);
 }
 
+// ---------------------------------------------------------------------------
+// Determinismo POR MODELO. Reasoning models (gpt-5*, serie o*) REJEITAM
+// temperature != 1 (HTTP 400 -> resposta vazia, foi o bug do gpt-5-nano).
+// Decidimos quais parametros de amostragem enviar pelo `supported_parameters`
+// do OpenRouter (fonte de verdade, ja em cache via listModels); sem isso,
+// caimos numa heuristica por nome. So enviamos temperature/seed a quem
+// suporta — buscando o MAXIMO de determinismo que cada modelo permite.
+// ---------------------------------------------------------------------------
+const DETERMINISTIC_SEED = 1234;
+
+function cachedModel(apiKey: string, modelId: string): OpenRouterModel | undefined {
+  return modelsCache.get(cacheKey(apiKey))?.data.find((m) => m.id === modelId);
+}
+
+function looksLikeReasoning(modelId: string): boolean {
+  const id = modelId.toLowerCase();
+  if (id.includes('gpt-5-chat')) return false; // a variante chat aceita temperature
+  // OpenAI serie o (o1..o4) e GPT-5 reasoning rejeitam temperature != 1.
+  return /(^|\/)(o[1-4]([.\-]|$)|gpt-5|gpt-oss)/.test(id);
+}
+
+/**
+ * Monta os parametros de amostragem com determinismo na medida que cada modelo
+ * permite. So inclui temperature/seed quando o modelo os suporta — senao
+ * reasoning models respondem vazio. `desiredTemperature` (default 0) e usado
+ * apenas onde temperature e aceita.
+ */
+function deterministicSampling(
+  apiKey: string,
+  modelId: string,
+  desiredTemperature: number,
+): { temperature?: number; seed?: number } {
+  const supported = cachedModel(apiKey, modelId)?.supportedParameters;
+  if (supported && supported.length > 0) {
+    const out: { temperature?: number; seed?: number } = {};
+    if (supported.includes('temperature')) out.temperature = desiredTemperature;
+    if (supported.includes('seed')) out.seed = DETERMINISTIC_SEED;
+    return out;
+  }
+  // sem metadados de suporte: omite temperature em reasoning (seed desconhecido).
+  return looksLikeReasoning(modelId) ? {} : { temperature: desiredTemperature };
+}
+
 /**
  * Traduz uma resposta de erro da OpenRouter para uma mensagem clara em PT-BR.
  * 401/403 = key invalida/expirada/sem permissao; 402 = sem credito; 429 = rate limit.
@@ -221,6 +264,9 @@ export async function listModels(apiKey: string, force = false): Promise<OpenRou
         prompt: parsePrice(pricing.prompt),
         completion: parsePrice(pricing.completion),
       },
+      supportedParameters: Array.isArray(item.supported_parameters)
+        ? (item.supported_parameters as unknown[]).map((p) => String(p))
+        : undefined,
       raw: item,
     };
   });
@@ -273,7 +319,7 @@ export async function chatCompletion(params: ChatCompletionParams): Promise<Chat
   const body: Record<string, unknown> = {
     model: modelId,
     messages,
-    temperature,
+    ...deterministicSampling(apiKey, modelId, temperature),
   };
   if (typeof maxTokens === 'number' && maxTokens > 0) {
     body.max_tokens = maxTokens;
@@ -295,9 +341,15 @@ export async function chatCompletion(params: ChatCompletionParams): Promise<Chat
     const json = (await res.json()) as {
       choices?: { message?: { content?: string } }[];
       usage?: { prompt_tokens?: number; completion_tokens?: number };
+      error?: { message?: string; code?: string | number };
     };
 
     const text = json.choices?.[0]?.message?.content ?? '';
+    // OpenRouter as vezes devolve 200 com um corpo de erro (ex.: provider
+    // rejeitou um parametro). Sem isto a falha viraria "resposta vazia" muda.
+    if (!text && json.error) {
+      throw new Error(`OpenRouter: ${json.error.message ?? JSON.stringify(json.error)}`);
+    }
     const tokensIn = json.usage?.prompt_tokens ?? 0;
     const tokensOut = json.usage?.completion_tokens ?? 0;
 
@@ -339,7 +391,7 @@ export async function chatCompletionStream(
   const body: Record<string, unknown> = {
     model: modelId,
     messages,
-    temperature,
+    ...deterministicSampling(apiKey, modelId, temperature),
     stream: true,
     usage: { include: true },
   };
@@ -358,6 +410,7 @@ export async function chatCompletionStream(
   let tokensIn = 0;
   let tokensOut = 0;
   let lastRaw: unknown = null;
+  let streamError: string | null = null;
 
   try {
     if (!res.body) throw new Error('OpenRouter retornou stream sem corpo de resposta.');
@@ -383,8 +436,12 @@ export async function chatCompletionStream(
           const chunk = JSON.parse(payload) as {
             choices?: { delta?: { content?: string } }[];
             usage?: { prompt_tokens?: number; completion_tokens?: number };
+            error?: { message?: string };
           };
           lastRaw = chunk;
+          if (chunk.error && !streamError) {
+            streamError = chunk.error.message ?? JSON.stringify(chunk.error);
+          }
           const delta = chunk.choices?.[0]?.delta?.content;
           if (typeof delta === 'string' && delta.length > 0) {
             fullText += delta;
@@ -400,6 +457,9 @@ export async function chatCompletionStream(
         }
       }
     }
+
+    // Resposta vazia + erro in-band (provider rejeitou parametro etc.): falha alto.
+    if (!fullText && streamError) throw new Error(`OpenRouter: ${streamError}`);
 
     const latencyMs = Date.now() - startedAt;
     ok = true;

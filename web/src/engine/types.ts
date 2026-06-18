@@ -8,6 +8,13 @@ export interface OpenRouterModel {
   name: string;
   contextLength?: number;
   pricing: OpenRouterModelPricing;
+  /**
+   * Parametros de amostragem que o modelo aceita (campo `supported_parameters`
+   * do OpenRouter). Fonte de verdade para enviar `temperature`/`seed` so a quem
+   * suporta — reasoning models (gpt-5*, serie o*) NAO listam `temperature` e
+   * respondem vazio (HTTP 400) se ela for enviada. Ausente = desconhecido.
+   */
+  supportedParameters?: string[];
   raw?: unknown;
 }
 
@@ -68,7 +75,8 @@ export interface RunConfigBase {
   theme: string;
   stages: number;
   datagenModelId: string;
-  judgeModelId: string;
+  /** Um ou mais juizes — rodam em paralelo (gateados pelo limitador global). */
+  judgeModelIds: string[];
   concurrency?: number;
   timeoutMs?: number;
   /** Cap absoluto de max_tokens da resposta dos competidores. */
@@ -136,15 +144,49 @@ export interface CompetitorResponse {
   errorMsg?: string;
 }
 
-export interface JudgeResult {
-  /** Melhor -> pior, por contestantId. (Antes: rankedModelIds.) */
+/** Veredito COMPACTO de UM juiz para UMA resposta: aceitavel + motivo curto. */
+export interface JudgeVerdict {
+  contestantId: string;
+  /** true = utilizavel no trabalho sem causar erro/dano, mesmo nao sendo a melhor. */
+  acceptable: boolean;
+  /** Motivo curtissimo (<= 1 frase). */
+  motivo: string;
+}
+
+/** Resultado compacto de UM juiz numa etapa: ranking + vereditos. */
+export interface SingleJudgeResult {
+  judgeModelId: string;
+  /** Melhor -> pior, por contestantId (deste juiz). */
   rankedContestantIds: string[];
-  blindMap: Record<string, string>; // letra -> contestantId
+  /** Aceitabilidade por resposta (deste juiz). */
+  verdicts: JudgeVerdict[];
+  /** letra -> contestantId desta avaliacao (cosmetico p/ a UI "(era X)"). */
+  blindMap: Record<string, string>;
+  inconclusive?: boolean;
+}
+
+/**
+ * Resultado do estagio de julgamento (UM ou MAIS juizes). Compacto: cada juiz
+ * devolve ranking + aceitavel/motivo por resposta. Agregamos um CONSENSO de
+ * ranking (posicao media) e a aceitabilidade por MAIORIA dos juizes; guardamos
+ * tambem o resultado individual de cada juiz (placar aditivo + justificativas).
+ */
+export interface JudgeResult {
+  /** Consenso entre juizes (posicao media): melhor -> pior. Placar/heatmap/CSV usam isto. */
+  rankedContestantIds: string[];
+  /** Aceitavel por contestant = MAIORIA dos juizes (respostas com erro/vazias = false). */
+  acceptableByContestant: Record<string, boolean>;
+  /** Resultado individual de cada juiz (placar aditivo por juiz + justificativas na UI). */
+  judges: SingleJudgeResult[];
+  blindMap: Record<string, string>; // letra -> contestantId (do 1o juiz; cosmetico)
   rawJudgeText: string;
   inconclusive?: boolean;
 }
 
-/** Veredito de aceitabilidade de UMA resposta para uso real no trabalho. */
+/**
+ * @deprecated O avaliador foi fundido no juiz (ver JudgeResult). Tipo mantido
+ * apenas para LER records antigos que tinham um estagio de avaliacao separado.
+ */
 export interface EvaluationVerdict {
   contestantId: string;
   /** true = utilizavel em producao sem causar erro/dano, mesmo nao sendo a melhor. */
@@ -184,7 +226,7 @@ export interface StageRecord {
   /** Estado ao vivo dos competidores nesta etapa (por contestantId); limpo apos stage.judged. */
   live?: Record<string, CompetitorLiveState>;
   judge?: JudgeResult;
-  /** Avaliacao qualitativa (paralela ao juiz): motivos do vencedor + aceitabilidade. */
+  /** @deprecated Avaliador fundido no juiz. Presente so em records antigos. */
   evaluation?: StageEvaluation;
   /** Preenchido quando a etapa falhou (ex.: datagen) e foi pulada sem matar a run. */
   error?: string;
@@ -268,7 +310,6 @@ export type RunEvent =
       runId: string;
       stageIndex: number;
       judge: JudgeResult;
-      evaluation?: StageEvaluation;
       scoreboard: Record<string, number>;
       totalCostUsd: number;
     }

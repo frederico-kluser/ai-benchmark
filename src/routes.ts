@@ -17,7 +17,9 @@ const baseFields = {
   theme: z.string().min(1),
   stages: z.number().int().min(1).max(50),
   datagenModelId: z.string().min(1),
-  judgeModelId: z.string().min(1),
+  // Um ou mais juizes (rodam em paralelo). Aceita tambem o legado judgeModelId
+  // (string) via preprocess do runConfigSchema.
+  judgeModelIds: z.array(z.string().min(1)).min(1),
   concurrency: z.number().int().min(1).max(32).optional(),
   timeoutMs: z.number().int().min(1_000).max(300_000).optional(),
   maxOutputTokens: z.number().int().min(50).max(16_000).optional(),
@@ -64,11 +66,15 @@ const trainingObj = z.object({
 const runConfigSchema = z
   .preprocess(
     (val) => {
+      if (!val || typeof val !== 'object') return val;
+      const obj = { ...(val as Record<string, unknown>) };
       // compat: payloads antigos sem `mode` sao tratados como compare.
-      if (val && typeof val === 'object' && (val as Record<string, unknown>).mode === undefined) {
-        return { ...(val as Record<string, unknown>), mode: 'compare' };
+      if (obj.mode === undefined) obj.mode = 'compare';
+      // compat: judgeModelId (string, legado) -> judgeModelIds (array).
+      if (obj.judgeModelIds === undefined && typeof obj.judgeModelId === 'string') {
+        obj.judgeModelIds = [obj.judgeModelId];
       }
-      return val;
+      return obj;
     },
     z.discriminatedUnion('mode', [compareObj, variationObj, trainingObj]),
   )
@@ -92,20 +98,23 @@ const runConfigSchema = z
           message: 'O gerador de cenarios nao pode ser tambem um competidor.',
         });
       }
-      if (cfg.competitorModelIds.includes(cfg.judgeModelId)) {
+      const judgeAsCompetitor = cfg.judgeModelIds.find((id) =>
+        cfg.competitorModelIds.includes(id),
+      );
+      if (judgeAsCompetitor) {
         ctx.addIssue({
           code: 'custom',
-          path: ['judgeModelId'],
-          message: 'O juiz nao pode ser tambem um competidor.',
+          path: ['judgeModelIds'],
+          message: `O juiz "${judgeAsCompetitor}" nao pode ser tambem um competidor.`,
         });
       }
     } else {
       // variation | training: anti vies de auto-preferencia do juiz
-      if (cfg.judgeModelId === cfg.contestantModelId) {
+      if (cfg.judgeModelIds.includes(cfg.contestantModelId)) {
         ctx.addIssue({
           code: 'custom',
-          path: ['judgeModelId'],
-          message: 'O juiz nao pode ser o mesmo modelo sob teste (vies de auto-preferencia).',
+          path: ['judgeModelIds'],
+          message: 'Nenhum juiz pode ser o mesmo modelo sob teste (vies de auto-preferencia).',
         });
       }
       const optimize = cfg.promptOptimization !== false;

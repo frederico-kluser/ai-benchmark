@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto';
 import { generateStage } from './datagen.js';
 import { runCompetitor } from './competitor.js';
 import { judgeStage } from './judge.js';
-import { evaluateStage } from './evaluator.js';
 import { emitEvent } from './events.js';
 import { saveRun } from './storage.js';
 import { contestantsFromConfig } from './normalize.js';
@@ -317,54 +316,39 @@ async function runLoop(record: RunRecord, apiKey: string, opts: StartRunOpts): P
         );
         stageRecord.live = undefined;
 
-        // Juiz (ranking listwise) + avaliacao qualitativa EM PARALELO (allSettled).
+        // Juiz COMPACTO: 1+ juizes EM PARALELO (cada um devolve ranking +
+        // aceitavel/motivo por resposta). A concorrencia e gateada pelo
+        // limitador global (openrouter.ts) — sem cap local aqui.
         emitEvent({ type: 'stage.judging', runId, stageIndex: i });
-        log(runId, `stage ${i + 1} judging + evaluating`);
-        const [judgeRes, evalRes] = await Promise.allSettled([
-          judgeStage({
+        log(runId, `stage ${i + 1} judging (${record.config.judgeModelIds.length} juiz(es))`);
+        try {
+          stageRecord.judge = await judgeStage({
             apiKey,
             stage: stageSpec,
             responses: stageRecord.responses,
-            judgeModelId: record.config.judgeModelId,
+            judgeModelIds: record.config.judgeModelIds,
             timeoutMs: record.config.timeoutMs,
             passes: record.config.judgePasses,
-          }),
-          evaluateStage({
-            apiKey,
-            stage: stageSpec,
-            responses: stageRecord.responses,
-            evaluatorModelId: record.config.judgeModelId,
-            timeoutMs: record.config.timeoutMs,
-          }),
-        ]);
-
-        if (judgeRes.status === 'fulfilled') {
-          stageRecord.judge = judgeRes.value;
-        } else {
+          });
+        } catch (judgeErr) {
           stageRecord.judge = {
             rankedContestantIds: [],
+            acceptableByContestant: {},
+            judges: [],
             blindMap: {},
-            rawJudgeText: (judgeRes.reason as Error)?.message ?? String(judgeRes.reason),
+            rawJudgeText: judgeErr instanceof Error ? judgeErr.message : String(judgeErr),
             inconclusive: true,
           };
           log(runId, `stage ${i + 1} juiz falhou: ${stageRecord.judge.rawJudgeText}`);
         }
+        // Placar ADITIVO POR JUIZ: cada juiz contribui com seu ranking (ordem-
+        // independente). Com 2 juizes e 3 competidores -> ate 6 pontuacoes/etapa.
         if (!stageRecord.judge.inconclusive) {
-          applyScoreboard(record.scoreboard, stageRecord.judge.rankedContestantIds);
-        }
-
-        if (evalRes.status === 'fulfilled') {
-          stageRecord.evaluation = evalRes.value;
-        } else {
-          stageRecord.evaluation = {
-            bestContestantId: '',
-            bestReasons: '',
-            verdicts: [],
-            blindMap: {},
-            raw: (evalRes.reason as Error)?.message ?? String(evalRes.reason),
-            inconclusive: true,
-          };
-          log(runId, `stage ${i + 1} avaliacao falhou: ${stageRecord.evaluation.raw}`);
+          for (const j of stageRecord.judge.judges) {
+            if (j.rankedContestantIds.length > 0) {
+              applyScoreboard(record.scoreboard, j.rankedContestantIds);
+            }
+          }
         }
 
         stageRecord.finishedAt = nowIso();
@@ -374,7 +358,6 @@ async function runLoop(record: RunRecord, apiKey: string, opts: StartRunOpts): P
           runId,
           stageIndex: i,
           judge: stageRecord.judge,
-          evaluation: stageRecord.evaluation,
           scoreboard: { ...record.scoreboard },
           totalCostUsd: record.totalCostUsd,
         });
