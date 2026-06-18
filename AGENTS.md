@@ -19,6 +19,7 @@ Monorepo TypeScript: backend Express (`src/`) + frontend React/Vite (`web/`). UI
 - Toda chamada de LLM passa por `chatCompletion`/`chatCompletionStream` (`openrouter.ts`), que têm um **limitador global adaptativo** (semáforo + backoff em 429). Não chame o OpenRouter por fora nem ponha cap de concorrência local — confie no limitador. Teto via `OPENROUTER_MAX_CONCURRENCY`.
 - O pipeline roda **todas as etapas em paralelo** (`orchestrator.ts`); o placar é aditivo (ordem-independente) e o `saveRun` é throttled.
 - Há um **modo client-side** (`web/src/engine/`) que **duplica** o pipeline de `src/` para rodar no navegador (SPA estática/Vercel). Ao mudar a lógica do pipeline, **sincronize os dois lados**. Ver `knowledge-architecture`.
+- **Não rode o backend `src/` em serverless (Vercel):** ele grava runs no filesystem (`storage.ts`), efêmero/isolado no serverless → `GET /v1/benchmark/runs/:id` vira `Run nao encontrada`. Produção = **SPA estática** (`npm run web:build`); o backend é só dev/self-host. Deploy errado se denuncia quando `/health` responde JSON em vez do `index.html`. Ver `knowledge-architecture`.
 
 ## Skills (leia primeiro)
 Toda tarefa passa por **`.agents/skills/project-router`**, que carrega as skills de conhecimento/tarefa
