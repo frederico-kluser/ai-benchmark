@@ -253,6 +253,11 @@ export function NewRun() {
   const [lgpd, setLgpd] = useState<LgpdData | null>(null);
   const [prunedNotice, setPrunedNotice] = useState<string | null>(null);
 
+  // Filtro de preço dos PARTICIPANTES (USD por 1M tokens; '' = sem limite).
+  // Não afeta gerador nem juiz.
+  const [maxInputPrice, setMaxInputPrice] = useState('');
+  const [maxOutputPrice, setMaxOutputPrice] = useState('');
+
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -298,42 +303,58 @@ export function NewRun() {
     return filterModels(models, complianceArea, includeRessalvas, lgpd).allowed;
   }, [models, lgpd, complianceArea, includeRessalvas]);
 
+  // Catálogo dos PARTICIPANTES: LGPD (filteredModels) + filtro de preço.
+  // Gerador e juiz NÃO usam este — eles veem o catálogo completo (`models`).
+  const participantModels = useMemo(() => {
+    const maxIn = parseFloat(maxInputPrice);
+    const maxOut = parseFloat(maxOutputPrice);
+    const hasIn = Number.isFinite(maxIn);
+    const hasOut = Number.isFinite(maxOut);
+    if (!hasIn && !hasOut) return filteredModels;
+    return filteredModels.filter((m) => {
+      const inPerM = m.pricing.prompt * 1_000_000;
+      const outPerM = m.pricing.completion * 1_000_000;
+      if (hasIn && inPerM > maxIn) return false;
+      if (hasOut && outPerM > maxOut) return false;
+      return true;
+    });
+  }, [filteredModels, maxInputPrice, maxOutputPrice]);
+
   // Espelho das seleções p/ a poda ler o estado mais recente sem re-rodar a cada
   // clique de seleção (só quando área/rigor/base mudam).
   const selRef = useRef({ competitors, contestantModel, datagen, judge });
   selRef.current = { competitors, contestantModel, datagen, judge };
 
-  // Ao mudar área/rigor, remove das seleções (inclusive os defaults) os modelos
-  // que deixaram de ser permitidos e avisa quais saíram.
+  // Ao mudar os filtros (LGPD/área/rigor/preço), remove dos PARTICIPANTES os
+  // modelos que saíram do catálogo permitido e avisa. Gerador e juiz NÃO são
+  // afetados pelos filtros (usam o catálogo completo).
   useEffect(() => {
-    if (!lgpd || complianceArea === AREA_LIVRE) {
+    const priceActive = maxInputPrice.trim() !== '' || maxOutputPrice.trim() !== '';
+    const lgpdActive = !!lgpd && complianceArea !== AREA_LIVRE;
+    if ((!priceActive && !lgpdActive) || models.length === 0) {
       setPrunedNotice(null);
       return;
     }
+    const allowed = new Set(participantModels.map((m) => m.id));
     const removed = new Set<string>();
     const keep = (ids: string[]) =>
       ids.filter((id) => {
-        if (isAllowed(id, complianceArea, includeRessalvas, lgpd)) return true;
+        if (allowed.has(id)) return true;
         removed.add(id);
         return false;
       });
-    const { competitors: c, contestantModel: cm, datagen: dg, judge: jg } = selRef.current;
+    const { competitors: c, contestantModel: cm } = selRef.current;
     const nc = keep(c);
     const ncm = keep(cm);
-    const ndg = keep(dg);
-    const njg = keep(jg);
     if (nc.length !== c.length) setCompetitors(nc);
     if (ncm.length !== cm.length) setContestantModel(ncm);
-    if (ndg.length !== dg.length) setDatagen(ndg);
-    if (njg.length !== jg.length) setJudge(njg);
-    const areaLabel = lgpd.areas.find((a) => a.id === complianceArea)?.label ?? complianceArea;
     setPrunedNotice(
       removed.size
-        ? `Removidos por não atenderem "${areaLabel}": ${[...removed].join(', ')}.`
+        ? `Removidos dos participantes pelo filtro (área/preço): ${[...removed].join(', ')}.`
         : null,
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [complianceArea, includeRessalvas, lgpd]);
+  }, [participantModels]);
 
   function costOf(modelId: string, tin: number, tout: number): number {
     const m = priceById.get(modelId);
@@ -507,6 +528,48 @@ export function NewRun() {
   const areaMeta = lgpd && !isLivre ? lgpd.areas.find((a) => a.id === complianceArea) : undefined;
   const areaLabel = isLivre ? 'Livre — todos os modelos' : (areaMeta?.label ?? complianceArea);
 
+  // Card do filtro de preço, reusado nos modos compare e variação/treino.
+  const priceFilterCard = (
+    <div className="card field-card">
+      <div className="field-head">
+        <label className="field-label">Filtro de preço (só participantes)</label>
+        <span className="proposito-count">
+          {modelsLoading ? '—' : `${participantModels.length} de ${filteredModels.length} modelos`}
+        </span>
+      </div>
+      <p className="field-hint" style={{ marginTop: 0 }}>
+        Limita os participantes por preço (USD por 1M tokens). Vazio = sem limite.{' '}
+        <strong>Não afeta</strong> gerador nem juiz.
+      </p>
+      <div className="price-filter-row">
+        <label className="price-field">
+          <span>Input máx. ($/1M)</span>
+          <input
+            type="number"
+            min="0"
+            step="0.1"
+            className="input"
+            placeholder="sem limite"
+            value={maxInputPrice}
+            onChange={(e) => setMaxInputPrice(e.target.value)}
+          />
+        </label>
+        <label className="price-field">
+          <span>Output máx. ($/1M)</span>
+          <input
+            type="number"
+            min="0"
+            step="0.1"
+            className="input"
+            placeholder="sem limite"
+            value={maxOutputPrice}
+            onChange={(e) => setMaxOutputPrice(e.target.value)}
+          />
+        </label>
+      </div>
+    </div>
+  );
+
   return (
     <form className="screen wizard" onSubmit={submit}>
       <header className="wizard-head">
@@ -667,6 +730,7 @@ export function NewRun() {
                   Escolha 2 ou mais modelos. Todos respondem às mesmas perguntas e disputam o ranking — o juiz decide quem
                   foi melhor, sem saber qual modelo é qual.
                 </StepIntro>
+                {priceFilterCard}
                 <ModelSelector
                   multi
                   title="Competidores"
@@ -674,7 +738,7 @@ export function NewRun() {
                   value={competitors}
                   onChange={setCompetitors}
                   excludeIds={[...datagen, ...judge]}
-                  models={filteredModels}
+                  models={participantModels}
                   loading={modelsLoading}
                 />
               </>
@@ -696,6 +760,7 @@ export function NewRun() {
                     </>
                   )}
                 </StepIntro>
+                {priceFilterCard}
                 <ModelSelector
                   multi={false}
                   title="Modelo sob teste"
@@ -703,7 +768,7 @@ export function NewRun() {
                   value={contestantModel}
                   onChange={setContestantModel}
                   excludeIds={[...datagen, ...judge]}
-                  models={filteredModels}
+                  models={participantModels}
                   loading={modelsLoading}
                 />
 
@@ -755,8 +820,8 @@ export function NewRun() {
               hint="Exatamente 1 modelo — inventa as perguntas do benchmark."
               value={datagen}
               onChange={setDatagen}
-              excludeIds={[...(mode === 'compare' ? competitors : contestantModel), ...judge]}
-              models={filteredModels}
+              excludeIds={[...(mode === 'compare' ? competitors : contestantModel)]}
+              models={models}
               loading={modelsLoading}
             />
 
@@ -766,15 +831,15 @@ export function NewRun() {
               hint="Exatamente 1 modelo — ranqueia às cegas e avalia a aceitabilidade."
               value={judge}
               onChange={setJudge}
-              excludeIds={[...(mode === 'compare' ? competitors : contestantModel), ...datagen]}
-              models={filteredModels}
+              excludeIds={[...(mode === 'compare' ? competitors : contestantModel)]}
+              models={models}
               loading={modelsLoading}
             />
 
             <div className="roles-note">
               {mode === 'compare'
-                ? 'Gerador e juiz usam um único modelo cada. Um mesmo modelo não pode ocupar dois papéis — os já escolhidos somem das outras listas.'
-                : 'O juiz não pode ser o modelo sob teste (evita viés de auto-preferência). Gerador e juiz são modelos à parte.'}
+                ? 'Gerador e juiz podem ser o MESMO modelo (repetição permitida) e não entram como competidores. Os filtros de área/preço NÃO afetam estes dois — eles veem o catálogo completo.'
+                : 'Gerador e juiz podem ser o MESMO modelo (repetição permitida); o juiz ainda não pode ser o modelo sob teste (evita viés). Os filtros de área/preço NÃO afetam gerador nem juiz.'}
             </div>
 
             {isSingle && (

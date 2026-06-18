@@ -73,13 +73,7 @@ const runConfigSchema = z
     z.discriminatedUnion('mode', [compareObj, variationObj, trainingObj]),
   )
   .superRefine((cfg, ctx) => {
-    if (cfg.datagenModelId === cfg.judgeModelId) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['judgeModelId'],
-        message: 'O juiz e o gerador de cenarios devem ser modelos diferentes.',
-      });
-    }
+    // Gerador e juiz PODEM repetir o mesmo modelo (repeticao permitida).
     if (cfg.mode === 'compare') {
       const dup = cfg.competitorModelIds.find(
         (id, i) => cfg.competitorModelIds.indexOf(id) !== i,

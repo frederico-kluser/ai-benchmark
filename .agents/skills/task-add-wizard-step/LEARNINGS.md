@@ -11,3 +11,8 @@
   exata só pega uma das indentações — confira ambas.
 - 2026-06-17 (inferência) — Default de filtro ficou em `livre` de propósito: qualquer área não-livre
   poda os defaults de origem chinesa (`deepseek` gerador, `moonshotai` juiz) na carga inicial.
+- 2026-06-18 (usuário) — Filtros são por PAPEL: participantes (competidores/contestant) recebem o
+  catálogo filtrado (LGPD + preço via `participantModels`); gerador e juiz recebem `models` (completo,
+  sem filtro) e a poda NÃO os toca. Gerador e juiz podem repetir o mesmo modelo (sem `excludeIds`
+  entre eles; o check `datagen===judge` do Zod no backend foi relaxado). Filtro de preço = USD por 1M
+  tokens (`pricing.prompt/completion * 1e6`).

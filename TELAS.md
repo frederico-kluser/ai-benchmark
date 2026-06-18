@@ -176,8 +176,8 @@ Monte seu benchmark em 5 passos. Cada etapa explica o que faz — no fim, é só
 |---|---|---|---|
 | 1 | **Objetivo** | 3 cartões de modo (Comparar / Variação / Treino) + diagrama do pipeline + link p/ tutorial | sempre válido |
 | 2 | **Tema** | `textarea` do tema + presets; steppers **Etapas** e **Max tokens** (+ **Iterações** no Treino) | tema preenchido |
-| 3 | **Participantes** | *compare:* Competidores (≥2). *variação/treino:* Modelo sob teste + prompt base + toggle de otimização + técnicas/variantes manuais | ≥2 competidores **ou** 1 modelo + ≥2 variantes |
-| 4 | **Avaliação** | Gerador (1) + Juiz (1); toggle "Juiz em 2 ordens" (modos de 1 LLM); "Ajustes avançados" (concorrência, timeout) | 1 gerador + 1 juiz |
+| 3 | **Participantes** | **Filtro de preço** (input/output máx., $/1M — só participantes) + *compare:* Competidores (≥2); *variação/treino:* Modelo sob teste + prompt base + toggle de otimização + técnicas/variantes manuais | ≥2 competidores **ou** 1 modelo + ≥2 variantes |
+| 4 | **Avaliação** | Gerador (1) + Juiz (1) — **podem ser o mesmo modelo** e veem o catálogo completo (não filtrados por área/preço); toggle "Juiz em 2 ordens" (modos de 1 LLM); "Ajustes avançados" | 1 gerador + 1 juiz |
 | 5 | **Revisar** | Resumo (modo, nº de participantes, etapas, iterações, gerador, juiz, nº de chamadas) + **custo estimado** + tema | sempre válido |
 
 **Defaults:** Etapas 5 · Max tokens 500 · Concorrência 8 · Timeout 60.000 ms · Iterações 3 ·
@@ -192,9 +192,12 @@ Faixas (steppers): Etapas 1–50, Max tokens 50–16.000 (passo 50), Concorrênc
 Validação por passo aparece num banner vermelho acima do rodapé; `Enter` fora do último passo
 apenas avança o assistente (não dispara).
 
-**Exclusão mútua entre papéis:** cada seletor recebe `excludeIds` com os modelos já usados nos
-outros papéis. Um modelo escolhido como juiz **some** das opções de competidor e gerador (e
-vice-versa) — a regra "um modelo, um papel". No passo 5, o botão é desabilitado durante o envio
+**Papéis e filtros:** os **participantes** (competidores / modelo sob teste) são filtrados por
+**área (LGPD)** e por **preço** (input/output máx.); o **gerador** e o **juiz** veem o **catálogo
+completo** (não são afetados por esses filtros) e **podem ser o mesmo modelo** (repetição
+permitida). Competidores e gerador/juiz continuam mutuamente exclusivos (um modelo não é, ao mesmo
+tempo, competidor e gerador/juiz); no variação/treino o juiz ainda não pode ser o modelo sob teste
+(anti-viés). No passo 5, o botão é desabilitado durante o envio
 (*"Disparando…"*); o backend revalida tudo (Zod) e, em sucesso, **navega para `/runs/:id`** (ou
 `/training/:sessionId` no Treino), onde o acompanhamento ao vivo começa.
 

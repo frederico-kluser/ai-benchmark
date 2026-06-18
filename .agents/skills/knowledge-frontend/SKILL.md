@@ -31,6 +31,7 @@ Dev em `:5173` com proxy de `/v1` e `/health` → `:3001` (`vite.config.ts`).
 
 ## ModelSelector (`components/ModelSelector.tsx`)
 - Recebe um catálogo **compartilhado** `models` (evita refetch por seletor) + `excludeIds` (esconde modelos já usados em outro papel). Busca fuzzy por id/nome. Para filtrar o catálogo (ex.: LGPD), passe um array `models` já filtrado.
+- **Filtros por papel (NewRun):** participantes recebem `participantModels` (LGPD + preço input/output); **gerador e juiz recebem `models` completo** (não filtrados) e **podem repetir o mesmo modelo** (sem `excludeIds` entre eles).
 
 ## Assistente Nova Run (`pages/NewRun.tsx`)
 - Ver `task-add-wizard-step` para o passo a passo. Resumo: um array `STEPS` dirige o fluxo; um `models` compartilhado alimenta todos os seletores; estimativa de custo via `priceById`.

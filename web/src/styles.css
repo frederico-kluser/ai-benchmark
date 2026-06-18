@@ -659,6 +659,11 @@ code, .mono { font-family: ui-monospace, 'SF Mono', Menlo, monospace; }
   background: var(--err-soft); border-radius: 10px; padding: 9px 12px;
 }
 
+/* filtro de preço (participantes) */
+.price-filter-row { display: flex; gap: 12px; margin-top: 4px; flex-wrap: wrap; }
+.price-field { display: flex; flex-direction: column; gap: 5px; flex: 1; min-width: 150px; font-size: 12px; font-weight: 600; color: var(--text-2); }
+.price-field .input { font-weight: 400; }
+
 /* revisão (passo 5) */
 .review-grid { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 16px; align-items: start; }
 .review-card { padding: 22px 24px; }
