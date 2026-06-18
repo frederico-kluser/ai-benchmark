@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ModelSelector } from '../components/ModelSelector';
 import { Toggle } from '../components/Toggle';
@@ -8,6 +8,7 @@ import { useHelp } from '../help';
 import {
   createRun,
   createSession,
+  fetchLgpd,
   fetchModels,
   getStoredKey,
   type ManualVariant,
@@ -15,6 +16,7 @@ import {
   type RunConfig,
   type RunMode,
 } from '../api';
+import { AREA_LIVRE, filterModels, isAllowed, type LgpdData } from '../lgpd';
 
 // Defaults da run (ajustáveis na própria tela antes de iniciar).
 const DEFAULT_COMPETITORS = [
@@ -244,6 +246,13 @@ export function NewRun() {
   const [iterations, setIterations] = useState(3);
   const [twoPassJudge, setTwoPassJudge] = useState(false);
 
+  // Conformidade LGPD (passo Tema). 'livre' = sem filtro (default, não quebra os
+  // modelos pré-selecionados). Consultivo: filtra o catálogo, não força roteamento.
+  const [complianceArea, setComplianceArea] = useState<string>(AREA_LIVRE);
+  const [includeRessalvas, setIncludeRessalvas] = useState(true);
+  const [lgpd, setLgpd] = useState<LgpdData | null>(null);
+  const [prunedNotice, setPrunedNotice] = useState<string | null>(null);
+
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -270,6 +279,61 @@ export function NewRun() {
     for (const m of models) map.set(m.id, m);
     return map;
   }, [models]);
+
+  // Carrega a base de conhecimento LGPD (servida por GET /v1/benchmark/lgpd).
+  useEffect(() => {
+    let active = true;
+    fetchLgpd()
+      .then((d) => active && setLgpd(d))
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // Catálogo filtrado pelo propósito/área (passo Tema). Em 'livre' (ou enquanto a
+  // base não carregou) devolve o catálogo inteiro. Usado em todos os seletores.
+  const filteredModels = useMemo(() => {
+    if (!lgpd || complianceArea === AREA_LIVRE) return models;
+    return filterModels(models, complianceArea, includeRessalvas, lgpd).allowed;
+  }, [models, lgpd, complianceArea, includeRessalvas]);
+
+  // Espelho das seleções p/ a poda ler o estado mais recente sem re-rodar a cada
+  // clique de seleção (só quando área/rigor/base mudam).
+  const selRef = useRef({ competitors, contestantModel, datagen, judge });
+  selRef.current = { competitors, contestantModel, datagen, judge };
+
+  // Ao mudar área/rigor, remove das seleções (inclusive os defaults) os modelos
+  // que deixaram de ser permitidos e avisa quais saíram.
+  useEffect(() => {
+    if (!lgpd || complianceArea === AREA_LIVRE) {
+      setPrunedNotice(null);
+      return;
+    }
+    const removed = new Set<string>();
+    const keep = (ids: string[]) =>
+      ids.filter((id) => {
+        if (isAllowed(id, complianceArea, includeRessalvas, lgpd)) return true;
+        removed.add(id);
+        return false;
+      });
+    const { competitors: c, contestantModel: cm, datagen: dg, judge: jg } = selRef.current;
+    const nc = keep(c);
+    const ncm = keep(cm);
+    const ndg = keep(dg);
+    const njg = keep(jg);
+    if (nc.length !== c.length) setCompetitors(nc);
+    if (ncm.length !== cm.length) setContestantModel(ncm);
+    if (ndg.length !== dg.length) setDatagen(ndg);
+    if (njg.length !== jg.length) setJudge(njg);
+    const areaLabel = lgpd.areas.find((a) => a.id === complianceArea)?.label ?? complianceArea;
+    setPrunedNotice(
+      removed.size
+        ? `Removidos por não atenderem "${areaLabel}": ${[...removed].join(', ')}.`
+        : null,
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [complianceArea, includeRessalvas, lgpd]);
 
   function costOf(modelId: string, tin: number, tout: number): number {
     const m = priceById.get(modelId);
@@ -401,6 +465,7 @@ export function NewRun() {
       concurrency,
       timeoutMs,
       maxOutputTokens,
+      ...(isLivre ? {} : { compliance: { area: complianceArea, includeRessalvas } }),
     };
 
     let config: RunConfig;
@@ -438,6 +503,9 @@ export function NewRun() {
   const keyConnected = !!getStoredKey();
   const stepId = STEPS[stepIdx].id;
   const fi = firstInvalid();
+  const isLivre = complianceArea === AREA_LIVRE;
+  const areaMeta = lgpd && !isLivre ? lgpd.areas.find((a) => a.id === complianceArea) : undefined;
+  const areaLabel = isLivre ? 'Livre — todos os modelos' : (areaMeta?.label ?? complianceArea);
 
   return (
     <form className="screen wizard" onSubmit={submit}>
@@ -531,6 +599,62 @@ export function NewRun() {
                 {mode === 'training' && <> <strong>Iterações</strong> = quantas rodadas de evolução do prompt.</>}
               </p>
             </div>
+
+            {/* Propósito / Conformidade LGPD: filtra (consultivo) o catálogo dos próximos passos. */}
+            <div className="card proposito-card">
+              <div className="field-head">
+                <label className="field-label">Propósito / Conformidade LGPD</label>
+                {!isLivre && (
+                  <span className="proposito-count">
+                    {modelsLoading ? '—' : `${filteredModels.length} de ${models.length} modelos permitidos`}
+                  </span>
+                )}
+              </div>
+              <p className="field-hint" style={{ marginTop: 0 }}>
+                Restringe os modelos disponíveis nos próximos passos conforme a área de uso e a LGPD.
+                É <strong>consultivo</strong> — orienta a escolha, mas não altera o roteamento de providers do OpenRouter.
+              </p>
+
+              <div className="proposito-grid">
+                <button
+                  type="button"
+                  className={`proposito-chip ${isLivre ? 'selected' : ''}`}
+                  onClick={() => setComplianceArea(AREA_LIVRE)}
+                >
+                  <span className="proposito-chip-label">🔓 Livre</span>
+                  <span className="proposito-chip-sub">permitir todos os modelos</span>
+                </button>
+                {lgpd?.areas.map((a) => (
+                  <button
+                    key={a.id}
+                    type="button"
+                    className={`proposito-chip ${complianceArea === a.id ? 'selected' : ''}`}
+                    onClick={() => setComplianceArea(a.id)}
+                  >
+                    <span className="proposito-chip-label">{a.label}</span>
+                  </button>
+                ))}
+              </div>
+
+              {areaMeta && (
+                <>
+                  <p className="proposito-desc">{areaMeta.descricao}</p>
+                  <Toggle
+                    checked={includeRessalvas}
+                    onChange={setIncludeRessalvas}
+                    label="Incluir modelos “permitido com ressalvas”"
+                    hint={
+                      includeRessalvas
+                        ? 'Ligado: inclui modelos permitidos sob condições (ZDR, DPA, SCCs, BAA, comunicação ao BACEN…).'
+                        : 'Desligado (rigor máximo): apenas modelos plenamente permitidos para a área.'
+                    }
+                  />
+                  {lgpd && <div className="proposito-aviso">⚠️ {lgpd.aviso}</div>}
+                </>
+              )}
+
+              {prunedNotice && <div className="proposito-pruned">{prunedNotice}</div>}
+            </div>
           </>
         )}
 
@@ -550,7 +674,7 @@ export function NewRun() {
                   value={competitors}
                   onChange={setCompetitors}
                   excludeIds={[...datagen, ...judge]}
-                  models={models}
+                  models={filteredModels}
                   loading={modelsLoading}
                 />
               </>
@@ -579,7 +703,7 @@ export function NewRun() {
                   value={contestantModel}
                   onChange={setContestantModel}
                   excludeIds={[...datagen, ...judge]}
-                  models={models}
+                  models={filteredModels}
                   loading={modelsLoading}
                 />
 
@@ -632,7 +756,7 @@ export function NewRun() {
               value={datagen}
               onChange={setDatagen}
               excludeIds={[...(mode === 'compare' ? competitors : contestantModel), ...judge]}
-              models={models}
+              models={filteredModels}
               loading={modelsLoading}
             />
 
@@ -643,7 +767,7 @@ export function NewRun() {
               value={judge}
               onChange={setJudge}
               excludeIds={[...(mode === 'compare' ? competitors : contestantModel), ...datagen]}
-              models={models}
+              models={filteredModels}
               loading={modelsLoading}
             />
 
@@ -700,6 +824,13 @@ export function NewRun() {
                   <div className="summary-row">
                     <span className="k">Modo</span>
                     <span className="v">{modeMeta.label}</span>
+                  </div>
+                  <div className="summary-row">
+                    <span className="k">Propósito (LGPD)</span>
+                    <span className="v">
+                      {areaLabel}
+                      {!isLivre && !includeRessalvas ? ' · rigor máximo' : ''}
+                    </span>
                   </div>
                   <div className="summary-row">
                     <span className="k">{isSingle ? 'Variantes de prompt' : 'Competidores'}</span>
