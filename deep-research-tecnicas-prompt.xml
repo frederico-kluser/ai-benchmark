@@ -1,0 +1,254 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Prompt de PESQUISA PROFUNDA para o Deep Research do Claude (claude.ai / claude.dev).
+  Objetivo: revisar, com evidencia atual, a base de conhecimento de TECNICAS DE PROMPT
+  do projeto "Benchmark Arena" (arquivo src/techniques.ts) e propor a versao atualizada.
+
+  Como usar: cole o conteudo deste arquivo no Deep Research do Claude e peca o relatorio
+  no formato definido em <formato-de-saida>. O resultado alimenta a atualizacao de
+  src/techniques.ts (o tipo PromptTechnique: { id, name, good, bad, metaInstruction }).
+-->
+<deep-research-prompt versao="1" idioma="pt-BR" cutoff-desejado="2024-2026">
+
+  <missao>
+    <papel>
+      Você é um pesquisador sênior de engenharia de prompts e avaliação de LLMs.
+      Conduza uma revisão sistemática, cética e baseada em evidências.
+    </papel>
+    <objetivo>
+      Validar, refinar e expandir nossa biblioteca curada de TÉCNICAS DE VARIAÇÃO DE
+      PROMPT. Para CADA técnica que usamos hoje, confirme ou corrija (com evidência) o
+      "quando ajuda" (good) e o "quando atrapalha" (bad), melhore a meta-instrução, e
+      indique dependência de modelo e nível de confiança. Descubra técnicas relevantes
+      que estejam FALTANDO e técnicas que devam ser descontinuadas ou fundidas.
+    </objetivo>
+    <por-que>
+      As variações são geradas por um "optimizer" LLM que aplica a `metaInstruction` de
+      cada técnica sobre um prompt base/tema. A qualidade da nossa otimização de prompt
+      depende diretamente da qualidade e da atualidade desta biblioteca.
+    </por-que>
+  </missao>
+
+  <contexto-do-sistema>
+    <resumo>
+      "Benchmark Arena" otimiza o SYSTEM PROMPT de UMA única LLM. Há dois modos relevantes:
+      (1) Variação: várias variações do system prompt competem no mesmo benchmark;
+      (2) Treino (auto-improve): iterativo — a vencedora de cada iteração vira a base da
+      próxima, e o prompt original é sempre re-rodado como controle.
+    </resumo>
+    <pipeline>
+      Um modelo GERADOR cria as perguntas/cenários do benchmark; o modelo SOB TESTE
+      responde com cada variação de system prompt; um JUIZ ranqueia as respostas ÀS CEGAS
+      (listwise); um AVALIADOR dá veredito de "aceitável para o trabalho" por resposta.
+      O system prompt é constante entre as etapas de uma run.
+    </pipeline>
+    <como-as-tecnicas-sao-aplicadas>
+      Cada técnica tem uma `metaInstruction` entregue ao optimizer com o PROMPT BASE (ou,
+      se não houver base, apenas o TEMA). O optimizer devolve um novo system prompt
+      aplicando a técnica. Por isso toda meta-instrução deve: (a) ser imperativa e
+      acionável; (b) preservar a intenção e as restrições do prompt base; (c) NÃO responder
+      a tarefa do usuário, apenas reescrever o system prompt.
+    </como-as-tecnicas-sao-aplicadas>
+    <forma-do-dado tipo="PromptTechnique">
+      id (kebab-case, estável), name (PT-BR, curto), good (PT-BR, 1 frase: quando ajuda),
+      bad (PT-BR, 1 frase: quando atrapalha), metaInstruction (PT-BR, imperativa, ASCII).
+    </forma-do-dado>
+    <dominio-exemplo>
+      Um tema padrão é um assistente clínico (preparo para exames) — domínio sensível,
+      factual, com necessidade de segurança e de recusar/encaminhar quando apropriado.
+      Considere implicações para domínios de alto risco.
+    </dominio-exemplo>
+  </contexto-do-sistema>
+
+  <base-de-conhecimento-atual>
+    <descricao>
+      As 12 técnicas atualmente em produção (src/techniques.ts). Trate cada uma como
+      hipótese a ser confirmada/refutada com evidência.
+    </descricao>
+
+    <tecnica id="persona">
+      <name>Persona / papel</name>
+      <good>Foca tom, vocabulario e prioris do dominio; barata.</good>
+      <bad>Pode inflar verbosidade e gerar excesso de confianca/autoridade falsa.</bad>
+      <metaInstruction>Atribua ao assistente um papel/especialista explicito e adequado ao tema (ex.: "Voce e um(a) [especialista]..."). Mantenha todas as instrucoes e restricoes do prompt base.</metaInstruction>
+    </tecnica>
+
+    <tecnica id="cot">
+      <name>Chain-of-Thought</name>
+      <good>Forte em raciocinio, multi-etapa e logica; mais confiavel.</good>
+      <bad>Mais tokens/latencia/custo; pode piorar tarefas simples; raciocinio pode vazar na saida.</bad>
+      <metaInstruction>Acrescente instrucao para o modelo raciocinar passo a passo internamente antes de responder, entregando ao usuario apenas a resposta final (sem expor o rascunho). Preserve as instrucoes do base.</metaInstruction>
+    </tecnica>
+
+    <tecnica id="fewshot">
+      <name>Exemplos (few-shot)</name>
+      <good>Otimo para formato, classificacao e estilo; reduz ambiguidade.</good>
+      <bad>Exemplos enviesam/ancoram; consomem contexto; exigem alta qualidade.</bad>
+      <metaInstruction>Inclua de 1 a 3 exemplos curtos e representativos de entrada-saida ideal, coerentes com o tema e o contexto, demonstrando o comportamento desejado. Preserve as instrucoes do base.</metaInstruction>
+    </tecnica>
+
+    <tecnica id="format">
+      <name>Formato de saida explicito</name>
+      <good>Respostas previsiveis, parseaveis e completas; menos omissoes.</good>
+      <bad>Rigidez pode suprimir nuance; modelo pode forcar encaixe.</bad>
+      <metaInstruction>Especifique um formato de saida explicito e adequado a tarefa (secoes, campos, bullets ou estrutura). Deixe claro o que cada parte deve conter. Preserve as instrucoes do base.</metaInstruction>
+    </tecnica>
+
+    <tecnica id="constraints">
+      <name>Restricoes / guardrails</name>
+      <good>Mais seguro e on-policy (critico em dominio regulado/clinico).</good>
+      <bad>Excesso de restricoes pode gerar recusas inuteis; prompt mais longo.</bad>
+      <metaInstruction>Adicione restricoes e regras explicitas: o que fazer e o que NAO fazer, limites de escopo, e quando recusar ou encaminhar a um humano. Preserve a intencao do base.</metaInstruction>
+    </tecnica>
+
+    <tecnica id="decompose">
+      <name>Decomposicao em subpassos</name>
+      <good>Melhor cobertura e completude em tarefas complexas.</good>
+      <bad>Verbosidade; overhead em tarefas simples; pode ficar rigido.</bad>
+      <metaInstruction>Instrua o modelo a decompor a tarefa em subpassos explicitos e aborda-los em ordem antes de consolidar a resposta. Preserve as instrucoes do base.</metaInstruction>
+    </tecnica>
+
+    <tecnica id="selfcritique">
+      <name>Autocritica / revisao</name>
+      <good>Pega erros e melhora factualidade; bom para alto risco.</good>
+      <bad>~2x tokens/latencia; pode "consertar" o que ja estava correto.</bad>
+      <metaInstruction>Acrescente instrucao para o modelo, internamente, gerar uma resposta, revisa-la criticamente em busca de erros e entregar apenas a versao corrigida. Preserve as instrucoes do base.</metaInstruction>
+    </tecnica>
+
+    <tecnica id="specificity">
+      <name>Especificidade / criterios</name>
+      <good>Menos ambiguidade; respostas mais alinhadas ao objetivo.</good>
+      <bad>Prompt mais longo; risco de injetar premissas erradas.</bad>
+      <metaInstruction>Enriqueca o prompt com criterios de sucesso, publico-alvo, definicoes relevantes e nivel de detalhe esperado. Seja especifico sem mudar a intencao do base.</metaInstruction>
+    </tecnica>
+
+    <tecnica id="delimiters">
+      <name>Delimitadores / secoes</name>
+      <good>Separa instrucao de dado (reduz confusao e injecao); clareza.</good>
+      <bad>Ganho pequeno em prompts ja claros; pode ser apenas cosmetico.</bad>
+      <metaInstruction>Reorganize o prompt com secoes e delimitadores claros separando instrucoes, contexto e dados (ex.: titulos ou marcadores). Preserve o conteudo do base.</metaInstruction>
+    </tecnica>
+
+    <tecnica id="concise">
+      <name>Conciso / imperativo</name>
+      <good>Menos distracao, menor custo; bom contraste de baseline.</good>
+      <bad>Pode descartar contexto util; subespecifica edge cases.</bad>
+      <metaInstruction>Reescreva o prompt de forma concisa e imperativa, mantendo apenas o essencial e removendo redundancia. Preserve a intencao e as restricoes do base.</metaInstruction>
+    </tecnica>
+
+    <tecnica id="emphasis">
+      <name>Realcar instrucoes-chave</name>
+      <good>Combate "lost in the middle"; reforca regras obrigatorias.</good>
+      <bad>Duplicacao/verbosidade; marginal em prompts curtos.</bad>
+      <metaInstruction>Reposicione e reforce as instrucoes criticas no inicio e no fim do prompt, destacando claramente o que e obrigatorio. Preserve o conteudo do base.</metaInstruction>
+    </tecnica>
+
+    <tecnica id="positive">
+      <name>Reframe positivo</name>
+      <good>Modelos seguem melhor instrucoes positivas que negacoes.</good>
+      <bad>Pode alongar; algumas restricoes sao naturalmente negativas.</bad>
+      <metaInstruction>Converta proibicoes e instrucoes negativas em instrucoes positivas equivalentes (o que FAZER em vez do que evitar), sem perder nenhuma restricao do base.</metaInstruction>
+    </tecnica>
+
+    <metodos-de-meta-otimizacao escopo="modo-treino">
+      <descricao>
+        No modo Treino, um loop evolutivo melhora o prompt entre iterações (vencedora vira
+        base; original sempre como controle; benchmark pinado). Hoje nos inspiramos em:
+      </descricao>
+      <metodo nome="APE">Automatic Prompt Engineer — gerar candidatos e selecionar pelo desempenho num dev set.</metodo>
+      <metodo nome="OPRO">Optimization by PROmpting — realimentar (prompt, score) a um meta-prompt que propoe prompts melhores.</metodo>
+      <metodo nome="Reflexion">Autofeedback verbal a partir das falhas, usado para revisar.</metodo>
+      <metodo nome="ProTeGi">"Gradientes textuais" — criticas em linguagem natural que dirigem a edicao do prompt.</metodo>
+    </metodos-de-meta-otimizacao>
+
+    <salvaguardas-de-juiz-atuais>
+      <item>Juiz diferente do modelo sob teste (anti auto-preferencia / "LLM narcissism").</item>
+      <item>Instrucao anti-verbosidade no juiz (avaliar por conteudo, nao por tamanho).</item>
+      <item>Opcao de juiz em 2 ordens com media (anti-vies de posicao) — campo judgePasses.</item>
+    </salvaguardas-de-juiz-atuais>
+  </base-de-conhecimento-atual>
+
+  <perguntas-de-pesquisa>
+    <secao titulo="Validacao de cada tecnica existente">
+      <q>Para CADA uma das 12 técnicas: a evidência recente (2024-2026) confirma o "good" e o "bad"? Corrija com condições, magnitude de efeito e ressalvas.</q>
+      <q>A `metaInstruction` é a melhor formulação? Proponha uma versão melhorada (imperativa, PT-BR, ASCII, preservando o base).</q>
+      <q>Há dependência de modelo? (ex.: técnicas que ajudam modelos pequenos mas são neutras/nocivas em modelos de "reasoning" recentes.)</q>
+    </secao>
+    <secao titulo="Pontos quentes a investigar a fundo">
+      <q>Chain-of-Thought: em modelos de raciocínio recentes, CoT explícito ainda ajuda ou pode atrapalhar? Quando o raciocínio explícito é redundante ou prejudicial?</q>
+      <q>Persona/papel: a evidência sustenta ganho de ACURÁCIA, ou o efeito é majoritariamente de estilo/tom? Quando a persona realmente ajuda?</q>
+      <q>Few-shot: vieses de ordem, recência e rótulo majoritário; seleção de exemplos; zero-shot vs few-shot em modelos modernos.</q>
+      <q>Formato/saída estruturada (incl. JSON mode): há evidência de que estruturar a saída reduz a qualidade do raciocínio? Como mitigar?</q>
+      <q>Autocrítica/reflexão: quando a auto-correção SEM feedback externo falha ou degrada? Condições em que ajuda.</q>
+      <q>"Lost in the middle"/ênfase: ainda relevante em modelos de contexto longo atuais?</q>
+      <q>Instrução positiva vs negativa; delimitadores como mitigação de prompt injection; concisão vs especificidade — força da evidência.</q>
+    </secao>
+    <secao titulo="Lacunas — tecnicas que talvez falten">
+      <q>Quais técnicas comprovadas NÃO estão na nossa lista e seriam valiosas para otimização de SYSTEM PROMPT? Considere, entre outras: prefilling/priming da resposta, step-back prompting, estruturação por tags XML (estilo Anthropic), rubrica/critérios embutidos, calibração de incerteza ("diga não sei quando não souber"), controle de verbosidade/comprimento, contraste (exemplos do que NÃO fazer), enquadramento por estímulo/"emocional" (evidência mista), meta-prompting (reafirmar a tarefa antes de responder), posicionamento system vs user.</q>
+      <q>Para cada candidata: vale a pena? Em que condições? Proponha `metaInstruction` no nosso formato.</q>
+    </secao>
+    <secao titulo="Modo Treino (meta-otimizacao)">
+      <q>Dado nosso setup (fitness por juiz LLM, dev set pequeno/pinado, um único modelo), qual estratégia de loop rende mais: OPRO, ProTeGi (gradientes textuais), EvoPrompt/PromptBreeder (evolutivo), DSPy/MIPRO, GEPA, TextGrad? Compare custo x ganho.</q>
+      <q>Como evitar OVERFITTING ao benchmark pinado? (hold-out, validação separada, regeneração parcial de cenários, regularização textual.)</q>
+      <q>Operadores de mutação/crossover de prompt, número de candidatos por rodada e critérios de parada recomendados.</q>
+    </secao>
+    <secao titulo="Qualidade do juiz (LLM-as-judge)">
+      <q>Para variações QUASE IDÊNTICAS, ranking listwise às cegas é adequado ou pairwise/torneio é mais sensível? Custo x confiabilidade.</q>
+      <q>Mitigações de viés além das nossas (auto-preferência, posição, verbosidade/comprimento, ancoragem): rubricas, juízes em ensemble, calibração, swap-and-average. O que recomendar?</q>
+    </secao>
+    <secao titulo="Dominio de alto risco">
+      <q>Técnicas de prompt específicas para tarefas factuais/sensíveis (ex.: clínico): segurança, recusa/escalonamento, redução de alucinação e citação de fonte.</q>
+    </secao>
+  </perguntas-de-pesquisa>
+
+  <criterios-de-evidencia>
+    <item>Priorize evidência empírica (experimentos, benchmarks, ablações) sobre opinião.</item>
+    <item>Prefira fontes de 2024-2026; sinalize quando um achado for específico de um modelo/época e possa não generalizar.</item>
+    <item>Cite a fonte de cada afirmação relevante (autor/título/ano + URL ou arXiv id).</item>
+    <item>Sinalize controvérsias e resultados conflitantes em vez de escolher um lado.</item>
+    <item>Distinga ganho de ACURÁCIA/correção de ganho apenas de ESTILO/forma.</item>
+  </criterios-de-evidencia>
+
+  <fontes-prioritarias>
+    <fonte>The Prompt Report: A Systematic Survey of Prompting Techniques (Schulhoff et al., 2024).</fonte>
+    <fonte>Guias oficiais de prompt: Anthropic (Claude), OpenAI, Google.</fonte>
+    <fonte>arXiv (cs.CL / cs.AI): APE, OPRO, ProTeGi, EvoPrompt, PromptBreeder, DSPy/MIPRO, GEPA, TextGrad, Reflexion, Self-Refine, Self-Consistency, Step-Back, Lost-in-the-Middle.</fonte>
+    <fonte>Estudos de LLM-as-a-judge e mitigação de viés (incl. self-preference, position/verbosity bias).</fonte>
+    <fonte>Papers sobre limites de auto-correção sem feedback externo e sobre efeito de personas em acurácia.</fonte>
+  </fontes-prioritarias>
+
+  <formato-de-saida>
+    <instrucao>
+      Entregue um RELATÓRIO em Markdown com seções (1) Sumário executivo, (2) Técnicas
+      atualizadas, (3) Técnicas novas, (4) Descontinuar/fundir, (5) Recomendações do modo
+      Treino, (6) Recomendações do juiz, (7) Bibliografia. Em (2)-(4), use EXATAMENTE o
+      bloco abaixo por técnica, para mapear direto em src/techniques.ts. Campos name/good/
+      bad/metaInstruction em PT-BR; metaInstruction em ASCII e imperativa, terminando com
+      "Preserve as instrucoes do base."; good/bad em 1 frase cada.
+    </instrucao>
+    <modelo-por-tecnica><![CDATA[
+### <id-kebab-case>
+- status: manter | revisar | nova | descontinuar | fundir(<id-alvo>)
+- name: <nome curto PT-BR>
+- good: <quando ajuda, 1 frase>
+- bad: <quando atrapalha, 1 frase>
+- metaInstruction: <instrucao imperativa ASCII ... Preserve as instrucoes do base.>
+- confianca: alta | media | baixa
+- dependencia_de_modelo: <quando o efeito muda por tipo/tamanho/geracao de modelo>
+- quando_usar: <heuristica pratica de selecao>
+- evidencia: <2-4 frases com achados + citacoes [Autor Ano, URL/arXiv]>
+    ]]></modelo-por-tecnica>
+    <observacao>
+      Inclua um JSON final consolidando as técnicas recomendadas (id, name, good, bad,
+      metaInstruction) pronto para revisão e merge na TECHNIQUE_LIBRARY.
+    </observacao>
+  </formato-de-saida>
+
+  <restricoes>
+    <item>NÃO invente citações; se não houver evidência sólida, marque confiança "baixa" e diga isso.</item>
+    <item>Preserve os `id` existentes ao atualizar uma técnica (para não quebrar runs salvas).</item>
+    <item>metaInstruction não deve responder à tarefa do usuário — apenas reescrever o system prompt.</item>
+    <item>Foque em otimização de SYSTEM PROMPT para 1 modelo; ignore técnicas que dependem de ferramentas/RAG externos, salvo se forem trivialmente aplicáveis.</item>
+  </restricoes>
+
+</deep-research-prompt>
