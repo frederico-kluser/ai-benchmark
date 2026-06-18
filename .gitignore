@@ -2,7 +2,7 @@ node_modules
 dist
 .env
 *.Identifier
-data/
+/data/
 web/node_modules
 web/dist
 web/tsconfig.tsbuildinfo

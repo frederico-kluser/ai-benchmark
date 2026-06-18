@@ -634,6 +634,31 @@ code, .mono { font-family: ui-monospace, 'SF Mono', Menlo, monospace; }
 .wizard-pipeline-wrap .pipeline { margin-bottom: 0; }
 .wizard-pipeline-wrap .link-toggle { margin-top: 12px; }
 
+/* propósito / conformidade LGPD (anexado ao passo Tema) */
+.proposito-card { margin-top: 16px; }
+.proposito-count { font-size: 12px; font-weight: 600; color: var(--accent-strong); }
+.proposito-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: 8px; margin-top: 4px; }
+.proposito-chip {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; cursor: pointer;
+  background: var(--card); border: 1px solid var(--card-border); border-radius: 12px; padding: 10px 12px; font-family: inherit;
+  transition: border-color .15s, box-shadow .15s, background .15s;
+}
+.proposito-chip:hover { background: var(--hover); }
+.proposito-chip.selected { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 3px var(--accent-ring); }
+.proposito-chip-label { font-size: 14px; font-weight: 600; color: var(--text); }
+.proposito-chip-sub { font-size: 11px; color: var(--text-3); }
+.proposito-chip.selected .proposito-chip-sub { color: var(--accent-strong); }
+.proposito-desc { font-size: 13px; line-height: 1.5; color: var(--text-2); margin: 14px 0 4px; }
+.proposito-card .toggle-field { margin-top: 12px; }
+.proposito-aviso {
+  margin-top: 12px; font-size: 12px; line-height: 1.45; color: var(--warn);
+  background: var(--warn-soft); border-radius: 10px; padding: 9px 12px;
+}
+.proposito-pruned {
+  margin-top: 12px; font-size: 12.5px; line-height: 1.45; color: var(--err);
+  background: var(--err-soft); border-radius: 10px; padding: 9px 12px;
+}
+
 /* revisão (passo 5) */
 .review-grid { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 16px; align-items: start; }
 .review-card { padding: 22px 24px; }

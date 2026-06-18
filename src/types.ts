@@ -79,6 +79,12 @@ export interface RunConfigBase {
   optimizerModelId?: string;
   /** Passes do juiz: 2 = avalia em duas ordens e media (anti-vies de posicao). Default 1. */
   judgePasses?: 1 | 2;
+  /**
+   * Perfil de conformidade LGPD escolhido no assistente (passo Tema). CONSULTIVO:
+   * gravado para transparencia/rastreabilidade do run; NAO forca roteamento de
+   * providers no OpenRouter. Ausente = "livre" (sem filtro de conformidade).
+   */
+  compliance?: { area: string; includeRessalvas: boolean };
 }
 
 /** Campos comuns aos modos de 1 LLM (variation/training). */

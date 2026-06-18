@@ -1,0 +1,5507 @@
+{
+  "gerado_em": "2026-06-18",
+  "fonte": "https://openrouter.ai/api/v1/models + https://openrouter.ai/api/v1/endpoints/zdr (públicos)",
+  "base_conhecimento": "2026-06-17",
+  "aviso": "Análise técnica/informativa de conformidade — NÃO constitui aconselhamento jurídico. Antes de tratar dados pessoais reais, valide com o DPO/Encarregado e com assessoria jurídica especializada em LGPD.",
+  "total_modelos": 337,
+  "total_modelos_com_zdr": 257,
+  "resumo_por_area": {
+    "geral": {
+      "permitidos": 149,
+      "com_ressalvas": 85,
+      "bloqueados": 103
+    },
+    "juridico": {
+      "permitidos": 19,
+      "com_ressalvas": 215,
+      "bloqueados": 103
+    },
+    "saude": {
+      "permitidos": 0,
+      "com_ressalvas": 230,
+      "bloqueados": 107
+    },
+    "financeiro": {
+      "permitidos": 19,
+      "com_ressalvas": 215,
+      "bloqueados": 103
+    },
+    "criancas_adolescentes": {
+      "permitidos": 0,
+      "com_ressalvas": 230,
+      "bloqueados": 107
+    },
+    "setor_publico": {
+      "permitidos": 0,
+      "com_ressalvas": 234,
+      "bloqueados": 103
+    }
+  },
+  "por_modelo": {
+    "~anthropic/claude-fable-latest": {
+      "familia": "anthropic",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "~anthropic/claude-haiku-latest": {
+      "familia": "anthropic",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "~anthropic/claude-opus-latest": {
+      "familia": "anthropic",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "~anthropic/claude-sonnet-latest": {
+      "familia": "anthropic",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "~google/gemini-flash-latest": {
+      "familia": "google",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "~google/gemini-pro-latest": {
+      "familia": "google",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "~moonshotai/kimi-latest": {
+      "familia": null,
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "~openai/gpt-latest": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "~openai/gpt-mini-latest": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "ai21/jamba-large-1.7": {
+      "familia": null,
+      "origem": "Israel",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "aion-labs/aion-1.0": {
+      "familia": null,
+      "origem": "Indefinido",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "aion-labs/aion-1.0-mini": {
+      "familia": null,
+      "origem": "Indefinido",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "aion-labs/aion-2.0": {
+      "familia": null,
+      "origem": "Indefinido",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "aion-labs/aion-rp-llama-3.1-8b": {
+      "familia": null,
+      "origem": "Indefinido",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "allenai/olmo-3-32b-think": {
+      "familia": null,
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Parasail"
+      ],
+      "zdr_eu": false
+    },
+    "amazon/nova-2-lite-v1": {
+      "familia": null,
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Amazon Bedrock"
+      ],
+      "zdr_eu": true
+    },
+    "amazon/nova-lite-v1": {
+      "familia": null,
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Amazon Bedrock"
+      ],
+      "zdr_eu": true
+    },
+    "amazon/nova-micro-v1": {
+      "familia": null,
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Amazon Bedrock"
+      ],
+      "zdr_eu": true
+    },
+    "amazon/nova-premier-v1": {
+      "familia": null,
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Amazon Bedrock"
+      ],
+      "zdr_eu": false
+    },
+    "amazon/nova-pro-v1": {
+      "familia": null,
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Amazon Bedrock"
+      ],
+      "zdr_eu": true
+    },
+    "anthracite-org/magnum-v4-72b": {
+      "familia": null,
+      "origem": "Indefinido",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Mancer 2"
+      ],
+      "zdr_eu": false
+    },
+    "anthropic/claude-3-haiku": {
+      "familia": "anthropic",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Amazon Bedrock"
+      ],
+      "zdr_eu": false
+    },
+    "anthropic/claude-3.5-haiku": {
+      "familia": "anthropic",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Amazon Bedrock"
+      ],
+      "zdr_eu": false
+    },
+    "anthropic/claude-fable-5": {
+      "familia": "anthropic",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "anthropic/claude-haiku-4.5": {
+      "familia": "anthropic",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Amazon Bedrock",
+        "Google"
+      ],
+      "zdr_eu": true
+    },
+    "anthropic/claude-opus-4": {
+      "familia": "anthropic",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Google"
+      ],
+      "zdr_eu": false
+    },
+    "anthropic/claude-opus-4.1": {
+      "familia": "anthropic",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Amazon Bedrock",
+        "Google"
+      ],
+      "zdr_eu": false
+    },
+    "anthropic/claude-opus-4.5": {
+      "familia": "anthropic",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Amazon Bedrock",
+        "Google"
+      ],
+      "zdr_eu": true
+    },
+    "anthropic/claude-opus-4.6": {
+      "familia": "anthropic",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Amazon Bedrock",
+        "Google"
+      ],
+      "zdr_eu": true
+    },
+    "anthropic/claude-opus-4.6-fast": {
+      "familia": "anthropic",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "anthropic/claude-opus-4.7": {
+      "familia": "anthropic",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Amazon Bedrock",
+        "Google"
+      ],
+      "zdr_eu": true
+    },
+    "anthropic/claude-opus-4.7-fast": {
+      "familia": "anthropic",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "anthropic/claude-opus-4.8": {
+      "familia": "anthropic",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Amazon Bedrock",
+        "Google"
+      ],
+      "zdr_eu": true
+    },
+    "anthropic/claude-opus-4.8-fast": {
+      "familia": "anthropic",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "anthropic/claude-sonnet-4": {
+      "familia": "anthropic",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Amazon Bedrock",
+        "Google"
+      ],
+      "zdr_eu": true
+    },
+    "anthropic/claude-sonnet-4.5": {
+      "familia": "anthropic",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Amazon Bedrock",
+        "Google"
+      ],
+      "zdr_eu": true
+    },
+    "anthropic/claude-sonnet-4.6": {
+      "familia": "anthropic",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Amazon Bedrock",
+        "Google"
+      ],
+      "zdr_eu": true
+    },
+    "arcee-ai/coder-large": {
+      "familia": null,
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Together"
+      ],
+      "zdr_eu": false
+    },
+    "arcee-ai/trinity-large-thinking": {
+      "familia": null,
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Parasail",
+        "Venice"
+      ],
+      "zdr_eu": false
+    },
+    "arcee-ai/trinity-mini": {
+      "familia": null,
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Clarifai"
+      ],
+      "zdr_eu": false
+    },
+    "arcee-ai/virtuoso-large": {
+      "familia": null,
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Together"
+      ],
+      "zdr_eu": false
+    },
+    "baidu/ernie-4.5-vl-424b-a47b": {
+      "familia": null,
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "Novita"
+      ],
+      "zdr_eu": false
+    },
+    "bytedance-seed/seed-1.6": {
+      "familia": null,
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "Seed"
+      ],
+      "zdr_eu": false
+    },
+    "bytedance-seed/seed-1.6-flash": {
+      "familia": null,
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "Seed"
+      ],
+      "zdr_eu": false
+    },
+    "bytedance-seed/seed-2.0-lite": {
+      "familia": null,
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "Seed"
+      ],
+      "zdr_eu": false
+    },
+    "bytedance-seed/seed-2.0-mini": {
+      "familia": null,
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "Seed"
+      ],
+      "zdr_eu": false
+    },
+    "bytedance/ui-tars-1.5-7b": {
+      "familia": null,
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "Parasail"
+      ],
+      "zdr_eu": false
+    },
+    "cognitivecomputations/dolphin-mistral-24b-venice-edition:free": {
+      "familia": null,
+      "origem": "Indefinido",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Venice"
+      ],
+      "zdr_eu": false
+    },
+    "cohere/command-a": {
+      "familia": "cohere",
+      "origem": "EUA/Canadá",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "cohere/command-r-08-2024": {
+      "familia": "cohere",
+      "origem": "EUA/Canadá",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "cohere/command-r-plus-08-2024": {
+      "familia": "cohere",
+      "origem": "EUA/Canadá",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "cohere/command-r7b-12-2024": {
+      "familia": "cohere",
+      "origem": "EUA/Canadá",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "cohere/north-mini-code:free": {
+      "familia": "cohere",
+      "origem": "EUA/Canadá",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "deepcogito/cogito-v2.1-671b": {
+      "familia": null,
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Together"
+      ],
+      "zdr_eu": false
+    },
+    "deepseek/deepseek-chat": {
+      "familia": "deepseek",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "DeepInfra",
+        "Novita"
+      ],
+      "zdr_eu": false
+    },
+    "deepseek/deepseek-chat-v3-0324": {
+      "familia": "deepseek",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "AtlasCloud",
+        "DeepInfra",
+        "ModelRun",
+        "Novita",
+        "SiliconFlow"
+      ],
+      "zdr_eu": false
+    },
+    "deepseek/deepseek-chat-v3.1": {
+      "familia": "deepseek",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "AtlasCloud",
+        "DeepInfra",
+        "Google",
+        "Novita",
+        "SambaNova",
+        "SiliconFlow"
+      ],
+      "zdr_eu": false
+    },
+    "deepseek/deepseek-r1": {
+      "familia": "deepseek",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "Azure",
+        "Novita"
+      ],
+      "zdr_eu": false
+    },
+    "deepseek/deepseek-r1-0528": {
+      "familia": "deepseek",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "AtlasCloud",
+        "DeepInfra",
+        "Novita",
+        "SiliconFlow"
+      ],
+      "zdr_eu": false
+    },
+    "deepseek/deepseek-r1-distill-llama-70b": {
+      "familia": "deepseek",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "Novita"
+      ],
+      "zdr_eu": false
+    },
+    "deepseek/deepseek-v3.1-terminus": {
+      "familia": "deepseek",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "AtlasCloud",
+        "DeepInfra",
+        "Novita",
+        "SiliconFlow"
+      ],
+      "zdr_eu": false
+    },
+    "deepseek/deepseek-v3.2": {
+      "familia": "deepseek",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "AtlasCloud",
+        "DeepInfra",
+        "DigitalOcean",
+        "Google",
+        "Novita",
+        "SambaNova",
+        "SiliconFlow"
+      ],
+      "zdr_eu": false
+    },
+    "deepseek/deepseek-v3.2-exp": {
+      "familia": "deepseek",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "AtlasCloud",
+        "Novita",
+        "SiliconFlow"
+      ],
+      "zdr_eu": false
+    },
+    "deepseek/deepseek-v4-flash": {
+      "familia": "deepseek",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "AkashML",
+        "AtlasCloud",
+        "DeepInfra",
+        "DigitalOcean",
+        "Fireworks",
+        "Morph",
+        "Novita",
+        "Parasail",
+        "SiliconFlow",
+        "Venice",
+        "Wafer"
+      ],
+      "zdr_eu": false
+    },
+    "deepseek/deepseek-v4-pro": {
+      "familia": "deepseek",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "AtlasCloud",
+        "DeepInfra",
+        "DigitalOcean",
+        "Fireworks",
+        "NextBit",
+        "Novita",
+        "Parasail",
+        "SiliconFlow",
+        "Together",
+        "Venice"
+      ],
+      "zdr_eu": false
+    },
+    "essentialai/rnj-1-instruct": {
+      "familia": null,
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Together"
+      ],
+      "zdr_eu": false
+    },
+    "google/gemini-2.5-flash": {
+      "familia": "google",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Google"
+      ],
+      "zdr_eu": true
+    },
+    "google/gemini-2.5-flash-image": {
+      "familia": "google",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Google"
+      ],
+      "zdr_eu": false
+    },
+    "google/gemini-2.5-flash-lite": {
+      "familia": "google",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Google"
+      ],
+      "zdr_eu": true
+    },
+    "google/gemini-2.5-flash-lite-preview-09-2025": {
+      "familia": "google",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Google"
+      ],
+      "zdr_eu": false
+    },
+    "google/gemini-2.5-pro": {
+      "familia": "google",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Google"
+      ],
+      "zdr_eu": true
+    },
+    "google/gemini-2.5-pro-preview": {
+      "familia": "google",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Google"
+      ],
+      "zdr_eu": false
+    },
+    "google/gemini-2.5-pro-preview-05-06": {
+      "familia": "google",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Google"
+      ],
+      "zdr_eu": false
+    },
+    "google/gemini-3-flash-preview": {
+      "familia": "google",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Google"
+      ],
+      "zdr_eu": false
+    },
+    "google/gemini-3-pro-image-preview": {
+      "familia": "google",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Google"
+      ],
+      "zdr_eu": false
+    },
+    "google/gemini-3.1-flash-image-preview": {
+      "familia": "google",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Google"
+      ],
+      "zdr_eu": false
+    },
+    "google/gemini-3.1-flash-lite": {
+      "familia": "google",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Google"
+      ],
+      "zdr_eu": false
+    },
+    "google/gemini-3.1-flash-lite-preview": {
+      "familia": "google",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Google"
+      ],
+      "zdr_eu": false
+    },
+    "google/gemini-3.1-pro-preview": {
+      "familia": "google",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Google"
+      ],
+      "zdr_eu": false
+    },
+    "google/gemini-3.1-pro-preview-customtools": {
+      "familia": "google",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "google/gemini-3.5-flash": {
+      "familia": "google",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Google"
+      ],
+      "zdr_eu": false
+    },
+    "google/gemma-2-27b-it": {
+      "familia": "google",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "NextBit"
+      ],
+      "zdr_eu": false
+    },
+    "google/gemma-3-12b-it": {
+      "familia": "google",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "DeepInfra"
+      ],
+      "zdr_eu": false
+    },
+    "google/gemma-3-27b-it": {
+      "familia": "google",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "DeepInfra",
+        "Nebius",
+        "Novita",
+        "Parasail",
+        "Phala"
+      ],
+      "zdr_eu": false
+    },
+    "google/gemma-3-4b-it": {
+      "familia": "google",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "DeepInfra"
+      ],
+      "zdr_eu": false
+    },
+    "google/gemma-3n-e4b-it": {
+      "familia": "google",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Together"
+      ],
+      "zdr_eu": false
+    },
+    "google/gemma-4-26b-a4b-it": {
+      "familia": "google",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "DeepInfra",
+        "DekaLLM",
+        "Google",
+        "NextBit",
+        "Novita",
+        "Parasail",
+        "SiliconFlow",
+        "Venice"
+      ],
+      "zdr_eu": false
+    },
+    "google/gemma-4-26b-a4b-it:free": {
+      "familia": "google",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "google/gemma-4-31b-it": {
+      "familia": "google",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "DeepInfra",
+        "ModelRun",
+        "Novita",
+        "Parasail",
+        "Phala",
+        "SiliconFlow",
+        "Together",
+        "Venice"
+      ],
+      "zdr_eu": false
+    },
+    "google/gemma-4-31b-it:free": {
+      "familia": "google",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "google/lyria-3-clip-preview": {
+      "familia": "google",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "google/lyria-3-pro-preview": {
+      "familia": "google",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "gryphe/mythomax-l2-13b": {
+      "familia": null,
+      "origem": "Indefinido",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "DeepInfra",
+        "Mancer 2",
+        "NextBit"
+      ],
+      "zdr_eu": false
+    },
+    "ibm-granite/granite-4.0-h-micro": {
+      "familia": null,
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "ibm-granite/granite-4.1-8b": {
+      "familia": null,
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "inception/mercury-2": {
+      "familia": null,
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Inception"
+      ],
+      "zdr_eu": false
+    },
+    "inclusionai/ling-2.6-1t": {
+      "familia": null,
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "Novita"
+      ],
+      "zdr_eu": false
+    },
+    "inclusionai/ling-2.6-flash": {
+      "familia": null,
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "Novita"
+      ],
+      "zdr_eu": false
+    },
+    "inclusionai/ring-2.6-1t": {
+      "familia": null,
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "Novita"
+      ],
+      "zdr_eu": false
+    },
+    "inflection/inflection-3-pi": {
+      "familia": null,
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "inflection/inflection-3-productivity": {
+      "familia": null,
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "kwaipilot/kat-coder-pro-v2": {
+      "familia": null,
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "AtlasCloud"
+      ],
+      "zdr_eu": false
+    },
+    "liquid/lfm-2-24b-a2b": {
+      "familia": null,
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Together"
+      ],
+      "zdr_eu": false
+    },
+    "liquid/lfm-2.5-1.2b-instruct:free": {
+      "familia": null,
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "liquid/lfm-2.5-1.2b-thinking:free": {
+      "familia": null,
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "mancer/weaver": {
+      "familia": null,
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Mancer 2"
+      ],
+      "zdr_eu": false
+    },
+    "meta-llama/llama-3-70b-instruct": {
+      "familia": "meta",
+      "origem": "EUA (open-weight)",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Novita"
+      ],
+      "zdr_eu": false
+    },
+    "meta-llama/llama-3-8b-instruct": {
+      "familia": "meta",
+      "origem": "EUA (open-weight)",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Together"
+      ],
+      "zdr_eu": false
+    },
+    "meta-llama/llama-3.1-70b-instruct": {
+      "familia": "meta",
+      "origem": "EUA (open-weight)",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Amazon Bedrock",
+        "DeepInfra"
+      ],
+      "zdr_eu": false
+    },
+    "meta-llama/llama-3.1-8b-instruct": {
+      "familia": "meta",
+      "origem": "EUA (open-weight)",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "DeepInfra",
+        "Groq",
+        "Novita"
+      ],
+      "zdr_eu": false
+    },
+    "meta-llama/llama-3.2-11b-vision-instruct": {
+      "familia": "meta",
+      "origem": "EUA (open-weight)",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "DeepInfra"
+      ],
+      "zdr_eu": false
+    },
+    "meta-llama/llama-3.2-1b-instruct": {
+      "familia": "meta",
+      "origem": "EUA (open-weight)",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "meta-llama/llama-3.2-3b-instruct": {
+      "familia": "meta",
+      "origem": "EUA (open-weight)",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "meta-llama/llama-3.2-3b-instruct:free": {
+      "familia": "meta",
+      "origem": "EUA (open-weight)",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Venice"
+      ],
+      "zdr_eu": false
+    },
+    "meta-llama/llama-3.3-70b-instruct": {
+      "familia": "meta",
+      "origem": "EUA (open-weight)",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "AkashML",
+        "DeepInfra",
+        "Google",
+        "Groq",
+        "Nebius",
+        "Novita",
+        "Parasail",
+        "SambaNova",
+        "Together"
+      ],
+      "zdr_eu": false
+    },
+    "meta-llama/llama-3.3-70b-instruct:free": {
+      "familia": "meta",
+      "origem": "EUA (open-weight)",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Venice"
+      ],
+      "zdr_eu": false
+    },
+    "meta-llama/llama-4-maverick": {
+      "familia": "meta",
+      "origem": "EUA (open-weight)",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "DeepInfra",
+        "Google",
+        "Novita",
+        "Parasail"
+      ],
+      "zdr_eu": false
+    },
+    "meta-llama/llama-4-scout": {
+      "familia": "meta",
+      "origem": "EUA (open-weight)",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "DeepInfra",
+        "Google",
+        "Groq",
+        "Novita"
+      ],
+      "zdr_eu": false
+    },
+    "meta-llama/llama-guard-4-12b": {
+      "familia": "meta",
+      "origem": "EUA (open-weight)",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "DeepInfra",
+        "Together"
+      ],
+      "zdr_eu": false
+    },
+    "microsoft/phi-4": {
+      "familia": null,
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "DeepInfra",
+        "NextBit"
+      ],
+      "zdr_eu": false
+    },
+    "microsoft/phi-4-mini-instruct": {
+      "familia": null,
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "microsoft/wizardlm-2-8x22b": {
+      "familia": null,
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Novita"
+      ],
+      "zdr_eu": false
+    },
+    "minimax/minimax-01": {
+      "familia": null,
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "minimax/minimax-m1": {
+      "familia": null,
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "Novita"
+      ],
+      "zdr_eu": false
+    },
+    "minimax/minimax-m2": {
+      "familia": null,
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "AtlasCloud",
+        "Google",
+        "Minimax",
+        "Novita"
+      ],
+      "zdr_eu": false
+    },
+    "minimax/minimax-m2-her": {
+      "familia": null,
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "minimax/minimax-m2.1": {
+      "familia": null,
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "AtlasCloud",
+        "Minimax",
+        "Novita"
+      ],
+      "zdr_eu": false
+    },
+    "minimax/minimax-m2.5": {
+      "familia": null,
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "AkashML",
+        "AtlasCloud",
+        "DeepInfra",
+        "DigitalOcean",
+        "Inceptron",
+        "Mara",
+        "Minimax",
+        "Novita",
+        "Parasail",
+        "Phala",
+        "SiliconFlow",
+        "Venice"
+      ],
+      "zdr_eu": false
+    },
+    "minimax/minimax-m2.7": {
+      "familia": null,
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "DeepInfra",
+        "Fireworks",
+        "Mara",
+        "Minimax",
+        "Morph",
+        "Novita",
+        "SambaNova",
+        "Together"
+      ],
+      "zdr_eu": false
+    },
+    "minimax/minimax-m3": {
+      "familia": null,
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "AtlasCloud",
+        "Morph",
+        "Novita",
+        "Parasail"
+      ],
+      "zdr_eu": false
+    },
+    "mistralai/codestral-2508": {
+      "familia": "mistral",
+      "origem": "UE",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "mistralai/devstral-2512": {
+      "familia": "mistral",
+      "origem": "UE",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "mistralai/ministral-14b-2512": {
+      "familia": "mistral",
+      "origem": "UE",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "NextBit"
+      ],
+      "zdr_eu": false
+    },
+    "mistralai/ministral-3b-2512": {
+      "familia": "mistral",
+      "origem": "UE",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "NextBit"
+      ],
+      "zdr_eu": false
+    },
+    "mistralai/ministral-8b-2512": {
+      "familia": "mistral",
+      "origem": "UE",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "NextBit"
+      ],
+      "zdr_eu": false
+    },
+    "mistralai/mistral-large": {
+      "familia": "mistral",
+      "origem": "UE",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "mistralai/mistral-large-2407": {
+      "familia": "mistral",
+      "origem": "UE",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "mistralai/mistral-large-2512": {
+      "familia": "mistral",
+      "origem": "UE",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "mistralai/mistral-medium-3": {
+      "familia": "mistral",
+      "origem": "UE",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "mistralai/mistral-medium-3-5": {
+      "familia": "mistral",
+      "origem": "UE",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "mistralai/mistral-medium-3.1": {
+      "familia": "mistral",
+      "origem": "UE",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "mistralai/mistral-nemo": {
+      "familia": "mistral",
+      "origem": "UE",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "DeepInfra",
+        "DekaLLM",
+        "Novita"
+      ],
+      "zdr_eu": false
+    },
+    "mistralai/mistral-saba": {
+      "familia": "mistral",
+      "origem": "UE",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "mistralai/mistral-small-24b-instruct-2501": {
+      "familia": "mistral",
+      "origem": "UE",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "DeepInfra"
+      ],
+      "zdr_eu": false
+    },
+    "mistralai/mistral-small-2603": {
+      "familia": "mistral",
+      "origem": "UE",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Venice"
+      ],
+      "zdr_eu": false
+    },
+    "mistralai/mistral-small-3.1-24b-instruct": {
+      "familia": "mistral",
+      "origem": "UE",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "mistralai/mistral-small-3.2-24b-instruct": {
+      "familia": "mistral",
+      "origem": "UE",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "DeepInfra",
+        "Parasail",
+        "Venice"
+      ],
+      "zdr_eu": false
+    },
+    "mistralai/mixtral-8x22b-instruct": {
+      "familia": "mistral",
+      "origem": "UE",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "mistralai/voxtral-small-24b-2507": {
+      "familia": "mistral",
+      "origem": "UE",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "moonshotai/kimi-k2": {
+      "familia": null,
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "Novita"
+      ],
+      "zdr_eu": false
+    },
+    "moonshotai/kimi-k2-0905": {
+      "familia": null,
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "AtlasCloud",
+        "Groq",
+        "Novita"
+      ],
+      "zdr_eu": false
+    },
+    "moonshotai/kimi-k2-thinking": {
+      "familia": null,
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "AtlasCloud",
+        "Google",
+        "Novita"
+      ],
+      "zdr_eu": false
+    },
+    "moonshotai/kimi-k2.5": {
+      "familia": null,
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "AtlasCloud",
+        "DeepInfra",
+        "DigitalOcean",
+        "ModelRun",
+        "Moonshot AI",
+        "Novita",
+        "Phala",
+        "SiliconFlow",
+        "Venice"
+      ],
+      "zdr_eu": false
+    },
+    "moonshotai/kimi-k2.6": {
+      "familia": null,
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "AtlasCloud",
+        "BaseTen",
+        "Decart",
+        "DeepInfra",
+        "DigitalOcean",
+        "Fireworks",
+        "Inceptron",
+        "Io Net",
+        "Moonshot AI",
+        "Novita",
+        "Parasail",
+        "Phala",
+        "SiliconFlow",
+        "Together",
+        "Venice"
+      ],
+      "zdr_eu": false
+    },
+    "moonshotai/kimi-k2.7-code": {
+      "familia": null,
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "AkashML",
+        "AtlasCloud",
+        "DeepInfra",
+        "Moonshot AI",
+        "Novita",
+        "Parasail",
+        "Together",
+        "Venice"
+      ],
+      "zdr_eu": false
+    },
+    "morph/morph-v3-fast": {
+      "familia": null,
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Morph"
+      ],
+      "zdr_eu": false
+    },
+    "morph/morph-v3-large": {
+      "familia": null,
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Morph"
+      ],
+      "zdr_eu": false
+    },
+    "nex-agi/nex-n2-pro:free": {
+      "familia": null,
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "SiliconFlow"
+      ],
+      "zdr_eu": false
+    },
+    "nousresearch/hermes-3-llama-3.1-405b": {
+      "familia": null,
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "DeepInfra"
+      ],
+      "zdr_eu": false
+    },
+    "nousresearch/hermes-3-llama-3.1-405b:free": {
+      "familia": null,
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Venice"
+      ],
+      "zdr_eu": false
+    },
+    "nousresearch/hermes-3-llama-3.1-70b": {
+      "familia": null,
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "DeepInfra"
+      ],
+      "zdr_eu": false
+    },
+    "nousresearch/hermes-4-405b": {
+      "familia": null,
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Nebius"
+      ],
+      "zdr_eu": false
+    },
+    "nousresearch/hermes-4-70b": {
+      "familia": null,
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Nebius"
+      ],
+      "zdr_eu": false
+    },
+    "nvidia/llama-3.3-nemotron-super-49b-v1.5": {
+      "familia": null,
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "DeepInfra"
+      ],
+      "zdr_eu": false
+    },
+    "nvidia/nemotron-3-nano-30b-a3b": {
+      "familia": null,
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "DeepInfra",
+        "Nebius",
+        "Novita"
+      ],
+      "zdr_eu": false
+    },
+    "nvidia/nemotron-3-nano-30b-a3b:free": {
+      "familia": null,
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free": {
+      "familia": null,
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "nvidia/nemotron-3-super-120b-a12b": {
+      "familia": null,
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "DeepInfra",
+        "DekaLLM",
+        "DigitalOcean",
+        "Nebius"
+      ],
+      "zdr_eu": false
+    },
+    "nvidia/nemotron-3-super-120b-a12b:free": {
+      "familia": null,
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "nvidia/nemotron-3-ultra-550b-a55b": {
+      "familia": null,
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "DeepInfra",
+        "Nebius",
+        "Together"
+      ],
+      "zdr_eu": false
+    },
+    "nvidia/nemotron-3-ultra-550b-a55b:free": {
+      "familia": null,
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "nvidia/nemotron-3.5-content-safety:free": {
+      "familia": null,
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "nvidia/nemotron-nano-12b-v2-vl:free": {
+      "familia": null,
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "nvidia/nemotron-nano-9b-v2:free": {
+      "familia": null,
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "openai/gpt-3.5-turbo": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "openai/gpt-3.5-turbo-0613": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Azure"
+      ],
+      "zdr_eu": false
+    },
+    "openai/gpt-3.5-turbo-16k": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Azure"
+      ],
+      "zdr_eu": false
+    },
+    "openai/gpt-3.5-turbo-instruct": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "openai/gpt-4": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Azure"
+      ],
+      "zdr_eu": false
+    },
+    "openai/gpt-4-turbo": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "openai/gpt-4-turbo-preview": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "openai/gpt-4.1": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Azure"
+      ],
+      "zdr_eu": true
+    },
+    "openai/gpt-4.1-mini": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Azure"
+      ],
+      "zdr_eu": true
+    },
+    "openai/gpt-4.1-nano": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Azure"
+      ],
+      "zdr_eu": true
+    },
+    "openai/gpt-4o": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Azure"
+      ],
+      "zdr_eu": false
+    },
+    "openai/gpt-4o-2024-05-13": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Azure"
+      ],
+      "zdr_eu": false
+    },
+    "openai/gpt-4o-2024-08-06": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Azure"
+      ],
+      "zdr_eu": false
+    },
+    "openai/gpt-4o-2024-11-20": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "openai/gpt-4o-mini": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Azure"
+      ],
+      "zdr_eu": true
+    },
+    "openai/gpt-4o-mini-2024-07-18": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "openai/gpt-4o-mini-search-preview": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "openai/gpt-4o-search-preview": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "openai/gpt-5": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Azure"
+      ],
+      "zdr_eu": true
+    },
+    "openai/gpt-5-chat": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "openai/gpt-5-codex": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "openai/gpt-5-image": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "openai/gpt-5-image-mini": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "openai/gpt-5-mini": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Azure"
+      ],
+      "zdr_eu": true
+    },
+    "openai/gpt-5-nano": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Azure"
+      ],
+      "zdr_eu": true
+    },
+    "openai/gpt-5-pro": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "openai/gpt-5.1": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Azure"
+      ],
+      "zdr_eu": true
+    },
+    "openai/gpt-5.1-chat": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Azure"
+      ],
+      "zdr_eu": false
+    },
+    "openai/gpt-5.1-codex": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Azure"
+      ],
+      "zdr_eu": false
+    },
+    "openai/gpt-5.1-codex-max": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Azure"
+      ],
+      "zdr_eu": false
+    },
+    "openai/gpt-5.1-codex-mini": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Azure"
+      ],
+      "zdr_eu": false
+    },
+    "openai/gpt-5.2": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Azure"
+      ],
+      "zdr_eu": false
+    },
+    "openai/gpt-5.2-chat": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Azure"
+      ],
+      "zdr_eu": false
+    },
+    "openai/gpt-5.2-codex": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Azure"
+      ],
+      "zdr_eu": false
+    },
+    "openai/gpt-5.2-pro": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "openai/gpt-5.3-chat": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Azure"
+      ],
+      "zdr_eu": false
+    },
+    "openai/gpt-5.3-codex": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Azure"
+      ],
+      "zdr_eu": false
+    },
+    "openai/gpt-5.4": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Azure"
+      ],
+      "zdr_eu": false
+    },
+    "openai/gpt-5.4-image-2": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "openai/gpt-5.4-mini": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Azure"
+      ],
+      "zdr_eu": false
+    },
+    "openai/gpt-5.4-nano": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Azure"
+      ],
+      "zdr_eu": false
+    },
+    "openai/gpt-5.4-pro": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Azure"
+      ],
+      "zdr_eu": false
+    },
+    "openai/gpt-5.5": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Azure"
+      ],
+      "zdr_eu": true
+    },
+    "openai/gpt-5.5-pro": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "openai/gpt-audio": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "openai/gpt-audio-mini": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "openai/gpt-chat-latest": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "openai/gpt-oss-120b": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Amazon Bedrock",
+        "BaseTen",
+        "Cerebras",
+        "DeepInfra",
+        "DekaLLM",
+        "DigitalOcean",
+        "Google",
+        "Groq",
+        "Mara",
+        "Nebius",
+        "Novita",
+        "Parasail",
+        "Phala",
+        "SambaNova",
+        "SiliconFlow",
+        "Together"
+      ],
+      "zdr_eu": true
+    },
+    "openai/gpt-oss-120b:free": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "openai/gpt-oss-20b": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Amazon Bedrock",
+        "DeepInfra",
+        "DekaLLM",
+        "Fireworks",
+        "Google",
+        "Groq",
+        "NextBit",
+        "Novita",
+        "Parasail",
+        "Phala",
+        "SiliconFlow",
+        "Together"
+      ],
+      "zdr_eu": true
+    },
+    "openai/gpt-oss-20b:free": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "openai/gpt-oss-safeguard-20b": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Groq"
+      ],
+      "zdr_eu": false
+    },
+    "openai/o1": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "openai/o1-pro": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "openai/o3": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "openai/o3-deep-research": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "openai/o3-mini": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "openai/o3-mini-high": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "openai/o3-pro": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "openai/o4-mini": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "openai/o4-mini-deep-research": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "openai/o4-mini-high": {
+      "familia": "openai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "openrouter/auto": {
+      "familia": null,
+      "origem": "Indefinido",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "openrouter/bodybuilder": {
+      "familia": null,
+      "origem": "Indefinido",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "openrouter/free": {
+      "familia": null,
+      "origem": "Indefinido",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "openrouter/fusion": {
+      "familia": null,
+      "origem": "Indefinido",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "openrouter/owl-alpha": {
+      "familia": null,
+      "origem": "Indefinido",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "openrouter/pareto-code": {
+      "familia": null,
+      "origem": "Indefinido",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "perceptron/perceptron-mk1": {
+      "familia": null,
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Perceptron"
+      ],
+      "zdr_eu": false
+    },
+    "perplexity/sonar": {
+      "familia": null,
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Perplexity"
+      ],
+      "zdr_eu": false
+    },
+    "perplexity/sonar-deep-research": {
+      "familia": null,
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Perplexity"
+      ],
+      "zdr_eu": false
+    },
+    "perplexity/sonar-pro": {
+      "familia": null,
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Perplexity"
+      ],
+      "zdr_eu": false
+    },
+    "perplexity/sonar-pro-search": {
+      "familia": null,
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Perplexity"
+      ],
+      "zdr_eu": false
+    },
+    "perplexity/sonar-reasoning-pro": {
+      "familia": null,
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Perplexity"
+      ],
+      "zdr_eu": false
+    },
+    "poolside/laguna-m.1:free": {
+      "familia": null,
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "poolside/laguna-xs.2:free": {
+      "familia": null,
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "prime-intellect/intellect-3": {
+      "familia": null,
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Nebius"
+      ],
+      "zdr_eu": false
+    },
+    "qwen/qwen-2.5-72b-instruct": {
+      "familia": "qwen",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "DeepInfra",
+        "Novita"
+      ],
+      "zdr_eu": false
+    },
+    "qwen/qwen-2.5-7b-instruct": {
+      "familia": "qwen",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "Phala",
+        "Together"
+      ],
+      "zdr_eu": false
+    },
+    "qwen/qwen-2.5-coder-32b-instruct": {
+      "familia": "qwen",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "qwen/qwen-plus": {
+      "familia": "qwen",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "qwen/qwen-plus-2025-07-28": {
+      "familia": "qwen",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "qwen/qwen-plus-2025-07-28:thinking": {
+      "familia": "qwen",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "qwen/qwen2.5-vl-72b-instruct": {
+      "familia": "qwen",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "Parasail"
+      ],
+      "zdr_eu": false
+    },
+    "qwen/qwen3-14b": {
+      "familia": "qwen",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "DeepInfra",
+        "NextBit"
+      ],
+      "zdr_eu": false
+    },
+    "qwen/qwen3-235b-a22b": {
+      "familia": "qwen",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "qwen/qwen3-235b-a22b-2507": {
+      "familia": "qwen",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "AtlasCloud",
+        "DeepInfra",
+        "Google",
+        "Novita",
+        "Parasail",
+        "Together"
+      ],
+      "zdr_eu": false
+    },
+    "qwen/qwen3-235b-a22b-thinking-2507": {
+      "familia": "qwen",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "AtlasCloud",
+        "DeepInfra",
+        "Novita"
+      ],
+      "zdr_eu": false
+    },
+    "qwen/qwen3-30b-a3b": {
+      "familia": "qwen",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "DeepInfra",
+        "NextBit"
+      ],
+      "zdr_eu": false
+    },
+    "qwen/qwen3-30b-a3b-instruct-2507": {
+      "familia": "qwen",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "AtlasCloud",
+        "Nebius",
+        "SiliconFlow"
+      ],
+      "zdr_eu": false
+    },
+    "qwen/qwen3-30b-a3b-thinking-2507": {
+      "familia": "qwen",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "AtlasCloud"
+      ],
+      "zdr_eu": false
+    },
+    "qwen/qwen3-32b": {
+      "familia": "qwen",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "AtlasCloud",
+        "DeepInfra",
+        "Groq",
+        "Nebius",
+        "SiliconFlow"
+      ],
+      "zdr_eu": false
+    },
+    "qwen/qwen3-8b": {
+      "familia": "qwen",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "AtlasCloud"
+      ],
+      "zdr_eu": false
+    },
+    "qwen/qwen3-coder": {
+      "familia": "qwen",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "AtlasCloud",
+        "DeepInfra",
+        "Google",
+        "Novita",
+        "Venice"
+      ],
+      "zdr_eu": false
+    },
+    "qwen/qwen3-coder-30b-a3b-instruct": {
+      "familia": "qwen",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "Amazon Bedrock",
+        "Novita",
+        "SiliconFlow"
+      ],
+      "zdr_eu": false
+    },
+    "qwen/qwen3-coder-flash": {
+      "familia": "qwen",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "qwen/qwen3-coder-next": {
+      "familia": "qwen",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "AtlasCloud",
+        "Ionstream",
+        "Novita",
+        "Parasail"
+      ],
+      "zdr_eu": false
+    },
+    "qwen/qwen3-coder-plus": {
+      "familia": "qwen",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "qwen/qwen3-coder:free": {
+      "familia": "qwen",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "Venice"
+      ],
+      "zdr_eu": false
+    },
+    "qwen/qwen3-max": {
+      "familia": "qwen",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "qwen/qwen3-max-thinking": {
+      "familia": "qwen",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "qwen/qwen3-next-80b-a3b-instruct": {
+      "familia": "qwen",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "AtlasCloud",
+        "DeepInfra",
+        "Google",
+        "Novita",
+        "Parasail"
+      ],
+      "zdr_eu": false
+    },
+    "qwen/qwen3-next-80b-a3b-instruct:free": {
+      "familia": "qwen",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "Venice"
+      ],
+      "zdr_eu": false
+    },
+    "qwen/qwen3-next-80b-a3b-thinking": {
+      "familia": "qwen",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "AtlasCloud",
+        "Google",
+        "Nebius",
+        "Novita"
+      ],
+      "zdr_eu": false
+    },
+    "qwen/qwen3-vl-235b-a22b-instruct": {
+      "familia": "qwen",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "AtlasCloud",
+        "DeepInfra",
+        "Novita",
+        "Parasail",
+        "Venice"
+      ],
+      "zdr_eu": false
+    },
+    "qwen/qwen3-vl-235b-a22b-thinking": {
+      "familia": "qwen",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "Novita"
+      ],
+      "zdr_eu": false
+    },
+    "qwen/qwen3-vl-30b-a3b-instruct": {
+      "familia": "qwen",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "AtlasCloud",
+        "DeepInfra",
+        "Novita",
+        "Phala",
+        "SiliconFlow"
+      ],
+      "zdr_eu": false
+    },
+    "qwen/qwen3-vl-30b-a3b-thinking": {
+      "familia": "qwen",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "Novita",
+        "SiliconFlow"
+      ],
+      "zdr_eu": false
+    },
+    "qwen/qwen3-vl-32b-instruct": {
+      "familia": "qwen",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "qwen/qwen3-vl-8b-instruct": {
+      "familia": "qwen",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "AtlasCloud",
+        "Novita",
+        "Parasail"
+      ],
+      "zdr_eu": false
+    },
+    "qwen/qwen3-vl-8b-thinking": {
+      "familia": "qwen",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "qwen/qwen3.5-122b-a10b": {
+      "familia": "qwen",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "AtlasCloud",
+        "Novita",
+        "SiliconFlow"
+      ],
+      "zdr_eu": false
+    },
+    "qwen/qwen3.5-27b": {
+      "familia": "qwen",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "AtlasCloud",
+        "DeepInfra",
+        "Novita",
+        "Phala",
+        "SiliconFlow"
+      ],
+      "zdr_eu": false
+    },
+    "qwen/qwen3.5-35b-a3b": {
+      "familia": "qwen",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "AkashML",
+        "AtlasCloud",
+        "DeepInfra",
+        "NextBit",
+        "Parasail",
+        "SiliconFlow",
+        "Venice"
+      ],
+      "zdr_eu": false
+    },
+    "qwen/qwen3.5-397b-a17b": {
+      "familia": "qwen",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "AtlasCloud",
+        "DeepInfra",
+        "DigitalOcean",
+        "Morph",
+        "Novita",
+        "Parasail",
+        "Phala",
+        "Together",
+        "Venice"
+      ],
+      "zdr_eu": false
+    },
+    "qwen/qwen3.5-9b": {
+      "familia": "qwen",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "DeepInfra",
+        "SiliconFlow",
+        "Together",
+        "Venice"
+      ],
+      "zdr_eu": false
+    },
+    "qwen/qwen3.5-flash-02-23": {
+      "familia": "qwen",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "qwen/qwen3.5-plus-02-15": {
+      "familia": "qwen",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "qwen/qwen3.5-plus-20260420": {
+      "familia": "qwen",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "qwen/qwen3.6-27b": {
+      "familia": "qwen",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "DeepInfra",
+        "Io Net",
+        "Morph",
+        "Phala",
+        "SiliconFlow",
+        "Venice"
+      ],
+      "zdr_eu": false
+    },
+    "qwen/qwen3.6-35b-a3b": {
+      "familia": "qwen",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "AkashML",
+        "AtlasCloud",
+        "Parasail",
+        "SiliconFlow"
+      ],
+      "zdr_eu": false
+    },
+    "qwen/qwen3.6-flash": {
+      "familia": "qwen",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "qwen/qwen3.6-max-preview": {
+      "familia": "qwen",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "qwen/qwen3.6-plus": {
+      "familia": "qwen",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "qwen/qwen3.7-max": {
+      "familia": "qwen",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "qwen/qwen3.7-plus": {
+      "familia": "qwen",
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "rekaai/reka-edge": {
+      "familia": null,
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Reka"
+      ],
+      "zdr_eu": false
+    },
+    "rekaai/reka-flash-3": {
+      "familia": null,
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Reka"
+      ],
+      "zdr_eu": false
+    },
+    "relace/relace-apply-3": {
+      "familia": null,
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Relace"
+      ],
+      "zdr_eu": false
+    },
+    "relace/relace-search": {
+      "familia": null,
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Relace"
+      ],
+      "zdr_eu": false
+    },
+    "sao10k/l3-lunaris-8b": {
+      "familia": null,
+      "origem": "Indefinido",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "DeepInfra",
+        "Novita"
+      ],
+      "zdr_eu": false
+    },
+    "sao10k/l3.1-70b-hanami-x1": {
+      "familia": null,
+      "origem": "Indefinido",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Infermatic"
+      ],
+      "zdr_eu": false
+    },
+    "sao10k/l3.1-euryale-70b": {
+      "familia": null,
+      "origem": "Indefinido",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "DeepInfra",
+        "Novita"
+      ],
+      "zdr_eu": false
+    },
+    "sao10k/l3.3-euryale-70b": {
+      "familia": null,
+      "origem": "Indefinido",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "NextBit"
+      ],
+      "zdr_eu": false
+    },
+    "stepfun/step-3.5-flash": {
+      "familia": null,
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "DeepInfra",
+        "SiliconFlow"
+      ],
+      "zdr_eu": false
+    },
+    "stepfun/step-3.7-flash": {
+      "familia": null,
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "DeepInfra",
+        "Novita"
+      ],
+      "zdr_eu": false
+    },
+    "switchpoint/router": {
+      "familia": null,
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "tencent/hunyuan-a13b-instruct": {
+      "familia": null,
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "SiliconFlow"
+      ],
+      "zdr_eu": false
+    },
+    "tencent/hy3-preview": {
+      "familia": null,
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "SiliconFlow"
+      ],
+      "zdr_eu": false
+    },
+    "thedrummer/cydonia-24b-v4.1": {
+      "familia": null,
+      "origem": "Indefinido",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Parasail"
+      ],
+      "zdr_eu": false
+    },
+    "thedrummer/rocinante-12b": {
+      "familia": null,
+      "origem": "Indefinido",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Infermatic",
+        "NextBit"
+      ],
+      "zdr_eu": false
+    },
+    "thedrummer/skyfall-36b-v2": {
+      "familia": null,
+      "origem": "Indefinido",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Parasail"
+      ],
+      "zdr_eu": false
+    },
+    "thedrummer/unslopnemo-12b": {
+      "familia": null,
+      "origem": "Indefinido",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "NextBit"
+      ],
+      "zdr_eu": false
+    },
+    "undi95/remm-slerp-l2-13b": {
+      "familia": null,
+      "origem": "Indefinido",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Mancer 2",
+        "NextBit"
+      ],
+      "zdr_eu": false
+    },
+    "upstage/solar-pro-3": {
+      "familia": null,
+      "origem": "Coreia do Sul",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "writer/palmyra-x5": {
+      "familia": null,
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "permitido com ressalvas",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "permitido com ressalvas",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [
+        "Amazon Bedrock"
+      ],
+      "zdr_eu": false
+    },
+    "x-ai/grok-4.20": {
+      "familia": "xai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "não recomendado",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "x-ai/grok-4.20-multi-agent": {
+      "familia": "xai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "não recomendado",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "x-ai/grok-4.3": {
+      "familia": "xai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "não recomendado",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "x-ai/grok-build-0.1": {
+      "familia": "xai",
+      "origem": "EUA",
+      "areas": {
+        "geral": "permitido com ressalvas",
+        "juridico": "permitido com ressalvas",
+        "saude": "não recomendado",
+        "financeiro": "permitido com ressalvas",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "permitido com ressalvas"
+      },
+      "zdr_providers": [],
+      "zdr_eu": false
+    },
+    "xiaomi/mimo-v2.5": {
+      "familia": null,
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "DigitalOcean"
+      ],
+      "zdr_eu": false
+    },
+    "xiaomi/mimo-v2.5-pro": {
+      "familia": null,
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "DeepInfra",
+        "Novita"
+      ],
+      "zdr_eu": false
+    },
+    "z-ai/glm-4.5": {
+      "familia": null,
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "Novita",
+        "Z.AI"
+      ],
+      "zdr_eu": false
+    },
+    "z-ai/glm-4.5-air": {
+      "familia": null,
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "Novita",
+        "SiliconFlow",
+        "Z.AI"
+      ],
+      "zdr_eu": false
+    },
+    "z-ai/glm-4.5v": {
+      "familia": null,
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "Novita",
+        "Z.AI"
+      ],
+      "zdr_eu": false
+    },
+    "z-ai/glm-4.6": {
+      "familia": null,
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "AtlasCloud",
+        "DeepInfra",
+        "Novita",
+        "Venice",
+        "Z.AI"
+      ],
+      "zdr_eu": false
+    },
+    "z-ai/glm-4.6v": {
+      "familia": null,
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "Novita",
+        "Z.AI"
+      ],
+      "zdr_eu": false
+    },
+    "z-ai/glm-4.7": {
+      "familia": null,
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "AtlasCloud",
+        "Cerebras",
+        "DeepInfra",
+        "Google",
+        "Novita",
+        "Phala",
+        "Venice",
+        "Z.AI"
+      ],
+      "zdr_eu": false
+    },
+    "z-ai/glm-4.7-flash": {
+      "familia": null,
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "DeepInfra",
+        "Novita",
+        "Phala",
+        "Venice"
+      ],
+      "zdr_eu": false
+    },
+    "z-ai/glm-5": {
+      "familia": null,
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "Amazon Bedrock",
+        "AtlasCloud",
+        "DeepInfra",
+        "DigitalOcean",
+        "Novita",
+        "Parasail",
+        "Phala",
+        "SiliconFlow",
+        "Together",
+        "Venice",
+        "Z.AI"
+      ],
+      "zdr_eu": false
+    },
+    "z-ai/glm-5-turbo": {
+      "familia": null,
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "AtlasCloud"
+      ],
+      "zdr_eu": false
+    },
+    "z-ai/glm-5.1": {
+      "familia": null,
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "AtlasCloud",
+        "BaseTen",
+        "DeepInfra",
+        "Fireworks",
+        "Inceptron",
+        "Novita",
+        "Parasail",
+        "Phala",
+        "SiliconFlow",
+        "Together",
+        "Venice",
+        "Wafer",
+        "Z.AI"
+      ],
+      "zdr_eu": false
+    },
+    "z-ai/glm-5.2": {
+      "familia": null,
+      "origem": "China",
+      "areas": {
+        "geral": "não recomendado",
+        "juridico": "não recomendado",
+        "saude": "não recomendado",
+        "financeiro": "não recomendado",
+        "criancas_adolescentes": "não recomendado",
+        "setor_publico": "não recomendado"
+      },
+      "zdr_providers": [
+        "AtlasCloud",
+        "DeepInfra",
+        "Io Net",
+        "Novita",
+        "Parasail",
+        "Z.AI"
+      ],
+      "zdr_eu": false
+    }
+  }
+}

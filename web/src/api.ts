@@ -1,4 +1,5 @@
 import { idbGet, idbGetAll, idbPut, idbPutMany } from './idb';
+import type { LgpdData } from './lgpd';
 
 export interface OpenRouterModel {
   id: string;
@@ -47,6 +48,8 @@ export interface RunConfig {
   optimizerModelId?: string;
   judgePasses?: 1 | 2;
   iterations?: number;
+  /** Perfil de conformidade LGPD (consultivo; gravado no record). Ausente = "livre". */
+  compliance?: { area: string; includeRessalvas: boolean };
   // meta:
   datagenModelId: string;
   judgeModelId: string;
@@ -246,6 +249,13 @@ export async function fetchTechniques(): Promise<Technique[]> {
   const res = await fetch('/v1/benchmark/techniques');
   if (!res.ok) throw new Error('Falha ao listar técnicas');
   const json = (await res.json()) as { data: Technique[] };
+  return json.data;
+}
+
+export async function fetchLgpd(): Promise<LgpdData> {
+  const res = await fetch('/v1/benchmark/lgpd');
+  if (!res.ok) throw new Error('Falha ao carregar base de conformidade LGPD');
+  const json = (await res.json()) as { data: LgpdData };
   return json.data;
 }
 

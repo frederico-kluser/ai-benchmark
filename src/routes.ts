@@ -6,6 +6,7 @@ import { startRun } from './orchestrator.js';
 import { startTraining } from './trainer.js';
 import { generateContestants } from './variator.js';
 import { listTechniques } from './techniques.js';
+import { getLgpdData } from './lgpd.js';
 import { listRuns, loadRun, listSessions, loadSession } from './storage.js';
 import { subscribe, subscribeSession } from './events.js';
 import type { CompetitorResponse, RunRecord } from './types.js';
@@ -23,6 +24,11 @@ const baseFields = {
   promptOptimization: z.boolean().optional(),
   optimizerModelId: z.string().min(1).optional(),
   judgePasses: z.union([z.literal(1), z.literal(2)]).optional(),
+  // Perfil de conformidade LGPD escolhido no assistente (CONSULTIVO: gravado
+  // para transparência/rastreabilidade, não força roteamento). Ausente = "livre".
+  compliance: z
+    .object({ area: z.string().min(1), includeRessalvas: z.boolean() })
+    .optional(),
 };
 
 const manualVariantSchema = z.object({
@@ -231,6 +237,12 @@ router.post('/runs', requireKey, async (req, res) => {
 // Biblioteca curada de tecnicas de variacao (sem o meta-prompt). Nao exige key.
 router.get('/techniques', (_req, res) => {
   res.json({ data: listTechniques() });
+});
+
+// Base de conhecimento LGPD (familias, areas, origem de providers/criadores)
+// que alimenta o filtro consultivo de proposito/area. Publica, nao exige key.
+router.get('/lgpd', (_req, res) => {
+  res.json({ data: getLgpdData() });
 });
 
 router.get('/runs', async (_req, res) => {
