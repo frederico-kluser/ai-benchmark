@@ -128,6 +128,41 @@ function parseCustomStages(text: string, maxFallback: number): ParsedCustomStage
   return { stages: out, error: null };
 }
 
+// Monta um prompt (em XML, editável) que o usuário leva ao LLM dele para gerar
+// as etapas JÁ no nosso formato JSON. As partes entre {{...}} ele pode substituir.
+function buildCollectionPrompt(domain: string, count: number, maxTokens: number): string {
+  const dom = domain.trim() || '{{DESCREVA_SEU_SISTEMA_AQUI}}';
+  return `<tarefa>
+Você é um gerador de cenários de benchmark para avaliar assistentes de IA.
+Gere EXATAMENTE ${count} cenários de teste sobre o domínio descrito em <dominio>.
+</tarefa>
+
+<dominio>
+${dom}
+</dominio>
+
+<instrucoes>
+- Cada cenário é uma pergunta real que um usuário faria ao sistema de IA.
+- Varie o tipo de tarefa entre os cenários (extração, raciocínio, comparação, recusa, criatividade controlada, etc.).
+- "productContext" é o contexto/políticas que o sistema tem para responder — vira o system prompt dos modelos testados. Inclua dados, regras, FAQs e restrições relevantes.
+- "rubric" é o CRITÉRIO DE CORREÇÃO: o que uma resposta correta PRECISA conter/fazer e o que a tornaria inaceitável. Os juízes usam isso para avaliar às cegas. Seja objetivo (1 a 3 frases).
+- "maxTokens" é o teto razoável de tokens da resposta (inteiro).
+- Idioma: português, salvo se o domínio exigir outro.
+</instrucoes>
+
+<formato_saida>
+Responda APENAS com um array JSON válido (sem markdown, sem comentários, sem texto fora do array):
+[
+  {
+    "question": "pergunta do usuário",
+    "productContext": "contexto/políticas que o sistema tem para responder",
+    "rubric": "o que a resposta correta deve conter; o que a torna inaceitável",
+    "maxTokens": ${maxTokens}
+  }
+]
+</formato_saida>`;
+}
+
 // Os 3 objetivos, agora apresentados como cartões escolhíveis no passo 1.
 const MODE_META: { id: RunMode; icon: string; label: string; tagline: string; detail: string }[] = [
   {
@@ -321,6 +356,11 @@ export function NewRun() {
   // Etapas manuais (JSON): substituem o datagen e trazem a rubrica que ancora o juiz.
   const [useCustomStages, setUseCustomStages] = useState(false);
   const [customStagesText, setCustomStagesText] = useState('');
+  // Gerador de prompt de coleta: monta o prompt (XML) que o usuário leva ao LLM dele.
+  const [collectorOpen, setCollectorOpen] = useState(false);
+  const [collectorCount, setCollectorCount] = useState(5);
+  const [collectorPrompt, setCollectorPrompt] = useState('');
+  const [collectorCopied, setCollectorCopied] = useState(false);
 
   // Conformidade LGPD (passo Tema). 'livre' = sem filtro (default, não quebra os
   // modelos pré-selecionados). Consultivo: filtra o catálogo, não força roteamento.
@@ -830,6 +870,64 @@ export function NewRun() {
               />
               {useCustomStages && (
                 <>
+                  <div className="card field-card" style={{ background: 'var(--subtle)', marginTop: 12, marginBottom: 12 }}>
+                    <button type="button" className="link-toggle" onClick={() => setCollectorOpen((v) => !v)}>
+                      Não tem o JSON? Gerar prompt de coleta
+                      <span className={`caret ${collectorOpen ? 'open' : ''}`}>▶</span>
+                    </button>
+                    {collectorOpen && (
+                      <>
+                        <p className="field-hint" style={{ marginTop: 10 }}>
+                          Gera um prompt (a partir do seu <strong>Tema</strong>) para colar no SEU modelo (ChatGPT,
+                          Claude, etc.). Ele devolve as etapas já no formato JSON — cole o resultado no campo abaixo.
+                          As partes entre <code>{'{{...}}'}</code> você pode substituir.
+                        </p>
+                        <div className="steppers-grid" style={{ marginBottom: 10 }}>
+                          <Stepper
+                            label="Etapas a gerar"
+                            value={collectorCount}
+                            onStep={(d) => setCollectorCount(Math.max(1, Math.min(50, collectorCount + d)))}
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          onClick={() => {
+                            setCollectorPrompt(buildCollectionPrompt(theme, collectorCount, maxOutputTokens));
+                            setCollectorCopied(false);
+                          }}
+                        >
+                          Gerar prompt
+                        </button>
+                        {collectorPrompt && (
+                          <>
+                            <textarea
+                              className="textarea"
+                              style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: 12, marginTop: 10 }}
+                              value={collectorPrompt}
+                              onChange={(e) => setCollectorPrompt(e.target.value)}
+                              rows={10}
+                              spellCheck={false}
+                            />
+                            <div className="preset-row" style={{ marginTop: 8 }}>
+                              <button
+                                type="button"
+                                className="chip-tag"
+                                onClick={() => {
+                                  navigator.clipboard
+                                    ?.writeText(collectorPrompt)
+                                    .then(() => setCollectorCopied(true))
+                                    .catch(() => undefined);
+                                }}
+                              >
+                                {collectorCopied ? '✓ Copiado' : 'Copiar prompt'}
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </>
+                    )}
+                  </div>
                   <p className="field-hint" style={{ marginTop: 12 }}>
                     Array de etapas. Cada uma:{' '}
                     <strong>question</strong> (pergunta do usuário), <strong>productContext</strong> (system prompt

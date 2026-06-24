@@ -390,6 +390,7 @@ router.get('/runs/:id/export.csv', async (req, res) => {
       'tokensOut',
       'costUsd',
       'rankPosition',
+      'verdict',
       'errorMsg',
       'text',
     ]
@@ -401,6 +402,13 @@ router.get('/runs/:id/export.csv', async (req, res) => {
     for (const r of stage.responses) {
       const rankPosition = ranking.indexOf(r.contestantId);
       const c = byId.get(r.contestantId);
+      const verdict =
+        stage.judge?.verdictByContestant?.[r.contestantId] ??
+        (stage.judge?.acceptableByContestant?.[r.contestantId] === undefined
+          ? ''
+          : stage.judge.acceptableByContestant[r.contestantId]
+            ? 'resolve'
+            : 'nao');
       rows.push(
         [
           record.id,
@@ -418,6 +426,7 @@ router.get('/runs/:id/export.csv', async (req, res) => {
           r.tokensOut,
           r.costUsd,
           rankPosition >= 0 ? rankPosition + 1 : '',
+          verdict,
           r.errorMsg ?? '',
           r.text,
         ]

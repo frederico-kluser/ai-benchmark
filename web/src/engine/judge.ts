@@ -6,6 +6,7 @@ import type {
   JudgeVerdict,
   SingleJudgeResult,
   StageSpec,
+  Verdict,
 } from './types';
 
 // Juiz LISTWISE e COMPACTO: uma unica chamada por juiz devolve (a) o RANKING de
@@ -22,18 +23,19 @@ Quando um CRITERIO DE CORRETUDE (rubrica) for fornecido para a etapa, ele e a RE
 
 Faca DUAS coisas:
 1) "ranking": ordene TODAS as respostas da MELHOR para a PIOR, considerando, em ordem de importancia: (a) aderencia ao CRITERIO DE CORRETUDE (rubrica) da etapa, quando fornecido; (b) corretude factual e ausencia de alucinacao; (c) aderencia ao contexto/politicas fornecidos; (d) completude; (e) seguranca; (f) clareza.
-2) "verdicts": para CADA resposta, diga se e ACEITAVEL para uso real ("acceptable": true/false) com um "motivo" de NO MAXIMO 1 frase curta.
-   - acceptable=true: da pra usar sem causar erro/dano e satisfaz a rubrica (quando houver), MESMO que nao seja a melhor.
-   - acceptable=false: erro factual, viola o contexto/politica/rubrica, inseguro, ou incompleto a ponto de nao servir.
+2) "verdicts": para CADA resposta, PRIMEIRO escreva uma "justificativa" curta (1-2 frases) analisando se ela resolve a tarefa, e SO DEPOIS atribua um "veredito" TERNARIO. Raciocine primeiro, classifique por ultimo.
+   - "resolve": resolve a tarefa corretamente e com seguranca (satisfaz a rubrica, quando houver).
+   - "parcial": resolve em parte — incompleta, imprecisa em pontos menores, ou util mas com ressalvas.
+   - "nao": NAO resolve — erro factual, viola o contexto/politica/rubrica, inseguro, ou incompleto a ponto de nao servir.
 
 Regras de justica (siga estritamente):
 - NAO premie respostas mais longas: avalie conteudo e utilidade, NUNCA o tamanho.
 - A ordem em que aparecem (A, B, C...) e ALEATORIA e NAO deve influenciar.
 - Cada rotulo aparece EXATAMENTE UMA vez no ranking; inclua TODOS os rotulos.
-- "motivo" curtissimo (1 frase no maximo).
+- A "justificativa" vem ANTES do "veredito" em cada item.
 
 Saida ESTRITAMENTE em JSON valido, sem markdown e sem comentarios:
-{"ranking":["<melhor>","...","<pior>"],"verdicts":[{"label":"<letra>","acceptable":true,"motivo":"<= 1 frase"}, ... TODOS os rotulos]}`;
+{"ranking":["<melhor>","...","<pior>"],"verdicts":[{"label":"<letra>","justificativa":"<1-2 frases>","veredito":"resolve|parcial|nao"}, ... TODOS os rotulos]}`;
 
 const judgeSchema = z.object({
   ranking: z.array(z.string().min(1)).min(1),
@@ -41,13 +43,38 @@ const judgeSchema = z.object({
     .array(
       z.object({
         label: z.string().min(1),
-        acceptable: z.boolean(),
-        motivo: z.string().optional().default(''),
+        // justificativa primeiro (G-Eval); aceita "motivo" do formato antigo.
+        justificativa: z.string().optional().default(''),
+        motivo: z.string().optional(),
+        // veredito ternario; aceita "acceptable" (bool) do formato antigo.
+        veredito: z.string().optional(),
+        acceptable: z.boolean().optional(),
       }),
     )
     .optional()
     .default([]),
 });
+
+const ORDINAL: Record<Verdict, number> = { nao: 0, parcial: 1, resolve: 2 };
+
+/** Normaliza o veredito cru do juiz (ternario, com fallback ao binario antigo). */
+function toVerdict(raw: { veredito?: string; acceptable?: boolean }): Verdict {
+  const s = (raw.veredito ?? '').trim().toLowerCase();
+  if (s.startsWith('resolv') || s === 'sim' || s === 'ok' || s === 'true') return 'resolve';
+  if (s.startsWith('parc')) return 'parcial';
+  if (s.startsWith('nao') || s.startsWith('não') || s === 'no' || s === 'false') return 'nao';
+  if (typeof raw.acceptable === 'boolean') return raw.acceptable ? 'resolve' : 'nao';
+  return 'parcial'; // ambiguo => neutro
+}
+
+/** Agrega vereditos ternarios por media ordinal (resolve=2, parcial=1, nao=0). */
+function aggregateVerdict(verdicts: Verdict[]): Verdict {
+  if (verdicts.length === 0) return 'parcial';
+  const avg = verdicts.reduce((s, v) => s + ORDINAL[v], 0) / verdicts.length;
+  if (avg >= 1.5) return 'resolve';
+  if (avg >= 0.5) return 'parcial';
+  return 'nao';
+}
 
 function shuffle<T>(arr: T[]): T[] {
   const a = [...arr];
@@ -132,7 +159,7 @@ Em "ranking", ordene TODOS estes rotulos da melhor para a pior: ${JSON.stringify
 Em "verdicts", de para CADA rotulo: "acceptable" (bool) e "motivo" (<= 1 frase).`;
 
   let parsedRanking: string[];
-  let parsedVerdicts: { label: string; acceptable: boolean; motivo: string }[] = [];
+  let parsedVerdicts: { label: string; verdict: Verdict; motivo: string }[] = [];
   try {
     const result = await chatCompletion({
       apiKey,
@@ -150,8 +177,8 @@ Em "verdicts", de para CADA rotulo: "acceptable" (bool) e "motivo" (<= 1 frase).
       parsedRanking = parsed.data.ranking.map((l) => l.trim().toUpperCase());
       parsedVerdicts = parsed.data.verdicts.map((v) => ({
         label: v.label.trim().toUpperCase(),
-        acceptable: v.acceptable,
-        motivo: v.motivo ?? '',
+        verdict: toVerdict(v),
+        motivo: (v.justificativa || v.motivo || '').trim(),
       }));
     } else {
       // fallback: extrai letras validas na ordem em que aparecem no texto cru
@@ -186,14 +213,14 @@ Em "verdicts", de para CADA rotulo: "acceptable" (bool) e "motivo" (<= 1 frase).
   for (const v of parsedVerdicts) {
     const cid = letterToContestant[v.label];
     if (cid && !(cid in verdictByCid)) {
-      verdictByCid[cid] = { contestantId: cid, acceptable: v.acceptable, motivo: v.motivo };
+      verdictByCid[cid] = { contestantId: cid, verdict: v.verdict, motivo: v.motivo };
     }
   }
   const verdicts: JudgeVerdict[] = okResponses.map(
     (r) =>
       verdictByCid[r.contestantId] ?? {
         contestantId: r.contestantId,
-        acceptable: true,
+        verdict: 'parcial',
         motivo: '',
       },
   );
@@ -275,11 +302,18 @@ export async function judgeStage(params: JudgeStageParams): Promise<JudgeResult>
     for (const id of failedIds) acc[id] = false;
     return acc;
   };
+  // respostas com erro/vazias => veredito "nao" (sem gastar LLM).
+  const autoNao = (): Record<string, Verdict> => {
+    const acc: Record<string, Verdict> = {};
+    for (const id of failedIds) acc[id] = 'nao';
+    return acc;
+  };
 
   if (okResponses.length === 0 || judgeIds.length === 0) {
     return {
       rankedContestantIds: [],
       acceptableByContestant: autoFalse(),
+      verdictByContestant: autoNao(),
       judges: [],
       blindMap: {},
       rawJudgeText: judgeIds.length === 0 ? 'Nenhum juiz configurado.' : '',
@@ -297,6 +331,7 @@ export async function judgeStage(params: JudgeStageParams): Promise<JudgeResult>
     return {
       rankedContestantIds: [],
       acceptableByContestant: autoFalse(),
+      verdictByContestant: autoNao(),
       judges: [],
       blindMap: {},
       rawJudgeText: 'Nenhum juiz retornou ranking valido.',
@@ -311,21 +346,24 @@ export async function judgeStage(params: JudgeStageParams): Promise<JudgeResult>
     judges.map((j) => j.rankedContestantIds),
   );
 
-  // Aceitavel = MAIORIA dos juizes (>= metade; empate conta como aceitavel).
+  // Veredito TERNARIO de consenso (media ordinal entre juizes) e o binario
+  // "aceitavel" derivado dele (resolve|parcial => aceitavel) para o placar/compat.
+  const verdictByContestant: Record<string, Verdict> = {};
   const acceptableByContestant: Record<string, boolean> = {};
   for (const id of ids) {
-    let yes = 0;
-    let total = 0;
+    const vs: Verdict[] = [];
     for (const j of judges) {
       const v = j.verdicts.find((x) => x.contestantId === id);
-      if (v) {
-        total++;
-        if (v.acceptable) yes++;
-      }
+      if (v) vs.push(v.verdict);
     }
-    acceptableByContestant[id] = total > 0 && yes * 2 >= total;
+    const agg = aggregateVerdict(vs);
+    verdictByContestant[id] = agg;
+    acceptableByContestant[id] = agg !== 'nao';
   }
-  for (const id of failedIds) acceptableByContestant[id] = false;
+  for (const id of failedIds) {
+    verdictByContestant[id] = 'nao';
+    acceptableByContestant[id] = false;
+  }
 
   const rawJudgeText =
     `${judges.length} juiz(es)${passes === 2 ? ' x2 passagens' : ''}. ` +
@@ -334,6 +372,7 @@ export async function judgeStage(params: JudgeStageParams): Promise<JudgeResult>
   return {
     rankedContestantIds,
     acceptableByContestant,
+    verdictByContestant,
     judges,
     blindMap: judges[0].blindMap,
     rawJudgeText,

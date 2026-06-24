@@ -162,13 +162,25 @@ export interface CompetitorResponse {
   errorMsg?: string;
 }
 
-/** Veredito COMPACTO de UM juiz para UMA resposta: aceitavel + motivo curto. */
+/**
+ * Veredito TERNARIO de uma etapa: a resposta resolve a tarefa, resolve
+ * parcialmente, ou nao resolve. Mais robusto que o binario como portao de
+ * qualidade (G-Eval / score absoluto como filtro). Ordem implicita: nao < parcial < resolve.
+ */
+export type Verdict = 'resolve' | 'parcial' | 'nao';
+
+/** Veredito COMPACTO de UM juiz para UMA resposta: justificativa + veredito ternario. */
 export interface JudgeVerdict {
   contestantId: string;
-  /** true = utilizavel no trabalho sem causar erro/dano, mesmo nao sendo a melhor. */
-  acceptable: boolean;
-  /** Motivo curtissimo (<= 1 frase). */
+  /** Veredito ternario: resolve / parcial / nao. */
+  verdict: Verdict;
+  /**
+   * Justificativa do juiz — gerada ANTES da classificacao (estilo G-Eval:
+   * raciocinio primeiro, rotulo depois). Curta (1-2 frases).
+   */
   motivo: string;
+  /** @deprecated compat: records antigos guardavam so o binario. Derive de `verdict`. */
+  acceptable?: boolean;
 }
 
 /** Resultado compacto de UM juiz numa etapa: ranking + vereditos. */
@@ -192,8 +204,13 @@ export interface SingleJudgeResult {
 export interface JudgeResult {
   /** Consenso entre juizes (posicao media): melhor -> pior. Placar/heatmap/CSV usam isto. */
   rankedContestantIds: string[];
-  /** Aceitavel por contestant = MAIORIA dos juizes (respostas com erro/vazias = false). */
+  /**
+   * Aceitavel por contestant (compat/placar): MAIORIA dos juizes; derivado do
+   * ternario (resolve|parcial => aceitavel). Respostas com erro/vazias = false.
+   */
   acceptableByContestant: Record<string, boolean>;
+  /** Veredito TERNARIO agregado por contestant (consenso entre juizes). Ausente em records antigos. */
+  verdictByContestant?: Record<string, Verdict>;
   /** Resultado individual de cada juiz (placar aditivo por juiz + justificativas na UI). */
   judges: SingleJudgeResult[];
   blindMap: Record<string, string>; // letra -> contestantId (do 1o juiz; cosmetico)
