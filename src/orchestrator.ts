@@ -166,8 +166,15 @@ async function runLoop(record: RunRecord, apiKey: string, opts: StartRunOpts): P
   // alem do timeout dos competidores, e tenta de novo antes de desistir.
   const datagenTimeout = Math.max(record.config.timeoutMs ?? 60_000, 90_000);
   const DATAGEN_ATTEMPTS = 2;
-  const pinnedStages = opts.pinnedStages;
-  const totalStages = record.config.stages;
+  // Etapas pinadas: do treino (opts.pinnedStages) OU fornecidas pelo usuario
+  // (config.customStages) — ambas pulam o datagen. Saneia maxTokens (o competidor
+  // faz Math.min(maxOutputTokens, stage.maxTokens); ausente/<=0 viraria NaN).
+  const rawPinned = opts.pinnedStages ?? record.config.customStages;
+  const pinnedStages = rawPinned?.map((s) => ({
+    ...s,
+    maxTokens: s.maxTokens && s.maxTokens > 0 ? s.maxTokens : record.config.maxOutputTokens ?? 1000,
+  }));
+  const totalStages = pinnedStages && pinnedStages.length ? pinnedStages.length : record.config.stages;
 
   // Cria todos os slots de etapa de uma vez (a run.started carregou stages=[];
   // emitimos stage.generating por etapa para a UI criar cada slot).

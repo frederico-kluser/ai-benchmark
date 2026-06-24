@@ -93,6 +93,15 @@ export interface RunConfigBase {
    * providers no OpenRouter. Ausente = "livre" (sem filtro de conformidade).
    */
   compliance?: { area: string; includeRessalvas: boolean };
+  /**
+   * Etapas fornecidas pelo usuario (JSON), substituindo o datagen automatico.
+   * Quando presente e nao-vazio, o pipeline PULA a geracao de cenarios e usa
+   * estas specs verbatim; `stages` passa a valer o tamanho desta lista. Cada
+   * etapa traz a pergunta, o contexto de produto e (opcional) a `rubric` que
+   * ancora os juizes. Vale para todos os modos; no treino, vira o benchmark
+   * pinado (mesmas etapas em todas as iteracoes).
+   */
+  customStages?: StageSpec[];
 }
 
 /** Campos comuns aos modos de 1 LLM (variation/training). */
@@ -127,6 +136,15 @@ export interface StageSpec {
   question: string;
   productContext: string;
   maxTokens: number;
+  /**
+   * Criterio de corretude desta etapa: o que uma boa resposta DEVE conter/fazer
+   * e o que a tornaria inaceitavel. Quando presente, e injetado no juiz como
+   * RUBRICA ANCORADA (estilo G-Eval) — ancora a nocao de "correto" num criterio
+   * explicito em vez de deixar o juiz inventar o seu, mitigando reward-hacking.
+   * Em etapas fornecidas pelo usuario (customStages) e a "explicacao do que a
+   * etapa resolve"; o datagen tambem pode gera-la automaticamente.
+   */
+  rubric?: string;
 }
 
 export type CompetitorStatus = 'ok' | 'error';

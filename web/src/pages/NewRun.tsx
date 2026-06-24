@@ -15,8 +15,9 @@ import {
   type OpenRouterModel,
   type RunConfig,
   type RunMode,
+  type StageSpec,
 } from '../api';
-import { AREA_LIVRE, filterModels, isAllowed, type LgpdData } from '../lgpd';
+import { AREA_LIVRE, creatorPrefix, familiaFor, filterModels, isAllowed, type LgpdData } from '../lgpd';
 
 // Defaults da run (ajustáveis na própria tela antes de iniciar).
 const DEFAULT_COMPETITORS = [
@@ -55,6 +56,77 @@ const PRESETS: { label: string; theme: string }[] = [
       'Triagem automática de tickets de suporte de um SaaS: classifica a prioridade (P0–P3) e roteia para a fila certa.',
   },
 ];
+
+// Exemplo de etapas manuais (JSON) — mostrado no editor para o usuário partir dele.
+const CUSTOM_STAGES_EXAMPLE = JSON.stringify(
+  [
+    {
+      question: 'Preciso fazer jejum para o exame de glicemia em jejum? Por quanto tempo?',
+      productContext:
+        'Você é o assistente da Clínica X. Glicemia em jejum exige 8h de jejum; água pura é permitida; medicamentos de uso contínuo devem ser mantidos, salvo orientação médica.',
+      rubric:
+        'Deve indicar 8 horas de jejum, permitir água pura e orientar manter medicamentos contínuos. Inaceitável inventar outro tempo de jejum ou proibir água.',
+      maxTokens: 300,
+    },
+    {
+      question: 'Posso tomar meu remédio de pressão antes da coleta de sangue?',
+      productContext:
+        'Você é o assistente da Clínica X. Anti-hipertensivos de uso contínuo devem ser mantidos, salvo orientação médica. Em dúvida clínica, orientar confirmar com o médico.',
+      rubric:
+        'Deve orientar manter o anti-hipertensivo e sugerir confirmar com o médico em caso de dúvida. Inaceitável recomendar suspender por conta própria.',
+      maxTokens: 300,
+    },
+  ],
+  null,
+  2,
+);
+
+interface ParsedCustomStages {
+  stages: StageSpec[] | null;
+  error: string | null;
+}
+
+// Valida o JSON de etapas manuais. Aceita um array OU um objeto { stages: [...] }.
+// maxTokens ausente herda o teto global (maxFallback). Cada etapa exige question
+// e productContext; rubric é opcional (a "explicação do que resolve" p/ o juiz).
+function parseCustomStages(text: string, maxFallback: number): ParsedCustomStages {
+  const t = text.trim();
+  if (!t) return { stages: null, error: null };
+  let data: unknown;
+  try {
+    data = JSON.parse(t);
+  } catch (e) {
+    return { stages: null, error: `JSON inválido: ${(e as Error).message}` };
+  }
+  const arr = Array.isArray(data)
+    ? data
+    : Array.isArray((data as { stages?: unknown })?.stages)
+      ? ((data as { stages: unknown[] }).stages as unknown[])
+      : null;
+  if (!arr) return { stages: null, error: 'Esperado um array de etapas (ou objeto com a chave "stages").' };
+  if (arr.length === 0) return { stages: null, error: 'Forneça ao menos 1 etapa.' };
+  if (arr.length > 50) return { stages: null, error: 'Máximo de 50 etapas.' };
+  const out: StageSpec[] = [];
+  for (let i = 0; i < arr.length; i++) {
+    const s = arr[i] as Record<string, unknown>;
+    if (!s || typeof s !== 'object') return { stages: null, error: `Etapa ${i + 1}: deve ser um objeto.` };
+    if (typeof s.question !== 'string' || !s.question.trim())
+      return { stages: null, error: `Etapa ${i + 1}: "question" obrigatória.` };
+    if (typeof s.productContext !== 'string' || !s.productContext.trim())
+      return { stages: null, error: `Etapa ${i + 1}: "productContext" obrigatório.` };
+    if (s.rubric !== undefined && typeof s.rubric !== 'string')
+      return { stages: null, error: `Etapa ${i + 1}: "rubric" deve ser texto.` };
+    if (s.maxTokens !== undefined && (typeof s.maxTokens !== 'number' || s.maxTokens <= 0))
+      return { stages: null, error: `Etapa ${i + 1}: "maxTokens" deve ser número positivo.` };
+    out.push({
+      question: s.question.trim(),
+      productContext: s.productContext.trim(),
+      rubric: typeof s.rubric === 'string' && s.rubric.trim() ? s.rubric.trim() : undefined,
+      maxTokens: typeof s.maxTokens === 'number' && s.maxTokens > 0 ? Math.round(s.maxTokens) : maxFallback,
+    });
+  }
+  return { stages: out, error: null };
+}
 
 // Os 3 objetivos, agora apresentados como cartões escolhíveis no passo 1.
 const MODE_META: { id: RunMode; icon: string; label: string; tagline: string; detail: string }[] = [
@@ -246,6 +318,10 @@ export function NewRun() {
   const [iterations, setIterations] = useState(3);
   const [twoPassJudge, setTwoPassJudge] = useState(false);
 
+  // Etapas manuais (JSON): substituem o datagen e trazem a rubrica que ancora o juiz.
+  const [useCustomStages, setUseCustomStages] = useState(false);
+  const [customStagesText, setCustomStagesText] = useState('');
+
   // Conformidade LGPD (passo Tema). 'livre' = sem filtro (default, não quebra os
   // modelos pré-selecionados). Consultivo: filtra o catálogo, não força roteamento.
   const [complianceArea, setComplianceArea] = useState<string>(AREA_LIVRE);
@@ -370,6 +446,43 @@ export function NewRun() {
     return manualVariants.filter((v) => v.systemPrompt.trim()).length + base;
   }, [isSingle, competitors, basePrompt, optimize, techniques, manualVariants]);
 
+  // Parse das etapas manuais (memoizado); maxTokens ausente herda o teto global.
+  const parsedCustomStages = useMemo(
+    () => parseCustomStages(customStagesText, maxOutputTokens),
+    [customStagesText, maxOutputTokens],
+  );
+  // Etapas efetivas: nº de etapas manuais válidas (quando ligado) ou o stepper.
+  const effectiveStages = useCustomStages && parsedCustomStages.stages
+    ? parsedCustomStages.stages.length
+    : stages;
+
+  // Guard-rail anti-viés de painel (consultivo): alerta quando um juiz é da MESMA
+  // família dos modelos avaliados (viés de auto-preferência) ou quando o painel
+  // não é diverso (recomendado ≥2 famílias distintas). Usa a base LGPD de famílias.
+  const panelWarnings = useMemo(() => {
+    if (judge.length === 0) return [] as string[];
+    const familyKey = (id: string) => (lgpd ? familiaFor(id, lgpd)?.id : undefined) ?? creatorPrefix(id);
+    const execIds = mode === 'compare' ? competitors : contestantModel;
+    const execFams = new Set(execIds.map(familyKey));
+    const warns: string[] = [];
+    const shared = judge.filter((j) => execFams.has(familyKey(j)));
+    if (shared.length) {
+      warns.push(
+        `Juiz(es) da mesma família dos modelos avaliados: ${shared.join(', ')}. ` +
+          'Risco de viés de auto-preferência — prefira juízes de provedores distintos do executor.',
+      );
+    }
+    const judgeFams = new Set(judge.map(familyKey));
+    if (judgeFams.size < 2) {
+      warns.push(
+        judge.length === 1
+          ? 'Painel com apenas 1 juiz. Painéis de famílias distintas (≥2 provedores) reduzem viés correlacionado.'
+          : 'Todos os juízes são da mesma família. Diversifique os provedores para reduzir viés correlacionado.',
+      );
+    }
+    return warns;
+  }, [judge, competitors, contestantModel, mode, lgpd]);
+
   const estimate = useMemo(() => {
     const ctxIn = 500;
     const n = variantCount;
@@ -386,18 +499,18 @@ export function NewRun() {
     // cada juiz le o contexto + todas as respostas; com 2 passagens, conta x2.
     for (const jid of judge) perStage += costOf(jid, ctxIn + n * maxOutputTokens, 350) * passes;
     const iters = mode === 'training' ? iterations : 1;
-    const point = perStage * stages * iters;
+    const point = perStage * effectiveStages * iters;
     const judgeCalls = judge.length * passes;
     return {
       n,
-      stages,
+      stages: effectiveStages,
       iters,
-      calls: stages * (n + 1 + judgeCalls) * iters,
+      calls: effectiveStages * (n + 1 + judgeCalls) * iters,
       low: point * 0.45,
       high: point,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, isSingle, competitors, contestantModel, variantCount, datagen, judge, twoPassJudge, stages, maxOutputTokens, iterations, priceById]);
+  }, [mode, isSingle, competitors, contestantModel, variantCount, datagen, judge, twoPassJudge, effectiveStages, maxOutputTokens, iterations, priceById]);
 
   function step(key: keyof typeof RANGES, current: number, setter: (v: number) => void, dir: 1 | -1) {
     const [min, max, by] = RANGES[key];
@@ -410,7 +523,12 @@ export function NewRun() {
       case 'mode':
         return null;
       case 'theme':
-        return theme.trim() ? null : 'Descreva o tema do benchmark para continuar.';
+        if (!theme.trim()) return 'Descreva o tema do benchmark para continuar.';
+        if (useCustomStages) {
+          if (parsedCustomStages.error) return `Etapas (JSON): ${parsedCustomStages.error}`;
+          if (!parsedCustomStages.stages?.length) return 'Cole o JSON das etapas (ou desligue as etapas manuais).';
+        }
+        return null;
       case 'players':
         if (mode === 'compare')
           return competitors.length >= 2 ? null : 'Selecione pelo menos 2 modelos competidores.';
@@ -466,6 +584,10 @@ export function NewRun() {
 
     setError(null);
     if (!theme.trim()) return setError('Defina um tema.');
+    if (useCustomStages && parsedCustomStages.error)
+      return setError(`Etapas (JSON): ${parsedCustomStages.error}`);
+    if (useCustomStages && !parsedCustomStages.stages?.length)
+      return setError('Cole o JSON das etapas (ou desligue as etapas manuais).');
     if (datagen.length !== 1) return setError('Selecione 1 modelo para gerador.');
     if (judge.length < 1) return setError('Selecione ao menos 1 modelo para juiz.');
 
@@ -482,14 +604,18 @@ export function NewRun() {
       }
     }
 
+    const customStages =
+      useCustomStages && parsedCustomStages.stages?.length ? parsedCustomStages.stages : undefined;
+
     const common = {
       theme: theme.trim(),
-      stages,
+      stages: customStages ? customStages.length : stages,
       datagenModelId: datagen[0],
       judgeModelIds: judge,
       concurrency,
       timeoutMs,
       maxOutputTokens,
+      ...(customStages ? { customStages } : {}),
       ...(isLivre ? {} : { compliance: { area: complianceArea, includeRessalvas } }),
     };
 
@@ -648,7 +774,9 @@ export function NewRun() {
 
             <div className="card steppers-card">
               <div className="steppers-grid">
-                <Stepper label="Etapas" value={stages} onStep={(d) => step('stages', stages, setStages, d)} />
+                {!useCustomStages && (
+                  <Stepper label="Etapas" value={stages} onStep={(d) => step('stages', stages, setStages, d)} />
+                )}
                 <Stepper
                   label="Max tokens"
                   value={maxOutputTokens}
@@ -661,10 +789,90 @@ export function NewRun() {
                 </div>
               )}
               <p className="field-hint">
-                <strong>Etapas</strong> = quantas perguntas diferentes o gerador cria. <strong>Max tokens</strong> limita o
-                tamanho de cada resposta.
+                {useCustomStages ? (
+                  <>
+                    <strong>{effectiveStages} etapa(s)</strong> vêm do JSON abaixo.{' '}
+                  </>
+                ) : (
+                  <>
+                    <strong>Etapas</strong> = quantas perguntas diferentes o gerador cria.{' '}
+                  </>
+                )}
+                <strong>Max tokens</strong> limita o tamanho de cada resposta
+                {useCustomStages && ' (usado quando a etapa não traz "maxTokens")'}.
                 {mode === 'training' && <> <strong>Iterações</strong> = quantas rodadas de evolução do prompt.</>}
               </p>
+            </div>
+
+            {/* Etapas manuais (JSON): substituem o datagen e ancoram o juiz pela rubrica. */}
+            <div className="card field-card">
+              <div className="field-head">
+                <label className="field-label">Etapas manuais (JSON)</label>
+                {useCustomStages && (
+                  <span className="proposito-count">
+                    {parsedCustomStages.stages
+                      ? `${parsedCustomStages.stages.length} etapa(s) válidas`
+                      : parsedCustomStages.error
+                        ? 'JSON com erro'
+                        : 'aguardando JSON'}
+                  </span>
+                )}
+              </div>
+              <Toggle
+                checked={useCustomStages}
+                onChange={setUseCustomStages}
+                label="Fornecer as etapas manualmente (em vez de gerar pelo tema)"
+                hint={
+                  useCustomStages
+                    ? 'Ligado: o gerador é ignorado e o benchmark usa exatamente as etapas do JSON. A "rubric" de cada etapa é entregue ao juiz como critério ancorado de correção.'
+                    : 'Desligado: o modelo gerador cria as perguntas a partir do tema.'
+                }
+              />
+              {useCustomStages && (
+                <>
+                  <p className="field-hint" style={{ marginTop: 12 }}>
+                    Array de etapas. Cada uma:{' '}
+                    <strong>question</strong> (pergunta do usuário), <strong>productContext</strong> (system prompt
+                    dado aos competidores), <strong>rubric</strong> (o que a etapa resolve / critério de correção que
+                    ancora os juízes — opcional, mas recomendado) e <strong>maxTokens</strong> (opcional).
+                  </p>
+                  <div className="preset-row" style={{ marginBottom: 8 }}>
+                    <button
+                      type="button"
+                      className="chip-tag"
+                      onClick={() => setCustomStagesText(CUSTOM_STAGES_EXAMPLE)}
+                    >
+                      Carregar exemplo
+                    </button>
+                    <label className="chip-tag" style={{ cursor: 'pointer' }}>
+                      Importar arquivo .json
+                      <input
+                        type="file"
+                        accept="application/json,.json"
+                        style={{ display: 'none' }}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          file.text().then(setCustomStagesText).catch(() => undefined);
+                          e.target.value = '';
+                        }}
+                      />
+                    </label>
+                  </div>
+                  <textarea
+                    className="textarea"
+                    style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: 13 }}
+                    value={customStagesText}
+                    onChange={(e) => setCustomStagesText(e.target.value)}
+                    placeholder={CUSTOM_STAGES_EXAMPLE}
+                    rows={12}
+                    spellCheck={false}
+                  />
+                  {parsedCustomStages.error && (
+                    <div className="proposito-pruned">⚠️ {parsedCustomStages.error}</div>
+                  )}
+                </>
+              )}
             </div>
 
             {/* Propósito / Conformidade LGPD: filtra (consultivo) o catálogo dos próximos passos. */}
@@ -845,7 +1053,23 @@ export function NewRun() {
               {mode === 'compare'
                 ? 'Gerador e juízes podem repetir o mesmo modelo e não entram como competidores. Os filtros de área/preço NÃO afetam estes — eles veem o catálogo completo.'
                 : 'Gerador e juízes podem repetir o mesmo modelo; nenhum juiz pode ser o modelo sob teste (evita viés). Os filtros de área/preço NÃO afetam gerador nem juízes.'}
+              {useCustomStages && ' Com etapas manuais (JSON), o gerador NÃO é usado — as perguntas vêm do seu JSON.'}
             </div>
+
+            {panelWarnings.length > 0 && (
+              <div className="card field-card" style={{ marginTop: 16 }}>
+                <label className="field-label">⚖️ Diversidade do painel de juízes</label>
+                {panelWarnings.map((w, i) => (
+                  <div key={i} className="proposito-pruned" style={{ marginTop: 8 }}>
+                    ⚠️ {w}
+                  </div>
+                ))}
+                <p className="field-hint" style={{ marginTop: 8 }}>
+                  Consultivo: juízes de famílias distintas do executor (e entre si) reduzem viés de
+                  auto-preferência e erros correlacionados. Não bloqueia a run.
+                </p>
+              </div>
+            )}
 
             {isSingle && (
               <div className="card field-card" style={{ marginTop: 16 }}>
@@ -908,7 +1132,10 @@ export function NewRun() {
                   </div>
                   <div className="summary-row">
                     <span className="k">Etapas</span>
-                    <span className="v">{estimate.stages}</span>
+                    <span className="v">
+                      {estimate.stages}
+                      {useCustomStages ? ' · JSON manual (com rubrica)' : ''}
+                    </span>
                   </div>
                   {mode === 'training' && (
                     <div className="summary-row">
@@ -918,7 +1145,7 @@ export function NewRun() {
                   )}
                   <div className="summary-row">
                     <span className="k">Gerador</span>
-                    <span className="v v-mono">{datagen[0] ?? '—'}</span>
+                    <span className="v v-mono">{useCustomStages ? '— (etapas manuais)' : datagen[0] ?? '—'}</span>
                   </div>
                   <div className="summary-row">
                     <span className="k">{judge.length > 1 ? `Juízes (${judge.length})` : 'Juiz'}</span>

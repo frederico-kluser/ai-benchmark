@@ -648,6 +648,12 @@ function StageCard({
                 <div className="label-mini">Contexto do cenário (gerado)</div>
                 <pre className="context-pre">{stage.spec.productContext}</pre>
               </div>
+              {stage.spec.rubric && (
+                <div className="stage-block">
+                  <div className="label-mini">Critério de correção (rubrica do juiz)</div>
+                  <pre className="context-pre">{stage.spec.rubric}</pre>
+                </div>
+              )}
             </>
           )}
 

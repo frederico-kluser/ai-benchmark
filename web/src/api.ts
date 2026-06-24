@@ -67,6 +67,8 @@ export interface RunConfig {
   iterations?: number;
   /** Perfil de conformidade LGPD (consultivo; gravado no record). Ausente = "livre". */
   compliance?: { area: string; includeRessalvas: boolean };
+  /** Etapas fornecidas pelo usuario (JSON); pulam o datagen e fixam `stages`. */
+  customStages?: StageSpec[];
   // meta:
   datagenModelId: string;
   /** Um ou mais juizes — rodam em paralelo. */
@@ -92,6 +94,8 @@ export interface StageSpec {
   question: string;
   productContext: string;
   maxTokens: number;
+  /** Criterio de corretude da etapa; injetado no juiz como rubrica ancorada. */
+  rubric?: string;
 }
 
 export interface JudgeVerdict {

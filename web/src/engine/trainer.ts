@@ -150,6 +150,7 @@ function variationConfigFrom(cfg: TrainingConfig): VariationConfig {
     promptOptimization: cfg.promptOptimization,
     optimizerModelId: cfg.optimizerModelId,
     judgePasses: cfg.judgePasses,
+    customStages: cfg.customStages,
     contestantModelId: cfg.contestantModelId,
     basePrompt: cfg.basePrompt,
     techniqueIds: cfg.techniqueIds,

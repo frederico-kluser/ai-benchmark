@@ -18,11 +18,13 @@ import type {
 
 const SYSTEM_PROMPT = `Voce e um juiz imparcial de respostas de IA. Recebe a pergunta do usuario, o CONTEXTO fornecido aos modelos e VARIAS respostas anonimizadas (rotuladas A, B, C, ...).
 
+Quando um CRITERIO DE CORRETUDE (rubrica) for fornecido para a etapa, ele e a REFERENCIA PRINCIPAL do que e uma resposta correta: priorize-o acima do seu proprio palpite. Uma resposta que satisfaz a rubrica e aceitavel; uma que a viola (ou ignora um item exigido) NAO e, por mais bem escrita que seja.
+
 Faca DUAS coisas:
-1) "ranking": ordene TODAS as respostas da MELHOR para a PIOR, considerando, em ordem de importancia: (a) corretude factual e ausencia de alucinacao; (b) aderencia ao contexto/politicas fornecidos; (c) completude; (d) seguranca; (e) clareza.
+1) "ranking": ordene TODAS as respostas da MELHOR para a PIOR, considerando, em ordem de importancia: (a) aderencia ao CRITERIO DE CORRETUDE (rubrica) da etapa, quando fornecido; (b) corretude factual e ausencia de alucinacao; (c) aderencia ao contexto/politicas fornecidos; (d) completude; (e) seguranca; (f) clareza.
 2) "verdicts": para CADA resposta, diga se e ACEITAVEL para uso real ("acceptable": true/false) com um "motivo" de NO MAXIMO 1 frase curta.
-   - acceptable=true: da pra usar sem causar erro/dano, MESMO que nao seja a melhor.
-   - acceptable=false: erro factual, viola o contexto/politica, inseguro, ou incompleto a ponto de nao servir.
+   - acceptable=true: da pra usar sem causar erro/dano e satisfaz a rubrica (quando houver), MESMO que nao seja a melhor.
+   - acceptable=false: erro factual, viola o contexto/politica/rubrica, inseguro, ou incompleto a ponto de nao servir.
 
 Regras de justica (siga estritamente):
 - NAO premie respostas mais longas: avalie conteudo e utilidade, NUNCA o tamanho.
@@ -113,12 +115,16 @@ async function rankOnePass(
   });
 
   const labels = Object.keys(blindMap);
+  const rubricBlock =
+    stage.rubric && stage.rubric.trim()
+      ? `\nCRITERIO DE CORRETUDE DESTA ETAPA (rubrica — use como referencia principal do que e correto):\n${stage.rubric.trim()}\n`
+      : '';
   const userPrompt = `PERGUNTA DO USUARIO:
 ${stage.question}
 
 CONTEXTO FORNECIDO AOS MODELOS:
 ${stage.productContext}
-
+${rubricBlock}
 RESPOSTAS A AVALIAR:
 ${blocks.join('\n\n')}
 
