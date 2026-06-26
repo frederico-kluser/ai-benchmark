@@ -21,30 +21,52 @@ function log(sessionId: string, msg: string): void {
   console.log(`[train ${sessionId}] ${msg}`);
 }
 
-/** Escolhe a vencedora: mais pontos -> mais etapas aceitaveis -> ordem (1a vence empate). */
+const VERDICT_ORDINAL: Record<string, number> = { nao: 0, parcial: 1, resolve: 2 };
+
+/** Qualidade ternaria de UM contestant numa etapa (resolve=2, parcial=1, nao=0). */
+function stageQuality(judge: RunRecord['stages'][number]['judge'], cid: string): number {
+  const v = judge?.verdictByContestant?.[cid];
+  if (v) return VERDICT_ORDINAL[v] ?? 0;
+  // compat record antigo (so binario): aceitavel ~ resolve.
+  return judge?.acceptableByContestant?.[cid] ? 2 : 0;
+}
+
+/**
+ * Escolhe a vencedora: mais pontos no placar -> maior QUALIDADE ternaria
+ * (soma de resolve/parcial/nao) -> PROMPT MAIS CURTO (regularizacao de
+ * comprimento: anti-overfitting, prefere prompts enxutos em empates).
+ */
 function pickWinner(run: RunRecord): { contestantId: string; points: number } | null {
   if (!run.contestants.length) return null;
-  const acc: Record<string, number> = {};
+  const quality: Record<string, number> = {};
   for (const s of run.stages) {
-    for (const [cid, ok] of Object.entries(s.judge?.acceptableByContestant ?? {})) {
-      if (ok) acc[cid] = (acc[cid] ?? 0) + 1;
+    const j = s.judge;
+    if (!j || j.inconclusive) continue;
+    for (const c of run.contestants) {
+      quality[c.id] = (quality[c.id] ?? 0) + stageQuality(j, c.id);
     }
   }
-  let bestId = '';
+  let best: Contestant | null = null;
   let bestPoints = -Infinity;
-  let bestAcc = -Infinity;
-  let chosen = false;
+  let bestQual = -Infinity;
+  let bestLen = Infinity;
   for (const c of run.contestants) {
     const points = run.scoreboard[c.id] ?? 0;
-    const a = acc[c.id] ?? 0;
-    if (!chosen || points > bestPoints || (points === bestPoints && a > bestAcc)) {
-      bestId = c.id;
+    const q = quality[c.id] ?? 0;
+    const len = (c.systemPrompt ?? '').length;
+    const better =
+      !best ||
+      points > bestPoints ||
+      (points === bestPoints && q > bestQual) ||
+      (points === bestPoints && q === bestQual && len < bestLen);
+    if (better) {
+      best = c;
       bestPoints = points;
-      bestAcc = a;
-      chosen = true;
+      bestQual = q;
+      bestLen = len;
     }
   }
-  return chosen ? { contestantId: bestId, points: bestPoints } : null;
+  return best ? { contestantId: best.id, points: bestPoints } : null;
 }
 
 export interface AnalyzeIterationParams {
@@ -67,7 +89,9 @@ export async function analyzeIteration(p: AnalyzeIterationParams): Promise<strin
     const ranking = s.judge?.rankedContestantIds ?? [];
     const pos = ranking.indexOf(p.winnerContestantId);
     const total = ranking.length;
-    const acceptable = s.judge?.acceptableByContestant?.[p.winnerContestantId];
+    const verdict =
+      s.judge?.verdictByContestant?.[p.winnerContestantId] ??
+      (s.judge?.acceptableByContestant?.[p.winnerContestantId] ? 'resolve' : undefined);
     // motivos curtos dos juizes para a vencedora (1 frase cada).
     const motivos = (s.judge?.judges ?? [])
       .map((j) => j.verdicts.find((v) => v.contestantId === p.winnerContestantId)?.motivo)
@@ -78,8 +102,8 @@ export async function analyzeIteration(p: AnalyzeIterationParams): Promise<strin
         ? s.responses.find((r) => r.contestantId === topId)
         : undefined;
     lines.push(
-      `Etapa ${s.index + 1}: pos=${pos >= 0 ? pos + 1 : '?'}/${total}; aceitavel=${
-        acceptable === undefined ? '?' : acceptable
+      `Etapa ${s.index + 1}: pos=${pos >= 0 ? pos + 1 : '?'}/${total}; veredito=${
+        verdict ?? '?'
       }; ${motivos.join(' | ')}` +
         (topResp ? ` | resposta que superou: ${topResp.text.slice(0, 220)}` : ''),
     );
@@ -150,6 +174,7 @@ function variationConfigFrom(cfg: TrainingConfig): VariationConfig {
     promptOptimization: cfg.promptOptimization,
     optimizerModelId: cfg.optimizerModelId,
     judgePasses: cfg.judgePasses,
+    customStages: cfg.customStages,
     contestantModelId: cfg.contestantModelId,
     basePrompt: cfg.basePrompt,
     techniqueIds: cfg.techniqueIds,

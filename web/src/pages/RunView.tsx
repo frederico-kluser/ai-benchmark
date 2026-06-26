@@ -1,8 +1,23 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import type { Contestant, RunRecord, StageRecord } from '../api';
+import type { Contestant, JudgeVerdict, RunRecord, StageRecord, Verdict } from '../api';
 import { cacheRun, fetchRun, normalizeContestants, openRunStream, runMode } from '../api';
 import { useTheme } from '../theme';
+
+// Veredito ternario -> rotulo + classe CSS (ok/partial/bad).
+const VERDICT_META: Record<Verdict, { label: string; cls: string }> = {
+  resolve: { label: 'resolve', cls: 'ok' },
+  parcial: { label: 'parcial', cls: 'partial' },
+  nao: { label: 'não resolve', cls: 'bad' },
+};
+
+/** Veredito de um item, com retrocompat ao binario antigo (acceptable). */
+function verdictOf(v?: { verdict?: Verdict; acceptable?: boolean }): Verdict | undefined {
+  if (!v) return undefined;
+  if (v.verdict) return v.verdict;
+  if (typeof v.acceptable === 'boolean') return v.acceptable ? 'resolve' : 'nao';
+  return undefined;
+}
 
 function formatUsd(v: number): string {
   if (v === 0) return '$0';
@@ -51,7 +66,7 @@ function csvEscape(value: unknown): string {
 function runToCsv(record: RunRecord, byId: Map<string, Contestant>): string {
   const rows: string[] = [];
   rows.push(
-    ['runId', 'sessionId', 'iteration', 'stageIndex', 'question', 'contestantId', 'label', 'technique', 'modelId', 'status', 'latencyMs', 'tokensIn', 'tokensOut', 'costUsd', 'rankPosition', 'errorMsg', 'text']
+    ['runId', 'sessionId', 'iteration', 'stageIndex', 'question', 'contestantId', 'label', 'technique', 'modelId', 'status', 'latencyMs', 'tokensIn', 'tokensOut', 'costUsd', 'rankPosition', 'verdict', 'errorMsg', 'text']
       .map(csvEscape)
       .join(','),
   );
@@ -61,8 +76,15 @@ function runToCsv(record: RunRecord, byId: Map<string, Contestant>): string {
     for (const r of stage.responses) {
       const rankPosition = ranking.indexOf(r.contestantId);
       const c = byId.get(r.contestantId);
+      const verdict =
+        stage.judge?.verdictByContestant?.[r.contestantId] ??
+        (stage.judge?.acceptableByContestant?.[r.contestantId] === undefined
+          ? ''
+          : stage.judge.acceptableByContestant[r.contestantId]
+            ? 'resolve'
+            : 'nao');
       rows.push(
-        [record.id, record.sessionId ?? '', record.iteration ?? '', stage.index, stage.spec?.question ?? '', r.contestantId, c?.label ?? '', c?.techniqueId ?? '', r.modelId, r.status, r.latencyMs, r.tokensIn, r.tokensOut, r.costUsd, rankPosition >= 0 ? rankPosition + 1 : '', r.errorMsg ?? '', r.text]
+        [record.id, record.sessionId ?? '', record.iteration ?? '', stage.index, stage.spec?.question ?? '', r.contestantId, c?.label ?? '', c?.techniqueId ?? '', r.modelId, r.status, r.latencyMs, r.tokensIn, r.tokensOut, r.costUsd, rankPosition >= 0 ? rankPosition + 1 : '', verdict, r.errorMsg ?? '', r.text]
           .map(csvEscape)
           .join(','),
       );
@@ -570,8 +592,9 @@ function StageCard({
   const contestantToLetter: Record<string, string> = {};
   for (const [letter, cid] of Object.entries(blindMap)) contestantToLetter[cid] = letter;
 
-  // Aceitabilidade (consenso = maioria) + vereditos por juiz (novo formato).
+  // Veredito ternario de consenso (+ aceitabilidade compat) + vereditos por juiz.
   const acceptableBy = judge?.acceptableByContestant ?? {};
+  const verdictBy = judge?.verdictByContestant ?? {};
   const judges = judge?.judges ?? [];
   // Retrocompat: records antigos guardavam aceitabilidade/justificativa num
   // estagio "evaluation" separado (hoje fundido no juiz).
@@ -648,6 +671,12 @@ function StageCard({
                 <div className="label-mini">Contexto do cenário (gerado)</div>
                 <pre className="context-pre">{stage.spec.productContext}</pre>
               </div>
+              {stage.spec.rubric && (
+                <div className="stage-block">
+                  <div className="label-mini">Critério de correção (rubrica do juiz)</div>
+                  <pre className="context-pre">{stage.spec.rubric}</pre>
+                </div>
+              )}
             </>
           )}
 
@@ -694,11 +723,19 @@ function StageCard({
               {sortedResponses.map((r) => {
                 const pos = ranking.indexOf(r.contestantId);
                 const letter = contestantToLetter[r.contestantId];
-                const accepted = acceptableBy[r.contestantId] ?? oldVerdictBy[r.contestantId]?.acceptable;
-                // veredito de CADA juiz para esta resposta (motivo de 1 frase).
+                // Veredito ternario de consenso (fallback: aceitavel novo -> evaluation antigo).
+                const consensus =
+                  verdictOf({ verdict: verdictBy[r.contestantId] }) ??
+                  (acceptableBy[r.contestantId] !== undefined
+                    ? acceptableBy[r.contestantId]
+                      ? 'resolve'
+                      : 'nao'
+                    : verdictOf(oldVerdictBy[r.contestantId]));
+                const consensusMeta = consensus ? VERDICT_META[consensus] : undefined;
+                // veredito de CADA juiz para esta resposta (justificativa + ternario).
                 const perJudge = judges
                   .map((j) => ({ model: j.judgeModelId, v: j.verdicts.find((x) => x.contestantId === r.contestantId) }))
-                  .filter((x): x is { model: string; v: { contestantId: string; acceptable: boolean; motivo: string } } => Boolean(x.v));
+                  .filter((x): x is { model: string; v: JudgeVerdict } => Boolean(x.v));
                 return (
                   <div className="answer-card" key={r.contestantId}>
                     <div className="answer-head">
@@ -709,10 +746,10 @@ function StageCard({
                       )}
                       <span className="answer-model">{labelFor(r.contestantId, r.modelId)}</span>
                       {letter && <span className="answer-blind">(era {letter})</span>}
-                      {accepted !== undefined && (
-                        <span className={`verdict-pill ${accepted ? 'ok' : 'bad'}`}>
-                          {accepted ? 'aceitável p/ o trabalho' : 'não aceitável'}
-                          {judges.length > 1 ? ` · maioria de ${judges.length}` : ''}
+                      {consensusMeta && (
+                        <span className={`verdict-pill ${consensusMeta.cls}`}>
+                          {consensusMeta.label}
+                          {judges.length > 1 ? ` · consenso de ${judges.length}` : ''}
                         </span>
                       )}
                     </div>
@@ -722,15 +759,19 @@ function StageCard({
                     </div>
                     {perJudge.length > 0 ? (
                       <div className="judge-verdicts">
-                        {perJudge.map(({ model, v }) => (
-                          <div className="judge-verdict" key={model}>
-                            <span className={`verdict-dot ${v.acceptable ? 'ok' : 'bad'}`} />
-                            <span className="judge-verdict-model" title={model}>{shortModel(model)}</span>
-                            <span className="judge-verdict-motivo">
-                              {v.motivo || (v.acceptable ? 'aceitável' : 'não aceitável')}
-                            </span>
-                          </div>
-                        ))}
+                        {perJudge.map(({ model, v }) => {
+                          const jv = verdictOf(v);
+                          const meta = jv ? VERDICT_META[jv] : undefined;
+                          return (
+                            <div className="judge-verdict" key={model}>
+                              <span className={`verdict-dot ${meta?.cls ?? 'bad'}`} />
+                              <span className="judge-verdict-model" title={model}>{shortModel(model)}</span>
+                              <span className="judge-verdict-motivo">
+                                {v.motivo || meta?.label || '—'}
+                              </span>
+                            </div>
+                          );
+                        })}
                       </div>
                     ) : (
                       oldVerdictBy[r.contestantId]?.justification && (

@@ -67,6 +67,8 @@ export interface RunConfig {
   iterations?: number;
   /** Perfil de conformidade LGPD (consultivo; gravado no record). Ausente = "livre". */
   compliance?: { area: string; includeRessalvas: boolean };
+  /** Etapas fornecidas pelo usuario (JSON); pulam o datagen e fixam `stages`. */
+  customStages?: StageSpec[];
   // meta:
   datagenModelId: string;
   /** Um ou mais juizes — rodam em paralelo. */
@@ -92,13 +94,21 @@ export interface StageSpec {
   question: string;
   productContext: string;
   maxTokens: number;
+  /** Criterio de corretude da etapa; injetado no juiz como rubrica ancorada. */
+  rubric?: string;
 }
+
+/** Veredito ternario: resolve / parcial / nao. */
+export type Verdict = 'resolve' | 'parcial' | 'nao';
 
 export interface JudgeVerdict {
   contestantId: string;
-  acceptable: boolean;
-  /** Motivo curtissimo (<= 1 frase). */
+  /** Veredito ternario: resolve / parcial / nao. */
+  verdict: Verdict;
+  /** Justificativa gerada ANTES da classificacao (estilo G-Eval). */
   motivo: string;
+  /** @deprecated compat: records antigos guardavam so o binario. */
+  acceptable?: boolean;
 }
 
 export interface SingleJudgeResult {
@@ -112,8 +122,10 @@ export interface SingleJudgeResult {
 export interface JudgeResult {
   /** Consenso entre juizes (posicao media): melhor -> pior. */
   rankedContestantIds: string[];
-  /** Aceitavel por contestant = maioria dos juizes. */
+  /** Aceitavel por contestant = maioria dos juizes (derivado do ternario). */
   acceptableByContestant: Record<string, boolean>;
+  /** Veredito ternario agregado por contestant (consenso). Ausente em records antigos. */
+  verdictByContestant?: Record<string, Verdict>;
   /** Resultado individual de cada juiz. */
   judges: SingleJudgeResult[];
   blindMap: Record<string, string>;

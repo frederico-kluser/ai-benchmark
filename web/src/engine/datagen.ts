@@ -6,6 +6,7 @@ const stageSchema = z.object({
   question: z.string().min(1),
   productContext: z.string().min(1),
   maxTokens: z.number().int().positive().max(8000),
+  rubric: z.string().optional().default(''),
 });
 
 const SYSTEM_PROMPT = `Voce e um gerador de cenarios de benchmark para LLMs.
@@ -14,7 +15,7 @@ Sua tarefa: produzir UM cenario realista representando uma interacao em que um u
 
 Regras:
 - Saida ESTRITAMENTE em JSON valido (sem markdown, sem comentarios).
-- Campos obrigatorios: "question" (a pergunta do usuario), "productContext" (texto que sera passado como system prompt aos competidores; pode incluir politicas, dados de produto, manuais, FAQs, restricoes), "maxTokens" (inteiro 200..2000 sugerindo o teto razoavel de tokens da resposta).
+- Campos obrigatorios: "question" (a pergunta do usuario), "productContext" (texto que sera passado como system prompt aos competidores; pode incluir politicas, dados de produto, manuais, FAQs, restricoes), "maxTokens" (inteiro 200..2000 sugerindo o teto razoavel de tokens da resposta), "rubric" (CRITERIO DE CORRETUDE: o que uma resposta CORRETA precisa conter/fazer com base no contexto, e os erros que a tornariam inaceitavel — servira de gabarito ancorado para o juiz; 1 a 3 frases objetivas).
 - A etapa deve ser auto-contida: nao referencie etapas anteriores.
 - Varie o tipo de tarefa entre etapas (extracao, raciocinio, comparacao, criatividade controlada, recusa, etc.) coerente com o tema.
 - Idioma: portugues, salvo se o tema exigir outro.`;

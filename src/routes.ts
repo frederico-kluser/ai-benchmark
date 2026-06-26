@@ -31,6 +31,21 @@ const baseFields = {
   compliance: z
     .object({ area: z.string().min(1), includeRessalvas: z.boolean() })
     .optional(),
+  // Etapas fornecidas pelo usuario (JSON): pulam o datagen. Quando presentes,
+  // `stages` e forcado ao tamanho desta lista (ver preprocess do runConfigSchema).
+  customStages: z
+    .array(
+      z.object({
+        question: z.string().min(1),
+        productContext: z.string().min(1),
+        rubric: z.string().optional(),
+        // maxTokens omitido pelo usuario e preenchido no preprocess (herda maxOutputTokens).
+        maxTokens: z.number().int().positive().max(16_000),
+      }),
+    )
+    .min(1)
+    .max(50)
+    .optional(),
 };
 
 const manualVariantSchema = z.object({
@@ -73,6 +88,25 @@ const runConfigSchema = z
       // compat: judgeModelId (string, legado) -> judgeModelIds (array).
       if (obj.judgeModelIds === undefined && typeof obj.judgeModelId === 'string') {
         obj.judgeModelIds = [obj.judgeModelId];
+      }
+      // Etapas manuais ditam a contagem: `stages` = nº de etapas fornecidas.
+      // maxTokens ausente/invalido herda maxOutputTokens (ou 1000) — o competidor
+      // faz Math.min(maxOutputTokens, stage.maxTokens) e undefined viraria NaN.
+      if (Array.isArray(obj.customStages) && obj.customStages.length > 0) {
+        obj.stages = obj.customStages.length;
+        const fallback =
+          typeof obj.maxOutputTokens === 'number' && obj.maxOutputTokens > 0
+            ? obj.maxOutputTokens
+            : 1000;
+        obj.customStages = obj.customStages.map((s) => {
+          if (s && typeof s === 'object') {
+            const mt = (s as Record<string, unknown>).maxTokens;
+            if (typeof mt !== 'number' || mt <= 0) {
+              return { ...(s as Record<string, unknown>), maxTokens: fallback };
+            }
+          }
+          return s;
+        });
       }
       return obj;
     },
@@ -356,6 +390,7 @@ router.get('/runs/:id/export.csv', async (req, res) => {
       'tokensOut',
       'costUsd',
       'rankPosition',
+      'verdict',
       'errorMsg',
       'text',
     ]
@@ -367,6 +402,13 @@ router.get('/runs/:id/export.csv', async (req, res) => {
     for (const r of stage.responses) {
       const rankPosition = ranking.indexOf(r.contestantId);
       const c = byId.get(r.contestantId);
+      const verdict =
+        stage.judge?.verdictByContestant?.[r.contestantId] ??
+        (stage.judge?.acceptableByContestant?.[r.contestantId] === undefined
+          ? ''
+          : stage.judge.acceptableByContestant[r.contestantId]
+            ? 'resolve'
+            : 'nao');
       rows.push(
         [
           record.id,
@@ -384,6 +426,7 @@ router.get('/runs/:id/export.csv', async (req, res) => {
           r.tokensOut,
           r.costUsd,
           rankPosition >= 0 ? rankPosition + 1 : '',
+          verdict,
           r.errorMsg ?? '',
           r.text,
         ]
