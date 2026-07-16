@@ -4,6 +4,7 @@ import { generateContestants } from './variator';
 import { chatCompletion } from './openrouter';
 import { emitSessionEvent } from './events';
 import { saveSession } from './storage';
+import { computeMedals } from './medals';
 import type {
   Contestant,
   RunRecord,
@@ -21,52 +22,30 @@ function log(sessionId: string, msg: string): void {
   console.log(`[train ${sessionId}] ${msg}`);
 }
 
-const VERDICT_ORDINAL: Record<string, number> = { nao: 0, parcial: 1, resolve: 2 };
-
-/** Qualidade ternaria de UM contestant numa etapa (resolve=2, parcial=1, nao=0). */
-function stageQuality(judge: RunRecord['stages'][number]['judge'], cid: string): number {
-  const v = judge?.verdictByContestant?.[cid];
-  if (v) return VERDICT_ORDINAL[v] ?? 0;
-  // compat record antigo (so binario): aceitavel ~ resolve.
-  return judge?.acceptableByContestant?.[cid] ? 2 : 0;
+interface WinnerPick {
+  contestantId: string;
+  medals: number[];
+  golds: number;
+  silvers: number;
+  bronzes: number;
 }
 
 /**
- * Escolhe a vencedora: mais pontos no placar -> maior QUALIDADE ternaria
- * (soma de resolve/parcial/nao) -> PROMPT MAIS CURTO (regularizacao de
- * comprimento: anti-overfitting, prefere prompts enxutos em empates).
+ * Escolhe a vencedora pelo QUADRO DE MEDALHAS olimpico (mais ouros -> pratas ->
+ * bronzes -> demais colocacoes), com tira-teima por qualidade ternaria e prompt
+ * mais curto — ver `computeMedals`. A 1a colocada evolui para a proxima rodada.
  */
-function pickWinner(run: RunRecord): { contestantId: string; points: number } | null {
-  if (!run.contestants.length) return null;
-  const quality: Record<string, number> = {};
-  for (const s of run.stages) {
-    const j = s.judge;
-    if (!j || j.inconclusive) continue;
-    for (const c of run.contestants) {
-      quality[c.id] = (quality[c.id] ?? 0) + stageQuality(j, c.id);
-    }
-  }
-  let best: Contestant | null = null;
-  let bestPoints = -Infinity;
-  let bestQual = -Infinity;
-  let bestLen = Infinity;
-  for (const c of run.contestants) {
-    const points = run.scoreboard[c.id] ?? 0;
-    const q = quality[c.id] ?? 0;
-    const len = (c.systemPrompt ?? '').length;
-    const better =
-      !best ||
-      points > bestPoints ||
-      (points === bestPoints && q > bestQual) ||
-      (points === bestPoints && q === bestQual && len < bestLen);
-    if (better) {
-      best = c;
-      bestPoints = points;
-      bestQual = q;
-      bestLen = len;
-    }
-  }
-  return best ? { contestantId: best.id, points: bestPoints } : null;
+function pickWinner(run: RunRecord): WinnerPick | null {
+  const rows = computeMedals(run);
+  if (!rows.length) return null;
+  const top = rows[0];
+  return {
+    contestantId: top.contestantId,
+    medals: top.medals,
+    golds: top.golds,
+    silvers: top.silvers,
+    bronzes: top.bronzes,
+  };
 }
 
 export interface AnalyzeIterationParams {
@@ -288,7 +267,11 @@ async function trainingLoop(record: SessionRecord, apiKey: string): Promise<void
           runId: runRec.id,
           winnerContestantId: winner.contestantId,
           systemPrompt: sp,
-          score: winner.points,
+          score: winner.golds,
+          medals: winner.medals,
+          golds: winner.golds,
+          silvers: winner.silvers,
+          bronzes: winner.bronzes,
         });
       } else if (!prevWinner) {
         prevWinner = { contestantId: 'original', systemPrompt: cfg.basePrompt ?? '', label: 'Original' };

@@ -3,8 +3,8 @@ import type { LgpdData } from './lgpd';
 import lgpdData from './data/lgpd-compliance.json';
 import { startRun } from './engine/orchestrator';
 import { startTraining } from './engine/trainer';
-import { generateContestants } from './engine/variator';
-import { listModels, validateKey as engineValidateKey } from './engine/openrouter';
+import { generateContestants, generateBasePrompt as engineGenerateBasePrompt } from './engine/variator';
+import { listModels, validateKey as engineValidateKey, currentConcurrency } from './engine/openrouter';
 import { listTechniques } from './engine/techniques';
 import {
   subscribeRun,
@@ -46,6 +46,8 @@ export interface Contestant {
 export interface Technique {
   id: string;
   name: string;
+  /** Nivel de confianca da evidencia: alta/media/baixa. */
+  confidence?: 'alta' | 'media' | 'baixa';
   good: string;
   bad: string;
 }
@@ -306,6 +308,39 @@ export async function fetchTechniques(): Promise<Technique[]> {
   return listTechniques() as unknown as Technique[];
 }
 
+/**
+ * Gera um system prompt base a partir de uma descricao de tarefa (client-side).
+ * Preenche o campo do prompt base no assistente — que roda como controle.
+ */
+export async function generateBasePrompt(
+  taskDescription: string,
+  modelId: string,
+  theme?: string,
+): Promise<string> {
+  return engineGenerateBasePrompt({ apiKey: getStoredKey(), modelId, taskDescription, theme });
+}
+
+// -------------- Telemetria / subscricao ao vivo (cockpit de treino) --------------
+
+/** Estado atual do limitador global de concorrencia (barra de paralelismo). */
+export function getConcurrency(): { limit: number; active: number; queued: number } {
+  return currentConcurrency();
+}
+
+/** Record vivo (em memoria) de um run — semeia a iteracao corrente na cockpit. */
+export function getLiveRun(id: string): RunRecord | undefined {
+  return getRunRecord(id) as unknown as RunRecord | undefined;
+}
+
+/**
+ * Assina os eventos de um run vivo (sem snapshot inicial). A cockpit de treino
+ * assina a iteracao corrente e NAO perde o `run.started` mesmo assinando antes
+ * de ele emitir (diferente de openRunStream, que exige o record ja em memoria).
+ */
+export function subscribeRunLive(id: string, onEvent: (e: any) => void): () => void {
+  return subscribeRun(id, onEvent as any);
+}
+
 export async function fetchLgpd(): Promise<LgpdData> {
   // Client-side: a base de conhecimento LGPD é empacotada no bundle.
   return lgpdData as unknown as LgpdData;
@@ -318,7 +353,13 @@ export interface SessionIterationSummary {
   runId: string;
   winnerContestantId: string;
   systemPrompt: string;
+  /** Retrocompat: no de OUROS da vencedora (antes era pontos aditivos do placar). */
   score: number;
+  /** Quadro de medalhas da vencedora: [0]=ouro,[1]=prata,[2]=bronze,... */
+  medals?: number[];
+  golds?: number;
+  silvers?: number;
+  bronzes?: number;
 }
 
 export interface SessionRecord {

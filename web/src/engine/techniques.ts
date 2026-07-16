@@ -172,8 +172,38 @@ export const TECHNIQUE_LIBRARY: PromptTechnique[] = [
   },
 ];
 
+/**
+ * Nivel de confianca da evidencia por tecnica (revisao sistematica 2024-2026).
+ * Mantido como mapa (em vez de inline em cada entrada) para facilitar curadoria
+ * e exibicao no seletor. Ausente => 'media'.
+ */
+const TECHNIQUE_CONFIDENCE: Record<string, 'alta' | 'media' | 'baixa'> = {
+  persona: 'alta',
+  cot: 'alta',
+  fewshot: 'alta',
+  format: 'alta',
+  constraints: 'media',
+  decompose: 'media',
+  selfcritique: 'alta',
+  specificity: 'media',
+  concise: 'media',
+  emphasis: 'media',
+  positive: 'baixa',
+  delimiters: 'media',
+  stepback: 'media',
+  'xml-tags': 'media',
+  rubric: 'media',
+  uncertainty: 'media',
+  'length-control': 'media',
+  contrastive: 'baixa',
+  prefill: 'baixa',
+};
+
 export function listTechniques(): PublicTechnique[] {
-  return TECHNIQUE_LIBRARY.map(({ metaInstruction: _omit, ...rest }) => rest);
+  return TECHNIQUE_LIBRARY.map(({ metaInstruction: _omit, ...rest }) => ({
+    ...rest,
+    confidence: TECHNIQUE_CONFIDENCE[rest.id] ?? 'media',
+  }));
 }
 
 export function getTechnique(id: string): PromptTechnique | undefined {

@@ -57,6 +57,8 @@ export interface ManualVariant {
 export interface PromptTechnique {
   id: string;
   name: string;
+  /** Nivel de confianca da evidencia (revisao sistematica): alta/media/baixa. Opcional no acervo interno; sempre preenchido por listTechniques(). */
+  confidence?: 'alta' | 'media' | 'baixa';
   /** Por que a tecnica ajuda. */
   good: string;
   /** Quando a tecnica atrapalha. */
@@ -300,7 +302,13 @@ export interface SessionIterationSummary {
   runId: string;
   winnerContestantId: string;
   systemPrompt: string;
+  /** Retrocompat: no de OUROS da vencedora (antes era pontos aditivos do placar). */
   score: number;
+  /** Quadro de medalhas da vencedora: [0]=ouro,[1]=prata,[2]=bronze,... (ausente em sessoes antigas). */
+  medals?: number[];
+  golds?: number;
+  silvers?: number;
+  bronzes?: number;
 }
 
 export interface SessionRecord {

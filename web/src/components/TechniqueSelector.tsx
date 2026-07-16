@@ -44,7 +44,15 @@ export function TechniqueSelector({ value, onChange }: Props) {
             >
               <div className="technique-head">
                 <input type="checkbox" checked={sel} readOnly />
-                {t.name}
+                <span className="technique-name">{t.name}</span>
+                {t.confidence && (
+                  <span
+                    className={`confidence-badge conf-${t.confidence}`}
+                    title="Confiança da evidência (revisão sistemática de técnicas de prompt)"
+                  >
+                    {t.confidence}
+                  </span>
+                )}
               </div>
               <div className="technique-good">Bom: {t.good}</div>
               <div className="technique-bad">Cuidado: {t.bad}</div>
