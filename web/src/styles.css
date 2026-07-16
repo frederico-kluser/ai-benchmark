@@ -723,3 +723,76 @@ code, .mono { font-family: ui-monospace, 'SF Mono', Menlo, monospace; }
 .process-live { margin-top: 12px; display: flex; flex-direction: column; gap: 10px; }
 .process-live-item { border: 1px solid rgba(10, 132, 255, 0.3); background: rgba(10, 132, 255, 0.035); border-radius: 10px; padding: 10px 12px; }
 .process-live-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 6px; }
+
+/* ========================================================================
+   Cockpit de treino (auto-treino) + seletor de técnicas enriquecido
+   ======================================================================== */
+
+/* Selo de confiança da técnica */
+.technique-name { flex: 1; }
+.confidence-badge { font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; padding: 2px 8px; border-radius: 980px; }
+.conf-alta { color: var(--ok); background: var(--ok-soft); }
+.conf-media { color: var(--warn); background: var(--warn-soft); }
+.conf-baixa { color: var(--text-2); background: var(--card-border); }
+
+/* Descrever tarefa -> gerar prompt base */
+.genbase-card { border-style: dashed; }
+.genbase-actions { margin-top: 12px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.genbase-hint { font-size: 12px; color: var(--text-3); }
+
+/* Passos macro do treino */
+.phase-stepper { display: flex; gap: 8px; margin-bottom: 24px; flex-wrap: wrap; }
+.phase-step { display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 980px; border: 1px solid var(--card-border); background: var(--card); color: var(--text-3); font-size: 13px; font-weight: 500; }
+.phase-step-num { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; background: var(--subtle); color: var(--text-3); font-size: 11px; font-weight: 700; }
+.phase-step.done { color: var(--ok); border-color: var(--ok-bd); }
+.phase-step.done .phase-step-num { background: var(--ok-soft); color: var(--ok); }
+.phase-step.current { color: var(--text); border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
+.phase-step.current .phase-step-num { background: var(--accent); color: #fff; }
+
+/* Barra de paralelismo (fan-out) */
+.fanout-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; background: var(--card); border: 1px solid var(--card-border); border-radius: 14px; box-shadow: var(--shadow-sm); padding: 12px 16px; margin-bottom: 24px; }
+.fanout-title { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); margin-right: 4px; }
+.fanout-chip { font-size: 12.5px; font-weight: 600; color: var(--text-2); background: var(--subtle); border-radius: 980px; padding: 4px 11px; }
+.fanout-run { color: var(--accent-strong); background: var(--accent-soft); }
+.fanout-queue { color: var(--warn); background: var(--warn-soft); }
+.fanout-answer { color: var(--accent-strong); background: var(--accent-soft); }
+.fanout-judge { color: var(--warn); background: var(--warn-soft); }
+
+/* Quadro de medalhas */
+.medal-board { padding: 0; overflow: hidden; }
+.medal-row { display: grid; grid-template-columns: 54px minmax(0, 1fr) 52px 52px 52px 70px; gap: 10px; align-items: center; padding: 12px 20px; border-bottom: 1px solid var(--line); }
+.medal-row:last-child { border-bottom: none; }
+.medal-head { padding: 12px 20px; border-bottom: 1px solid var(--card-border); }
+.medal-head > div { font-size: 11px; font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase; color: var(--text-3); }
+.medal-model { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 500; overflow: hidden; }
+.medal-count { text-align: center; font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text-2); }
+.medal-gold { color: #d4a017; }
+.medal-silver { color: #9a9aa2; }
+.medal-bronze { color: #b06a2c; }
+
+/* Célula campeã no heatmap de progressão */
+.heat-cell.winner { box-shadow: inset 0 0 0 2px var(--accent); font-size: 15px; }
+
+/* Estúdio de melhor prompt */
+.studio-card { display: flex; flex-direction: column; gap: 16px; }
+.studio-controls { display: flex; gap: 16px; flex-wrap: wrap; }
+.studio-field { display: flex; flex-direction: column; gap: 6px; }
+.studio-field-label { font-size: 12px; font-weight: 600; color: var(--text-3); }
+.studio-select { max-width: 220px; }
+.studio-variants { display: flex; flex-wrap: wrap; gap: 8px; }
+.studio-variant { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 12px; border: 1px solid var(--card-border); background: var(--subtle); cursor: pointer; font-size: 13px; color: var(--text); transition: border-color 0.15s, background 0.15s; }
+.studio-variant:hover:not(:disabled) { border-color: var(--strong-border); }
+.studio-variant.selected { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 2px var(--accent-ring); }
+.studio-variant:disabled { opacity: 0.5; cursor: not-allowed; }
+.studio-variant-place { font-weight: 700; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.studio-variant-label { display: flex; align-items: center; gap: 6px; font-weight: 500; }
+.studio-variant-medals { font-size: 12px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.studio-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.studio-diff { line-height: 1.55; }
+.diff-line { display: flex; gap: 8px; padding: 0 4px; border-radius: 4px; white-space: pre-wrap; word-break: break-word; }
+.diff-gutter { flex: none; width: 12px; text-align: center; color: var(--text-3); user-select: none; }
+.diff-add { background: var(--ok-bg); color: var(--ok); }
+.diff-del { background: var(--err-bg); color: var(--err); }
+.diff-eq { color: var(--text-2); }
+.section-label-note { text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--text-2); }
+.rounds-list { margin-bottom: 30px; }

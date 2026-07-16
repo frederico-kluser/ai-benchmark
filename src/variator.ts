@@ -162,3 +162,58 @@ export async function generateContestants(
 
   return contestants;
 }
+
+// ---------------------------------------------------------------------------
+// Geracao de PROMPT BASE a partir de uma descricao de tarefa (opcional no
+// assistente). O prompt gerado preenche o campo do prompt base — que sempre
+// roda como CONTROLE/original no treino.
+// ---------------------------------------------------------------------------
+
+export interface GenerateBasePromptParams {
+  apiKey: string;
+  /** Modelo que redige o prompt (reusa o gerador/optimizer do assistente). */
+  modelId: string;
+  /** O que o usuario descreveu que a tarefa precisa fazer. */
+  taskDescription: string;
+  /** Contexto/tema extra opcional. */
+  theme?: string;
+  timeoutMs?: number;
+}
+
+const BASE_PROMPT_SYSTEM = `Voce e um engenheiro de prompts senior. Recebe a DESCRICAO de uma tarefa e produz um SYSTEM PROMPT completo e reutilizavel para um assistente que executa essa tarefa.
+NAO responda a tarefa; escreva APENAS o system prompt (instrucoes para o assistente), pronto para uso, claro e conciso.
+Saida ESTRITAMENTE em JSON valido, sem markdown, sem comentarios: {"systemPrompt":"<system prompt completo>"}`;
+
+/**
+ * Gera um system prompt base a partir de uma descricao em linguagem natural.
+ * Lanca erro (mensagem PT-BR) se o modelo nao devolver um prompt valido.
+ */
+export async function generateBasePrompt(p: GenerateBasePromptParams): Promise<string> {
+  const themeBlock = p.theme?.trim() ? `\n\nCONTEXTO/TEMA:\n${p.theme.trim()}` : '';
+  const userPrompt = `DESCRICAO DA TAREFA:\n${p.taskDescription.trim()}${themeBlock}\n\nDevolva o JSON {"systemPrompt":"..."}.`;
+
+  const result = await chatCompletion({
+    apiKey: p.apiKey,
+    modelId: p.modelId,
+    messages: [
+      { role: 'system', content: BASE_PROMPT_SYSTEM },
+      { role: 'user', content: userPrompt },
+    ],
+    temperature: 0.4,
+    timeoutMs: p.timeoutMs ?? 90_000,
+    responseFormatJson: true,
+  });
+
+  let parsed;
+  try {
+    parsed = variantSchema.safeParse(JSON.parse(extractJson(result.text)));
+  } catch {
+    throw new Error('Nao consegui interpretar a resposta do modelo como JSON. Tente novamente.');
+  }
+  if (!parsed.success) {
+    throw new Error('O modelo nao devolveu um system prompt valido. Tente novamente.');
+  }
+  const sp = parsed.data.systemPrompt.trim();
+  if (!sp) throw new Error('O modelo devolveu um system prompt vazio.');
+  return sp;
+}

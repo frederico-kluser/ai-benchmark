@@ -10,6 +10,7 @@ import {
   createSession,
   fetchLgpd,
   fetchModels,
+  generateBasePrompt,
   getStoredKey,
   type ManualVariant,
   type OpenRouterModel,
@@ -344,6 +345,11 @@ export function NewRun() {
   // variation / training
   const [contestantModel, setContestantModel] = useState<string[]>([DEFAULT_CONTESTANT]);
   const [basePrompt, setBasePrompt] = useState('');
+  // Descrever tarefa -> gerar prompt base (opcional). O gerado preenche o campo
+  // do prompt base, que roda como controle/original.
+  const [taskDescription, setTaskDescription] = useState('');
+  const [genBaseLoading, setGenBaseLoading] = useState(false);
+  const [genBaseError, setGenBaseError] = useState<string | null>(null);
   const [optimize, setOptimize] = useState(true);
   const [techniques, setTechniques] = useState<string[]>(DEFAULT_TECHNIQUES);
   const [manualVariants, setManualVariants] = useState<ManualVariant[]>([
@@ -1081,6 +1087,58 @@ export function NewRun() {
                   models={participantModels}
                   loading={modelsLoading}
                 />
+
+                <div className="card field-card genbase-card">
+                  <label className="field-label" htmlFor="taskDescription">
+                    Descrever a tarefa → gerar prompt base (opcional)
+                  </label>
+                  <div className="selector-hint">
+                    Descreva o que o assistente precisa fazer e uma LLM redige um system prompt de
+                    partida. O texto gerado preenche o campo abaixo (editável) e roda como controle.
+                  </div>
+                  <textarea
+                    id="taskDescription"
+                    className="textarea"
+                    style={{ marginTop: 10 }}
+                    value={taskDescription}
+                    onChange={(e) => setTaskDescription(e.target.value)}
+                    placeholder="Ex.: um assistente que classifica tickets de suporte por urgência e responde com o próximo passo."
+                    rows={3}
+                  />
+                  <div className="genbase-actions">
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      disabled={!taskDescription.trim() || genBaseLoading}
+                      onClick={async () => {
+                        const desc = taskDescription.trim();
+                        if (!desc) return;
+                        setGenBaseLoading(true);
+                        setGenBaseError(null);
+                        try {
+                          const sp = await generateBasePrompt(
+                            desc,
+                            datagen[0] ?? DEFAULT_DATAGEN,
+                            theme.trim() || undefined,
+                          );
+                          setBasePrompt(sp);
+                        } catch (e) {
+                          setGenBaseError((e as Error).message);
+                        } finally {
+                          setGenBaseLoading(false);
+                        }
+                      }}
+                    >
+                      {genBaseLoading ? 'Gerando…' : '✨ Gerar prompt base'}
+                    </button>
+                    <span className="genbase-hint">
+                      usa o modelo gerador (<code className="mono-id">{datagen[0] ?? DEFAULT_DATAGEN}</code>)
+                    </span>
+                  </div>
+                  {genBaseError && (
+                    <div className="banner banner-error" style={{ margin: '10px 0 0' }}>{genBaseError}</div>
+                  )}
+                </div>
 
                 <div className="card field-card">
                   <label className="field-label" htmlFor="basePrompt">Prompt base (opcional)</label>
