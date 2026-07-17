@@ -8,9 +8,10 @@ interface BrainBackgroundProps {
 }
 
 const LIGHT_COLORS: Partial<BrainColors> = {
-  NEURON_IDLE: { r: 255, g: 215, b: 0 },
-  CONNECTION_IDLE: { r: 255, g: 215, b: 0 },
-  CONNECTION_ACTIVE: { r: 255, g: 255, b: 100 },
+  // Efeito de propagação/ativação em amarelo forte no tema claro.
+  NEURON_ACTIVE: { r: 255, g: 220, b: 0 },
+  GLOW_HALO: { r: 255, g: 200, b: 0 },
+  CONNECTION_ACTIVE: { r: 255, g: 220, b: 0 },
 };
 
 export function BrainBackground({ isThinking = false }: BrainBackgroundProps) {
