@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import type { Contestant, JudgeVerdict, RunRecord, StageRecord } from '../api';
 import { cacheRun, fetchRun, normalizeContestants, openRunStream, runMode } from '../api';
 import { useTheme } from '../theme';
+import { useProcessing } from '../processing';
 import {
   VERDICT_META,
   verdictOf,
@@ -102,6 +103,11 @@ export function RunView() {
   // Carrossel das etapas: no maximo UMA aberta por vez (null = todas fechadas).
   const [openStage, setOpenStage] = useState<number | null>(null);
   const [tab, setTab] = useState<'resumo' | 'etapas' | null>(null);
+  const { setIsProcessing } = useProcessing();
+
+  useEffect(() => {
+    setIsProcessing(record?.status === 'running');
+  }, [record?.status, setIsProcessing]);
 
   useEffect(() => {
     if (!id) return;

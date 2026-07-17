@@ -11,6 +11,7 @@ import {
   getConcurrency,
 } from '../api';
 import { useTheme } from '../theme';
+import { useProcessing } from '../processing';
 import {
   applyEvent,
   denseStages,
@@ -381,6 +382,13 @@ export function TrainingView() {
   const [pastRuns, setPastRuns] = useState<Record<string, RunRecord>>({});
   const [fanout, setFanout] = useState<{ limit: number; active: number; queued: number } | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
+  const { setIsProcessing } = useProcessing();
+
+  useEffect(() => {
+    setIsProcessing(
+      session?.status === 'running' || analyzing || (fanout?.active ?? 0) > 0,
+    );
+  }, [session?.status, analyzing, fanout, setIsProcessing]);
 
   // Efeito A: eventos da SESSAO (iteracoes, snapshot, fim).
   useEffect(() => {
