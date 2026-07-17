@@ -6,6 +6,7 @@
  */
 
 import type { Neuron, ProjectedNeuron, RotationAngles } from '../types';
+import type { BrainColors } from '../constants';
 import { rotateAroundXAxis, rotateAroundYAxis, projectToScreen } from '../math3d';
 import {
   RENDERING,
@@ -151,16 +152,17 @@ function drawGlowingNeuron(
   screenX: number,
   screenY: number,
   size: number,
-  intensity: number
+  intensity: number,
+  colors: BrainColors
 ): void {
   const halfSize = size / 2;
 
-  ctx.fillStyle = formatRgba(COLORS.NEURON_ACTIVE, intensity);
+  ctx.fillStyle = formatRgba(colors.NEURON_ACTIVE, intensity);
   ctx.fillRect(screenX - halfSize, screenY - halfSize, size, size);
 
   if (intensity > RENDERING.GLOW_HALO_THRESHOLD) {
     const haloSize = size * RENDERING.HALO_SIZE_MULTIPLIER;
-    ctx.fillStyle = formatRgba(COLORS.GLOW_HALO, intensity * OPACITY.GLOW_HALO);
+    ctx.fillStyle = formatRgba(colors.GLOW_HALO, intensity * OPACITY.GLOW_HALO);
     ctx.beginPath();
     ctx.arc(screenX, screenY, haloSize, 0, Math.PI * 2);
     ctx.fill();
@@ -171,12 +173,13 @@ function drawIdleNeuron(
   ctx: CanvasRenderingContext2D,
   screenX: number,
   screenY: number,
-  size: number
+  size: number,
+  colors: BrainColors
 ): void {
-  ctx.strokeStyle = formatRgba(COLORS.NEURON_IDLE, OPACITY.NEURON_IDLE_STROKE);
+  ctx.strokeStyle = formatRgba(colors.NEURON_IDLE, OPACITY.NEURON_IDLE_STROKE);
 
   if (size < 0.5) {
-    ctx.fillStyle = formatRgba(COLORS.NEURON_IDLE, OPACITY.NEURON_IDLE_FILL);
+    ctx.fillStyle = formatRgba(colors.NEURON_IDLE, OPACITY.NEURON_IDLE_FILL);
     ctx.fillRect(screenX, screenY, 1, 1);
   } else {
     drawWireframeCube(ctx, screenX, screenY, size);
@@ -187,7 +190,8 @@ function drawNeuronConnections(
   ctx: CanvasRenderingContext2D,
   neurons: Neuron[],
   projectedNeurons: Map<number, ProjectedNeuron>,
-  globalConnectionAlpha: number
+  globalConnectionAlpha: number,
+  colors: BrainColors
 ): void {
   for (const neuron of neurons) {
     const sourceProjection = projectedNeurons.get(neuron.id);
@@ -213,13 +217,13 @@ function drawNeuronConnections(
       if (maxWaveAlpha > 0.1) {
         ctx.lineWidth = LINE_WIDTHS.CONNECTION_ACTIVE * globalConnectionAlpha;
         ctx.strokeStyle = formatRgba(
-          COLORS.CONNECTION_ACTIVE,
+          colors.CONNECTION_ACTIVE,
           OPACITY.CONNECTION_ACTIVE * maxWaveAlpha * globalConnectionAlpha
         );
       } else {
         ctx.lineWidth = LINE_WIDTHS.CONNECTION_IDLE;
         ctx.strokeStyle = formatRgba(
-          COLORS.CONNECTION_IDLE,
+          colors.CONNECTION_IDLE,
           OPACITY.CONNECTION_IDLE * globalConnectionAlpha
         );
       }
@@ -238,16 +242,28 @@ function calculateConnectionAlpha(globalPhase: number): number {
   return Math.max(0, Math.min(1, 1 - fadeProgress));
 }
 
+function resolveColors(partialColors?: Partial<BrainColors>): BrainColors {
+  return {
+    NEURON_ACTIVE: partialColors?.NEURON_ACTIVE ?? COLORS.NEURON_ACTIVE,
+    GLOW_HALO: partialColors?.GLOW_HALO ?? COLORS.GLOW_HALO,
+    NEURON_IDLE: partialColors?.NEURON_IDLE ?? COLORS.NEURON_IDLE,
+    CONNECTION_ACTIVE: partialColors?.CONNECTION_ACTIVE ?? COLORS.CONNECTION_ACTIVE,
+    CONNECTION_IDLE: partialColors?.CONNECTION_IDLE ?? COLORS.CONNECTION_IDLE,
+  };
+}
+
 export function renderBrainVisualization(
   ctx: CanvasRenderingContext2D,
   neurons: Neuron[],
   projectedNeurons: Map<number, ProjectedNeuron>,
-  globalPhase: number
+  globalPhase: number,
+  partialColors?: Partial<BrainColors>
 ): void {
+  const colors = resolveColors(partialColors);
   const connectionAlpha = calculateConnectionAlpha(globalPhase);
 
   if (connectionAlpha > 0.01) {
-    drawNeuronConnections(ctx, neurons, projectedNeurons, connectionAlpha);
+    drawNeuronConnections(ctx, neurons, projectedNeurons, connectionAlpha, colors);
   }
 
   for (const neuron of neurons) {
@@ -261,9 +277,9 @@ export function renderBrainVisualization(
 
     if (projection.isGlowing) {
       const glowIntensity = projection.waveActivationAlpha > 0 ? projection.waveActivationAlpha : 1;
-      drawGlowingNeuron(ctx, projection.screenX, projection.screenY, neuronSize, glowIntensity);
+      drawGlowingNeuron(ctx, projection.screenX, projection.screenY, neuronSize, glowIntensity, colors);
     } else {
-      drawIdleNeuron(ctx, projection.screenX, projection.screenY, neuronSize);
+      drawIdleNeuron(ctx, projection.screenX, projection.screenY, neuronSize, colors);
     }
   }
 }

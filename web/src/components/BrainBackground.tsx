@@ -1,11 +1,25 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
+import { useTheme } from '../theme';
 import { BrainCanvas, useBrainState, NeuralActivityLevel, BrainVisibilityState } from './brain-visualization';
+import type { BrainColors } from './brain-visualization/constants';
 
 interface BrainBackgroundProps {
   isThinking?: boolean;
 }
 
+const LIGHT_COLORS: Partial<BrainColors> = {
+  NEURON_IDLE: { r: 255, g: 215, b: 0 },
+  CONNECTION_IDLE: { r: 255, g: 215, b: 0 },
+  CONNECTION_ACTIVE: { r: 255, g: 255, b: 100 },
+};
+
 export function BrainBackground({ isThinking = false }: BrainBackgroundProps) {
+  const theme = useTheme();
+  const colors = useMemo(
+    () => (theme === 'light' ? LIGHT_COLORS : undefined),
+    [theme]
+  );
+
   const { state, actions } = useBrainState({
     defaultActivityLevel: NeuralActivityLevel.LOW,
     defaultVisibilityState: BrainVisibilityState.DISPERSED,
@@ -42,6 +56,7 @@ export function BrainBackground({ isThinking = false }: BrainBackgroundProps) {
         activityLevel={state.activityLevel}
         visibilityState={state.visibilityState}
         rotationConfig={{ enabled: true, ySpeed: 0.5, xAmplitude: 0.12, xFrequency: 0.6 }}
+        colors={colors}
       />
     </div>
   );
