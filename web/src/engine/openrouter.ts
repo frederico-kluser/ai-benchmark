@@ -13,7 +13,7 @@ function defaultHeaders(apiKey: string): Record<string, string> {
     Authorization: `Bearer ${apiKey}`,
     'Content-Type': 'application/json',
     'HTTP-Referer': APP_ORIGIN,
-    'X-Title': 'Benchmark Arena',
+    'X-Title': 'Prompt Builder',
   };
 }
 

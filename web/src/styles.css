@@ -1,6 +1,6 @@
 /* =========================================================================
-   Benchmark Arena — design system
-   Apple-inspired light/dark theme. Dark is opt-in via [data-theme="dark"].
+   Prompt Builder — design system
+   Tema escuro único.
    ========================================================================= */
 
 :root {
@@ -71,13 +71,18 @@ code, .mono { font-family: ui-monospace, 'SF Mono', Menlo, monospace; }
 /* ---------------------------------------------------------------- shell */
 .app { min-height: 100vh; }
 .nav {
-  position: sticky; top: 0; z-index: 50;
+  position: sticky; top: 0; z-index: 100;
   -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px);
   background: var(--nav-bg); border-bottom: 1px solid var(--nav-border);
 }
 .nav-inner {
+  position: relative; z-index: 101;
   max-width: 1040px; margin: 0 auto; height: 52px; padding: 0 22px;
   display: flex; align-items: center; justify-content: space-between;
+}
+.nav-actions {
+  position: relative; z-index: 102;
+  display: flex; align-items: center; gap: 4px;
 }
 .brand {
   display: flex; align-items: center; gap: 9px; cursor: pointer;
@@ -88,8 +93,8 @@ code, .mono { font-family: ui-monospace, 'SF Mono', Menlo, monospace; }
   width: 23px; height: 23px; border-radius: 7px; background: linear-gradient(140deg, #3a9bff, #0060df);
   display: flex; align-items: center; justify-content: center; color: #fff; font-size: 13px; font-weight: 700;
 }
-.nav-actions { display: flex; align-items: center; gap: 4px; }
 .nav-link {
+  position: relative; z-index: 103;
   appearance: none; border: none; cursor: pointer; background: transparent;
   color: var(--text-2); font-size: 14px; font-weight: 500; padding: 7px 13px; border-radius: 980px;
   letter-spacing: -0.01em; font-family: inherit; text-decoration: none;

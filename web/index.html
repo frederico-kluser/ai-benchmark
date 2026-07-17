@@ -3,12 +3,12 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Benchmark Arena</title>
+    <title>Prompt Builder</title>
     <script>
-      // Apply the saved theme before paint to avoid a flash of the wrong mode.
+      // Aplica o tema escuro antes da pintura para evitar flash.
       try {
-        var t = localStorage.getItem('bench-theme');
-        document.documentElement.setAttribute('data-theme', t === 'dark' ? 'dark' : 'light');
+        localStorage.setItem('bench-theme', 'dark');
+        document.documentElement.setAttribute('data-theme', 'dark');
       } catch (e) {}
     </script>
   </head>
