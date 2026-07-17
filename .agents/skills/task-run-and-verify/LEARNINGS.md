@@ -10,3 +10,7 @@
 - 2026-07-17 (inferência) — O `npx tsc` resolvido fora de `web/node_modules` pode ser uma versão
   antiga (ex: 4.9.5) que não reconhece `moduleResolution: "bundler"`. Para type-check do frontend,
   use `./node_modules/.bin/tsc -b` dentro de `web/` após `npm install`.
+- 2026-07-17 (inferência) — Sem navegador disponível, o smoke de responsividade mobile pode ser
+  complementado verificando se as media queries e as classes do menu hambúrguer aparecem no CSS
+  gerado (`web/dist/assets/index-*.css`) e se o servidor de produção responde `200` com o
+  `<meta viewport>` correto.

@@ -31,10 +31,21 @@ function MoonIcon() {
   );
 }
 
+function MenuIcon({ open }: { open: boolean }) {
+  return (
+    <svg width="18" height="14" viewBox="0 0 18 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="1" y1={open ? '12' : '1'} x2="17" y2={open ? '2' : '1'} />
+      <line x1="1" y1="7" x2="17" y2="7" />
+      <line x1="1" y1={open ? '2' : '13'} x2="17" y2={open ? '12' : '13'} />
+    </svg>
+  );
+}
+
 function Layout({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
   const [theme, setTheme] = useState<Theme>(getStoredTheme);
   const [help, setHelp] = useState<HelpTutorial | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
   const processing = useProcessingState();
 
   useEffect(() => {
@@ -62,10 +73,31 @@ function Layout({ children }: { children: React.ReactNode }) {
                   Benchmark Arena
                 </div>
                 <div className="nav-actions">
-                  <NavLink to="/new" className="nav-link">Nova Run</NavLink>
-                  <NavLink to="/runs" className="nav-link">Histórico</NavLink>
-                  <NavLink to="/settings" className="nav-link">Configurações</NavLink>
-                  <span className="nav-divider" />
+                  <div className="nav-menu">
+                    <button
+                      type="button"
+                      className="icon-btn nav-menu-btn"
+                      onClick={() => setMenuOpen((v) => !v)}
+                      aria-label={menuOpen ? 'Fechar menu' : 'Abrir menu'}
+                      aria-expanded={menuOpen}
+                    >
+                      <MenuIcon open={menuOpen} />
+                    </button>
+                    {menuOpen && (
+                      <>
+                        <div className="nav-menu-overlay" onClick={() => setMenuOpen(false)} aria-hidden />
+                        <div className="nav-menu-pop">
+                          <NavLink to="/new" className="nav-link" onClick={() => setMenuOpen(false)}>Nova Run</NavLink>
+                          <NavLink to="/runs" className="nav-link" onClick={() => setMenuOpen(false)}>Histórico</NavLink>
+                          <NavLink to="/settings" className="nav-link" onClick={() => setMenuOpen(false)}>Configurações</NavLink>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                  <NavLink to="/new" className="nav-link nav-link-desktop">Nova Run</NavLink>
+                  <NavLink to="/runs" className="nav-link nav-link-desktop">Histórico</NavLink>
+                  <NavLink to="/settings" className="nav-link nav-link-desktop">Configurações</NavLink>
+                  <span className="nav-divider nav-link-desktop" />
                   <button
                     className="icon-btn"
                     onClick={() => setHelp('compare')}

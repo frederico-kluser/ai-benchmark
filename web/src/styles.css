@@ -89,6 +89,21 @@ code, .mono { font-family: ui-monospace, 'SF Mono', Menlo, monospace; }
   display: flex; align-items: center; justify-content: center; color: #fff; font-size: 13px; font-weight: 700;
 }
 .nav-actions { display: flex; align-items: center; gap: 4px; }
+.nav-menu { display: none; position: relative; z-index: 61; }
+.nav-menu-btn { color: var(--text-2); position: relative; z-index: 62; }
+.nav-menu-pop {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 60;
+  background: var(--card); border: 1px solid var(--card-border); border-radius: 14px;
+  box-shadow: var(--shadow-pop); padding: 6px; min-width: 160px;
+  display: flex; flex-direction: column; gap: 2px; animation: bmpop .2s ease both;
+}
+.nav-menu-pop .nav-link { display: block; width: 100%; text-align: left; border-radius: 10px; }
+.nav-menu-overlay {
+  position: fixed; inset: 0; z-index: 55;
+  background: rgba(0, 0, 0, 0.12);
+  -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px);
+  animation: bmfade .2s ease both;
+}
 .nav-link {
   appearance: none; border: none; cursor: pointer; background: transparent;
   color: var(--text-2); font-size: 14px; font-weight: 500; padding: 7px 13px; border-radius: 980px;
@@ -177,7 +192,7 @@ code, .mono { font-family: ui-monospace, 'SF Mono', Menlo, monospace; }
 .banner-neutral { background: var(--subtle); border: 1px solid var(--line2); color: var(--text-2); }
 
 /* ---------------------------------------------------------------- tabs */
-.tabs { display: inline-flex; gap: 4px; background: var(--subtle); border: 1px solid var(--card-border); border-radius: 980px; padding: 4px; }
+.tabs { display: inline-flex; flex-wrap: wrap; gap: 4px; background: var(--subtle); border: 1px solid var(--card-border); border-radius: 980px; padding: 4px; }
 .tab {
   appearance: none; border: none; cursor: pointer; background: transparent; color: var(--text-2);
   font-size: 14px; font-weight: 600; padding: 7px 18px; border-radius: 980px; font-family: inherit; letter-spacing: -0.01em;
@@ -877,3 +892,165 @@ code, .mono { font-family: ui-monospace, 'SF Mono', Menlo, monospace; }
 
 /* Garante que nav/main fiquem acima do background */
 .nav, .main { position: relative; z-index: 1; }
+
+/* ========================================================================
+   Mobile refinements
+   ======================================================================== */
+
+@media (max-width: 760px) {
+  /* shell */
+  .main { padding: 24px 16px 90px; }
+  .nav-inner { height: 48px; padding: 0 16px; }
+  .brand { font-size: 15px; }
+  .brand-badge { width: 21px; height: 21px; border-radius: 6px; font-size: 12px; }
+
+  /* type */
+  .page-title { font-size: 28px; }
+  .page-sub { font-size: 16px; margin-bottom: 22px; }
+
+  /* cards */
+  .card { padding: 18px; border-radius: 16px; }
+
+  /* nav mobile: esconde links desktop; eles vivem no menu hamburguer */
+  .nav-menu { display: block; }
+  .nav-link-desktop,
+  .nav-divider.nav-link-desktop { display: none; }
+  .nav-actions { gap: 8px; }
+
+  /* new run */
+  .newrun-grid { gap: 16px; }
+  .field-card { padding: 18px; }
+  .steppers-card { padding: 18px; }
+  .mode-card-grid { grid-template-columns: 1fr; }
+  .mode-card { padding: 16px; }
+  .pipeline { gap: 10px; }
+  .pipeline-step { min-width: 0; flex: 1 1 100%; }
+  .pipeline-arrow { transform: rotate(90deg); }
+  .steppers-grid { grid-template-columns: 1fr; }
+  .selector-card { padding: 18px; }
+  .selector-pop { max-height: 240px; }
+  .review-grid { gap: 14px; }
+
+  /* history */
+  .hist-toolbar { gap: 12px; }
+  .filter-pills { flex-wrap: wrap; }
+  .search-input { max-width: none; width: 100%; }
+  .table-card { border-radius: 16px; }
+  .runs-row { padding: 14px 16px; }
+  .runs-row .r-id { font-size: 12px; }
+  .runs-row .r-theme { font-size: 13px; }
+  .runs-row .r-date { font-size: 12px; }
+
+  /* run view */
+  .run-header { padding: 20px; gap: 20px; }
+  .run-title { font-size: 23px; }
+  .run-theme { font-size: 14px; }
+  .run-stats { gap: 16px; }
+  .run-tabs-bar { top: 48px; padding: 6px 0 12px; }
+
+  /* scoreboard */
+  .score-card { border-radius: 16px; }
+  .score-row { padding: 12px 16px; grid-template-columns: 40px minmax(0, 1fr) 56px 100px; gap: 8px; }
+  .score-row .score-num,
+  .score-row .score-accept { display: none; }
+  .place-badge { min-width: 30px; height: 22px; padding: 0 6px; font-size: 11px; }
+  .score-model { font-size: 12px; }
+  .score-points { font-size: 15px; }
+  .score-foot { padding: 12px 16px; }
+
+  /* heatmap */
+  .heat-card { padding: 16px; border-radius: 16px; }
+  .heat-spacer { width: 120px; }
+  .heat-label { width: 120px; font-size: 12px; padding-right: 10px; }
+  .heat-col { width: 36px; }
+  .heat-cell-wrap { width: 36px; }
+  .heat-cell { width: 28px; height: 28px; border-radius: 8px; font-size: 12px; }
+
+  /* stages */
+  .stage-head { padding: 16px 18px; gap: 12px; }
+  .stage-body { padding: 2px 18px 18px; }
+  .stage-block { margin-top: 16px; }
+  .answer-card { padding: 12px 14px; }
+
+  /* training */
+  .variants-card { padding: 16px 18px; }
+  .trend-chart { height: 140px; gap: 10px; }
+  .trend-col { flex: 0 0 44px; }
+  .trend-bar { width: 28px; }
+  .medal-row { padding: 10px 16px; grid-template-columns: 44px minmax(0, 1fr) 44px 44px 44px 60px; gap: 8px; }
+  .medal-head { padding: 10px 16px; }
+  .medal-model { font-size: 13px; }
+  .medal-count { font-size: 14px; }
+
+  /* modal */
+  .modal-overlay { padding: 16px; align-items: flex-end; }
+  .modal { max-width: 100%; border-radius: 20px 20px 0 0; padding: 24px 20px 18px; }
+  .modal-title { font-size: 21px; }
+  .modal-body { font-size: 14px; margin-bottom: 18px; }
+  .modal-close { top: 14px; right: 14px; }
+
+  /* settings */
+  .settings-card { padding: 20px; }
+}
+
+@media (max-width: 560px) {
+  .main { padding: 18px 12px 80px; }
+  .page-title { font-size: 24px; }
+  .page-sub { font-size: 15px; }
+
+  /* history card layout */
+  .runs-row { grid-template-columns: 1fr; gap: 6px 0; }
+  .runs-row .r-id,
+  .runs-row .r-date,
+  .runs-row .r-mode { display: inline; }
+  .runs-row .r-theme { order: -1; grid-column: 1 / -1; white-space: normal; }
+  .runs-row > div { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+  /* run header stack */
+  .run-header { flex-direction: column; align-items: stretch; }
+  .run-stats { justify-content: flex-start; }
+  .run-title-row { gap: 8px; }
+  .export-row { justify-content: flex-start; }
+
+  /* scoreboard: so colocacao + nome + pontos */
+  .score-row { grid-template-columns: 36px minmax(0, 1fr) auto; }
+  .score-row .score-num,
+  .score-row .score-accept { display: none; }
+
+  /* heatmap ainda menor */
+  .heat-spacer { width: 90px; }
+  .heat-label { width: 90px; font-size: 11px; }
+  .heat-col { width: 32px; }
+  .heat-cell-wrap { width: 32px; }
+  .heat-cell { width: 24px; height: 24px; font-size: 11px; }
+
+  /* wizard */
+  .wizard-title { font-size: 20px; }
+  .wizard-lead { font-size: 14px; }
+  .wizard-step-line { width: 10px; }
+
+  /* proposito */
+  .proposito-grid { grid-template-columns: 1fr; }
+
+  /* technique list */
+  .technique-list { grid-template-columns: 1fr; }
+
+  /* tabs */
+  .tab { padding: 6px 12px; font-size: 13px; }
+
+  /* stage carrossel */
+  .stage-carousel-nav { gap: 8px; }
+  .carousel-btn { padding: 5px 10px; }
+}
+
+@media (max-width: 420px) {
+  .page-title { font-size: 22px; }
+  .brand { font-size: 0; }
+  .brand-badge { margin-right: 0; }
+  .btn-primary { width: 100%; }
+  .wizard-nav { flex-direction: column-reverse; align-items: stretch; }
+  .wizard-nav .btn-secondary,
+  .wizard-nav .btn-primary { width: 100%; justify-content: center; }
+  .run-title { font-size: 20px; }
+  .run-stats { flex-direction: column; align-items: flex-start; gap: 12px; }
+}
