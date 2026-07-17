@@ -5,6 +5,7 @@ import { Toggle } from '../components/Toggle';
 import { TechniqueSelector } from '../components/TechniqueSelector';
 import { ManualVariantsEditor } from '../components/ManualVariantsEditor';
 import { useHelp } from '../help';
+import { useProcessing } from '../processing';
 import {
   createRun,
   createSession,
@@ -382,6 +383,11 @@ export function NewRun() {
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { setIsProcessing } = useProcessing();
+
+  useEffect(() => {
+    setIsProcessing(submitting || genBaseLoading);
+  }, [submitting, genBaseLoading, setIsProcessing]);
 
   const isSingle = mode === 'variation' || mode === 'training';
   const modeMeta = MODE_META.find((m) => m.id === mode)!;

@@ -7,3 +7,6 @@
   partir da raiz do repo, senão não acha os dados.
 - 2026-06-17 (inferência) — Os endpoints `/api/v1/models` e `/api/v1/endpoints/zdr` do OpenRouter
   são públicos — dá para verificar classificação/catálogo via `curl` sem key.
+- 2026-07-17 (inferência) — O `npx tsc` resolvido fora de `web/node_modules` pode ser uma versão
+  antiga (ex: 4.9.5) que não reconhece `moduleResolution: "bundler"`. Para type-check do frontend,
+  use `./node_modules/.bin/tsc -b` dentro de `web/` após `npm install`.

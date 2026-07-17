@@ -10,6 +10,8 @@ import { SettingsPage } from './pages/Settings';
 import { HelpModal } from './components/HelpModal';
 import { ThemeContext, type Theme, getStoredTheme, persistTheme, applyTheme } from './theme';
 import { HelpContext, markFirstOpen, type HelpTutorial } from './help';
+import { ProcessingContext, useProcessingState } from './processing';
+import { BrainBackground } from './components/BrainBackground';
 import './styles.css';
 
 function SunIcon() {
@@ -33,6 +35,7 @@ function Layout({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
   const [theme, setTheme] = useState<Theme>(getStoredTheme);
   const [help, setHelp] = useState<HelpTutorial | null>(null);
+  const processing = useProcessingState();
 
   useEffect(() => {
     applyTheme(theme);
@@ -49,40 +52,43 @@ function Layout({ children }: { children: React.ReactNode }) {
   return (
     <ThemeContext.Provider value={theme}>
       <HelpContext.Provider value={helpApi}>
-      <div className="app">
-        <nav className="nav">
-          <div className="nav-inner">
-            <div className="brand" onClick={() => navigate('/new')}>
-              <span className="brand-badge">B</span>
-              Benchmark Arena
-            </div>
-            <div className="nav-actions">
-              <NavLink to="/new" className="nav-link">Nova Run</NavLink>
-              <NavLink to="/runs" className="nav-link">Histórico</NavLink>
-              <NavLink to="/settings" className="nav-link">Configurações</NavLink>
-              <span className="nav-divider" />
-              <button
-                className="icon-btn"
-                onClick={() => setHelp('compare')}
-                title="Como funciona"
-                aria-label="Como funciona"
-              >
-                ?
-              </button>
-              <button
-                className="icon-btn"
-                onClick={() => setTheme(isDark ? 'light' : 'dark')}
-                title={isDark ? 'Mudar para o modo claro' : 'Mudar para o modo escuro'}
-                aria-label={isDark ? 'Mudar para o modo claro' : 'Mudar para o modo escuro'}
-              >
-                {isDark ? <SunIcon /> : <MoonIcon />}
-              </button>
-            </div>
+        <ProcessingContext.Provider value={processing}>
+          <div className="app">
+            <BrainBackground isThinking={processing.isProcessing} />
+            <nav className="nav">
+              <div className="nav-inner">
+                <div className="brand" onClick={() => navigate('/new')}>
+                  <span className="brand-badge">B</span>
+                  Benchmark Arena
+                </div>
+                <div className="nav-actions">
+                  <NavLink to="/new" className="nav-link">Nova Run</NavLink>
+                  <NavLink to="/runs" className="nav-link">Histórico</NavLink>
+                  <NavLink to="/settings" className="nav-link">Configurações</NavLink>
+                  <span className="nav-divider" />
+                  <button
+                    className="icon-btn"
+                    onClick={() => setHelp('compare')}
+                    title="Como funciona"
+                    aria-label="Como funciona"
+                  >
+                    ?
+                  </button>
+                  <button
+                    className="icon-btn"
+                    onClick={() => setTheme(isDark ? 'light' : 'dark')}
+                    title={isDark ? 'Mudar para o modo claro' : 'Mudar para o modo escuro'}
+                    aria-label={isDark ? 'Mudar para o modo claro' : 'Mudar para o modo escuro'}
+                  >
+                    {isDark ? <SunIcon /> : <MoonIcon />}
+                  </button>
+                </div>
+              </div>
+            </nav>
+            <main className="main">{children}</main>
+            {help && <HelpModal tutorial={help} onClose={() => setHelp(null)} />}
           </div>
-        </nav>
-        <main className="main">{children}</main>
-        {help && <HelpModal tutorial={help} onClose={() => setHelp(null)} />}
-      </div>
+        </ProcessingContext.Provider>
       </HelpContext.Provider>
     </ThemeContext.Provider>
   );
