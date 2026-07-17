@@ -1,31 +1,27 @@
 import { createContext, useContext } from 'react';
 
-export type Theme = 'light' | 'dark';
+export type Theme = 'dark';
 
 const THEME_KEY = 'bench-theme';
 
 export function getStoredTheme(): Theme {
-  try {
-    return localStorage.getItem(THEME_KEY) === 'dark' ? 'dark' : 'light';
-  } catch {
-    return 'light';
-  }
+  return 'dark';
 }
 
-export function persistTheme(theme: Theme): void {
+export function persistTheme(_theme: Theme): void {
   try {
-    localStorage.setItem(THEME_KEY, theme);
+    localStorage.setItem(THEME_KEY, 'dark');
   } catch {
     /* ignore (private mode etc.) */
   }
 }
 
-export function applyTheme(theme: Theme): void {
-  document.documentElement.setAttribute('data-theme', theme);
+export function applyTheme(_theme: Theme): void {
+  document.documentElement.setAttribute('data-theme', 'dark');
 }
 
-/** Current theme, provided by the app shell so color math can react to toggles. */
-export const ThemeContext = createContext<Theme>('light');
+/** Tema único do app: sempre escuro. */
+export const ThemeContext = createContext<Theme>('dark');
 
 export function useTheme(): Theme {
   return useContext(ThemeContext);

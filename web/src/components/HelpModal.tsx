@@ -17,7 +17,7 @@ const TUTORIALS: Record<HelpTutorial, Step[]> = {
   compare: [
     {
       kicker: 'Visão geral',
-      title: 'Bem-vindo ao Benchmark Arena',
+      title: 'Bem-vindo ao Prompt Builder',
       body: 'Descubra qual LLM — ou qual prompt — responde melhor. Há 3 modos: Comparar (vários modelos no mesmo desafio), Variação (um modelo, vários system prompts) e Treino (otimização iterativa do prompt). Este tutorial cobre o modo Comparar; troque de aba acima para ver os outros.',
     },
     {
