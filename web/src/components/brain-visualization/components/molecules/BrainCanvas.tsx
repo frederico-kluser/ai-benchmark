@@ -6,6 +6,7 @@
 
 import { useRef, type ReactElement } from 'react';
 import type { NeuralActivityLevel, BrainVisibilityState, RotationConfig } from '../../types';
+import type { BrainColors } from '../../constants';
 import { useBrainAnimation } from '../../hooks/use-brain-animation';
 import { useDragRotation } from '../../hooks/use-drag-rotation';
 import { BrainCanvasElement } from '../atoms/BrainCanvasElement';
@@ -14,12 +15,14 @@ export interface BrainCanvasProps {
   activityLevel: NeuralActivityLevel;
   visibilityState: BrainVisibilityState;
   rotationConfig?: RotationConfig;
+  colors?: Partial<BrainColors>;
 }
 
 export function BrainCanvas({
   activityLevel,
   visibilityState,
   rotationConfig,
+  colors,
 }: BrainCanvasProps): ReactElement {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { dragOffsetRef, isDraggingRef } = useDragRotation(canvasRef);
@@ -30,7 +33,8 @@ export function BrainCanvas({
     canvasRef,
     dragOffsetRef,
     isDraggingRef,
-    rotationConfig
+    rotationConfig,
+    colors
   );
 
   return (

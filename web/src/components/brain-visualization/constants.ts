@@ -77,13 +77,27 @@ export const RENDERING = {
   STOP_ANIMATION_PHASE: 1.99,
 } as const;
 
-export const COLORS = {
+export interface RgbColor {
+  r: number;
+  g: number;
+  b: number;
+}
+
+export interface BrainColors {
+  NEURON_ACTIVE: RgbColor;
+  GLOW_HALO: RgbColor;
+  NEURON_IDLE: RgbColor;
+  CONNECTION_ACTIVE: RgbColor;
+  CONNECTION_IDLE: RgbColor;
+}
+
+export const COLORS: BrainColors = {
   NEURON_ACTIVE: { r: 255, g: 255, b: 255 },
   GLOW_HALO: { r: 0, g: 255, b: 255 },
   NEURON_IDLE: { r: 100, g: 200, b: 255 },
   CONNECTION_ACTIVE: { r: 180, g: 255, b: 255 },
   CONNECTION_IDLE: { r: 100, g: 200, b: 255 },
-} as const;
+};
 
 export const OPACITY = {
   NEURON_IDLE_FILL: 0.8,

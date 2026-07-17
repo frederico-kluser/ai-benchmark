@@ -16,6 +16,7 @@ import type {
   RotationConfig,
 } from '../types';
 import { NeuralActivityLevel, BrainVisibilityState } from '../types';
+import type { BrainColors } from '../constants';
 import { createBrainNeuralNetwork } from '../core/brain-factory';
 import {
   calculateRotationAngles,
@@ -57,7 +58,8 @@ export function useBrainAnimation(
   externalCanvasRef?: RefObject<HTMLCanvasElement | null>,
   dragOffsetRef?: RefObject<DragRotationOffset>,
   isDraggingRef?: RefObject<boolean>,
-  rotationConfig?: RotationConfig
+  rotationConfig?: RotationConfig,
+  colors?: Partial<BrainColors>
 ): RefObject<HTMLCanvasElement | null> {
   const internalCanvasRef = useRef<HTMLCanvasElement>(null);
   const canvasRef = externalCanvasRef ?? internalCanvasRef;
@@ -178,11 +180,11 @@ export function useBrainAnimation(
       currentTimestamp
     );
 
-    renderBrainVisualization(ctx, neuronsRef.current, projectedNeurons, currentPhase);
+    renderBrainVisualization(ctx, neuronsRef.current, projectedNeurons, currentPhase, colors);
 
     ctx.globalAlpha = 1;
     animationFrameIdRef.current = requestAnimationFrame(runAnimationFrame);
-  }, [activityLevel, visibilityState, canvasRef, dragOffsetRef, isDraggingRef, rotationConfig]);
+  }, [activityLevel, visibilityState, canvasRef, dragOffsetRef, isDraggingRef, rotationConfig, colors]);
 
   useEffect(() => {
     function handleResize(): void {
