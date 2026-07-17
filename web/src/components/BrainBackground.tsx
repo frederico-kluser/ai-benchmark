@@ -1,20 +1,11 @@
 import { useEffect, useState } from 'react';
 import { BrainCanvas, useBrainState, NeuralActivityLevel, BrainVisibilityState } from './brain-visualization';
-import type { BrainColors } from './brain-visualization/constants';
 
 interface BrainBackgroundProps {
   isThinking?: boolean;
 }
 
-// Efeito de propagação/ativação em amarelo forte.
-const ACTIVE_COLORS: Partial<BrainColors> = {
-  NEURON_ACTIVE: { r: 255, g: 220, b: 0 },
-  GLOW_HALO: { r: 255, g: 200, b: 0 },
-  CONNECTION_ACTIVE: { r: 255, g: 220, b: 0 },
-};
-
 export function BrainBackground({ isThinking = false }: BrainBackgroundProps) {
-
   const { state, actions } = useBrainState({
     defaultActivityLevel: NeuralActivityLevel.LOW,
     defaultVisibilityState: BrainVisibilityState.DISPERSED,
@@ -51,7 +42,6 @@ export function BrainBackground({ isThinking = false }: BrainBackgroundProps) {
         activityLevel={state.activityLevel}
         visibilityState={state.visibilityState}
         rotationConfig={{ enabled: true, ySpeed: 0.5, xAmplitude: 0.12, xFrequency: 0.6 }}
-        colors={ACTIVE_COLORS}
       />
     </div>
   );
