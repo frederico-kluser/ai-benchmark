@@ -918,7 +918,10 @@ code, .mono { font-family: ui-monospace, 'SF Mono', Menlo, monospace; }
   .page-sub { font-size: 16px; margin-bottom: 22px; }
 
   /* cards */
-  .card { padding: 18px; border-radius: 16px; }
+  .card { padding: 18px; border-radius: 16px; background: rgba(28, 28, 30, 0.82); }
+
+  /* brain: 30% menor no mobile */
+  .brain-viz { width: 70vw; height: 70vh; }
 
   /* nav mobile: esconde links desktop; eles vivem no menu hamburguer */
   .nav-menu { display: block; }

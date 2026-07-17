@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import ReactDOM from 'react-dom/client';
+import ReactDOM, { createPortal } from 'react-dom';
 import { BrowserRouter, Routes, Route, NavLink, useNavigate, Navigate } from 'react-router-dom';
 import { NewRun } from './pages/NewRun';
 import { RunView } from './pages/RunView';
@@ -65,16 +65,18 @@ function Layout({ children }: { children: React.ReactNode }) {
                     >
                       <MenuIcon open={menuOpen} />
                     </button>
-                    {menuOpen && (
-                      <>
-                        <div className="nav-menu-overlay" onClick={() => setMenuOpen(false)} aria-hidden />
-                        <div className="nav-menu-pop">
-                          <NavLink to="/new" className="nav-link" onClick={() => setMenuOpen(false)}>Nova Run</NavLink>
-                          <NavLink to="/runs" className="nav-link" onClick={() => setMenuOpen(false)}>Histórico</NavLink>
-                          <NavLink to="/settings" className="nav-link" onClick={() => setMenuOpen(false)}>Configurações</NavLink>
-                        </div>
-                      </>
-                    )}
+                    {menuOpen &&
+                      createPortal(
+                        <>
+                          <div className="nav-menu-overlay" onClick={() => setMenuOpen(false)} aria-hidden />
+                          <div className="nav-menu-pop">
+                            <NavLink to="/new" className="nav-link" onClick={() => setMenuOpen(false)}>Nova Run</NavLink>
+                            <NavLink to="/runs" className="nav-link" onClick={() => setMenuOpen(false)}>Histórico</NavLink>
+                            <NavLink to="/settings" className="nav-link" onClick={() => setMenuOpen(false)}>Configurações</NavLink>
+                          </div>
+                        </>,
+                        document.body,
+                      )}
                   </div>
                   <NavLink to="/new" className="nav-link nav-link-desktop">Nova Run</NavLink>
                   <NavLink to="/runs" className="nav-link nav-link-desktop">Histórico</NavLink>
