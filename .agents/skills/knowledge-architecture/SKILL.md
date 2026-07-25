@@ -2,7 +2,7 @@
 name: knowledge-architecture
 description: Mapa do repositório ai-benchmark — layout do monorepo (incl. os módulos do sistema de evolução de prompts em src/ e web/src/engine/), separação backend/frontend, fluxo de dados ponta a ponta e comandos exatos de build/run. Use no início de qualquer tarefa para saber ONDE mora cada coisa antes de varrer o codebase, ou quando precisar entender como as peças se conectam.
 metadata:
-  version: 0.3.0
+  version: 0.3.1
   type: knowledge
 ---
 # Arquitetura — ai-benchmark
@@ -35,7 +35,7 @@ src/            backend (Express, ESM NodeNext — imports com extensão .js)
 web/src/        frontend
   api.ts        wrappers fetch + tipos espelhados do backend
   idb.ts        cache IndexedDB v2 (db "benchmark-arena", stores runs/sessions/*Summaries/prompts)
-  engine/       CÓPIA client-side do pipeline (ver abaixo) + promptStore.ts (biblioteca de prompts)
+  engine/       CÓPIA client-side do pipeline (ver abaixo) + promptStore.ts (biblioteca de prompts) + configFile.ts (parser arena-config@1)
   diff.ts       diff linha-a-linha (versões de prompt / diff vs. original)
   pages/        NewRun (assistente 5 passos), RunView, RunsList, TrainingView, PromptsPage, Settings
   pages/runShared.tsx   reducer applyEvent + ProcessMonitor + standings (compartilhado RunView/TrainingView)

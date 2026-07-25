@@ -2,7 +2,7 @@
 name: knowledge-prompt-evolution
 description: O sistema de evolução de prompts do ai-benchmark (portado do prompt-arena) — julgamento por referência (gabarito + refJudge pointwise + duelos Copeland), rank/pickWinner com minGain, reflection GEPA, holdout + significância bootstrap, datagen em lotes, pacote de cenários JSON, reasoning por papel e a biblioteca de prompts. Use ao mexer em gabarito/refJudge/duels/rank/holdout/stats/trainer/datagen/llmVariants/scenarioPack/reasoning/dedup/promptStore, ou em qualquer fluxo de treino/julgamento — leia junto com knowledge-benchmark-modes.
 metadata:
-  version: 0.1.0
+  version: 0.2.0
   type: knowledge
 ---
 # Evolução de prompts — ai-benchmark
@@ -82,6 +82,15 @@ Sistema portado do ondokai-prompt-arena. Cada módulo vive em `src/` **e** espel
   (`training|variation|manual` + ids) gera o link "ver treino/run".
 - Handoff "usar como base": `localStorage 'arena:prompt-draft'` escrito pela PromptsPage, lido
   **uma vez** (e removido) pelo NewRun no mount. Diff de versões via `web/src/diff.ts`.
+
+## Arquivo de configuração do assistente (client-only)
+- `web/src/engine/configFile.ts`: parser do `arena-config@1` — JSON (gerado por IA externa, ver
+  **`ARENA-CONFIG.md`** na raiz) que preenche TODO o assistente Nova Run (modo, tema, brief,
+  cenários seed, prompt base, modelos por papel, effort, técnicas, toggles de treino, limits).
+  `parseArenaConfig` **nunca lança** (`{ok, error}` PT-BR); valida ids de técnica contra
+  `getTechnique` e o XOR do compare. É **client-only** (espelha estado do wizard, não vai ao
+  backend). Import: botão no rodapé do assistente → `readArenaConfigFile` (`api.ts`) →
+  `applyArenaConfig` (NewRun) — campos ausentes não pisam o estado atual.
 
 ## Eventos novos
 `stage.gabarito` (stageIndex **-1**, agregado) · `stage.dueled` (por índice, antes de

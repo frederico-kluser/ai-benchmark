@@ -42,7 +42,9 @@ const baseFields = {
   judgeModelIds: z.array(z.string().min(1)).min(1),
   concurrency: z.number().int().min(1).max(32).optional(),
   timeoutMs: z.number().int().min(1_000).max(300_000).optional(),
-  maxOutputTokens: z.number().int().min(50).max(16_000).optional(),
+  // maxOutputTokens livre (teto generoso): a UI virou input livre — o teto
+  // real e a janela do modelo; o OpenRouter rejeita o que exceder.
+  maxOutputTokens: z.number().int().min(50).max(1_000_000).optional(),
   promptOptimization: z.boolean().optional(),
   optimizerModelId: z.string().min(1).optional(),
   judgePasses: z.union([z.literal(1), z.literal(2)]).optional(),

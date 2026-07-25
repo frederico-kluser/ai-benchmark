@@ -7,13 +7,16 @@ import { ManualVariantsEditor } from '../components/ManualVariantsEditor';
 import { useHelp } from '../help';
 import { useProcessing } from '../processing';
 import {
+  arenaConfigSummary,
   createRun,
   createSession,
   fetchLgpd,
   fetchModels,
   generateBasePrompt,
   getStoredKey,
+  readArenaConfigFile,
   readScenarioPackFile,
+  type ArenaConfigFile,
   type ManualVariant,
   type OpenRouterModel,
   type ReasoningConfig,
@@ -97,6 +100,30 @@ function ReasoningSelect({
         </option>
       ))}
     </select>
+  );
+}
+
+// Card de "Esforço" (nível de raciocínio) que acompanha um seletor de modelo:
+// fica logo abaixo do ModelSelector do papel, em vez de escondido num Avançado.
+function EffortCard({
+  hint,
+  value,
+  onChange,
+}: {
+  hint: string;
+  value: '' | ReasoningLevel;
+  onChange: (v: '' | ReasoningLevel) => void;
+}) {
+  return (
+    <div className="card field-card">
+      <div className="price-filter-row" style={{ marginTop: 0 }}>
+        <label className="price-field">
+          <span title="Nível de raciocínio">Esforço</span>
+          <ReasoningSelect value={value} onChange={onChange} />
+        </label>
+      </div>
+      <p className="field-hint">{hint}</p>
+    </div>
   );
 }
 
@@ -262,7 +289,6 @@ function pipelineFor(mode: RunMode) {
 
 const RANGES = {
   stages: [1, 50, 1],
-  maxOutputTokens: [50, 16000, 50],
   concurrency: [1, 32, 1],
   timeoutMs: [1000, 300000, 1000],
   iterations: [2, 10, 1],
@@ -376,7 +402,9 @@ export function NewRun() {
   const [stages, setStages] = useState(5);
   const [concurrency, setConcurrency] = useState(8);
   const [timeoutMs, setTimeoutMs] = useState(60000);
-  const [maxOutputTokens, setMaxOutputTokens] = useState(DEFAULT_MAX_OUTPUT_TOKENS);
+  // Máx. tokens por resposta: campo numérico LIVRE (texto). ''/inválido cai no
+  // default no envio (ver maxTokensNum) — o teto real é o do modelo.
+  const [maxOutputTokens, setMaxOutputTokens] = useState(String(DEFAULT_MAX_OUTPUT_TOKENS));
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [datagen, setDatagen] = useState<string[]>([DEFAULT_DATAGEN]);
   const [judge, setJudge] = useState<string[]>([DEFAULT_JUDGE]);
@@ -408,6 +436,10 @@ export function NewRun() {
   const [packError, setPackError] = useState<string | null>(null);
   // Handoff da biblioteca de prompts (/prompts): aviso discreto ao pré-preencher.
   const [draftNotice, setDraftNotice] = useState<string | null>(null);
+  // Import de configuração (JSON arena-config@1): banner dispensável no topo,
+  // some ao trocar de passo (ver goTo) ou no X.
+  const [configNotice, setConfigNotice] = useState<string | null>(null);
+  const configFileRef = useRef<HTMLInputElement>(null);
 
   // compare: eixo 'models' (modelos distintos) × 'configs' (mesmo modelo,
   // configs diferentes — compare-llms). `repeats` repete cada cenário (1–3).
@@ -428,14 +460,16 @@ export function NewRun() {
   const [minGain, setMinGain] = useState(1);
   const [holdoutRatio, setHoldoutRatio] = useState(0.2);
   const [feedbackDriven, setFeedbackDriven] = useState(true);
-  // Avançado (passo Avaliação): reasoning por papel ('' = padrão, não envia) +
-  // modelo que escreve os gabaritos (vazio = 1º juiz).
-  const [reasoningOpen, setReasoningOpen] = useState(false);
+  // Reasoning (esforço) por papel ('' = padrão, não envia): cada select fica
+  // junto do seletor de modelo do papel. `referenceModel` escreve os gabaritos
+  // (vazio = 1º juiz) e usa o esforço do juiz; `rewriterModel` reescreve os
+  // prompts por técnica (vazio = mesmo do gerador) → optimizerModelId.
   const [reasoningCompetitor, setReasoningCompetitor] = useState<'' | ReasoningLevel>('');
   const [reasoningJudge, setReasoningJudge] = useState<'' | ReasoningLevel>('');
   const [reasoningRewriter, setReasoningRewriter] = useState<'' | ReasoningLevel>('');
   const [reasoningDatagen, setReasoningDatagen] = useState<'' | ReasoningLevel>('');
   const [referenceModel, setReferenceModel] = useState<string[]>([]);
+  const [rewriterModel, setRewriterModel] = useState<string[]>([]);
 
   // Etapas manuais (JSON): substituem o datagen e trazem a rubrica que ancora o juiz.
   const [useCustomStages, setUseCustomStages] = useState(false);
@@ -608,10 +642,16 @@ export function NewRun() {
     return manualVariants.filter((v) => v.systemPrompt.trim()).length + base;
   }, [isSingle, compareAxis, competitorConfigs, competitors, basePrompt, optimize, techniques, manualVariants]);
 
+  // Máx. tokens efetivo: parse do campo livre; vazio/inválido (< min) cai no default.
+  const maxTokensNum = useMemo(() => {
+    const v = parseFloat(maxOutputTokens);
+    return Number.isFinite(v) && v >= 50 ? Math.round(v) : DEFAULT_MAX_OUTPUT_TOKENS;
+  }, [maxOutputTokens]);
+
   // Parse das etapas manuais (memoizado); maxTokens ausente herda o teto global.
   const parsedCustomStages = useMemo(
-    () => parseCustomStages(customStagesText, maxOutputTokens),
-    [customStagesText, maxOutputTokens],
+    () => parseCustomStages(customStagesText, maxTokensNum),
+    [customStagesText, maxTokensNum],
   );
   // Etapas efetivas: nº de etapas manuais válidas (quando ligado) ou o stepper.
   const effectiveStages = useCustomStages && parsedCustomStages.stages
@@ -679,7 +719,7 @@ export function NewRun() {
     // passes do juiz so se aplica nos modos de 1 LLM (toggle visivel la).
     const passes = isSingle && twoPassJudge ? 2 : 1;
     let perStage = 0;
-    for (const id of contestantIds) perStage += costOf(id, ctxIn, maxOutputTokens);
+    for (const id of contestantIds) perStage += costOf(id, ctxIn, maxTokensNum);
     if (datagen[0]) perStage += costOf(datagen[0], 300, 450);
     let judgeCalls = judge.length * passes;
     let extraCalls = 0;
@@ -689,18 +729,18 @@ export function NewRun() {
       if (refId) perStage += costOf(refId, ctxIn + 600, 1500);
       extraCalls += 1;
       // pointwise: cada juiz avalia CADA competidor contra o gabarito.
-      for (const jid of judge) perStage += costOf(jid, ctxIn + maxOutputTokens + 1500, 350) * n;
+      for (const jid of judge) perStage += costOf(jid, ctxIn + maxTokensNum + 1500, 350) * n;
       judgeCalls = judge.length * n;
       if (mode === 'training' && duels && judge[0]) {
         // duelos: bracket top-K (0 = todos contra todos), 2 ordens por par, 1º juiz.
         const k = duelTopK > 0 ? Math.min(duelTopK, n) : n;
         const pairs = (k * (k - 1)) / 2;
-        perStage += pairs * 2 * costOf(judge[0], ctxIn + 2 * maxOutputTokens + 1500, 350);
+        perStage += pairs * 2 * costOf(judge[0], ctxIn + 2 * maxTokensNum + 1500, 350);
         extraCalls += pairs * 2;
       }
     } else {
       // cada juiz le o contexto + todas as respostas; com 2 passagens, conta x2.
-      for (const jid of judge) perStage += costOf(jid, ctxIn + n * maxOutputTokens, 350) * passes;
+      for (const jid of judge) perStage += costOf(jid, ctxIn + n * maxTokensNum, 350) * passes;
     }
     const iters = mode === 'training' ? iterations : 1;
     // compare: `repeats` clona cada cenário — o custo escala junto.
@@ -716,7 +756,7 @@ export function NewRun() {
       refTerms: referenceJudging,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, isSingle, competitors, compareAxis, competitorConfigs, contestantModel, variantCount, datagen, judge, twoPassJudge, plannedStages, repeats, referenceJudging, referenceModel, duels, duelTopK, maxOutputTokens, iterations, priceById]);
+  }, [mode, isSingle, competitors, compareAxis, competitorConfigs, contestantModel, variantCount, datagen, judge, twoPassJudge, plannedStages, repeats, referenceJudging, referenceModel, duels, duelTopK, maxTokensNum, iterations, priceById]);
 
   function step(key: keyof typeof RANGES, current: number, setter: (v: number) => void, dir: 1 | -1) {
     const [min, max, by] = RANGES[key];
@@ -745,6 +785,100 @@ export function NewRun() {
 
   function updateConfigRow(i: number, patch: Partial<ConfigRow>) {
     setCompetitorConfigs((rows) => rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+  }
+
+  // Aplica uma configuração importada (arena-config@1) no estado do assistente.
+  // Campos AUSENTES no arquivo não pisam o estado atual — só o que veio é aplicado.
+  function applyArenaConfig(config: ArenaConfigFile) {
+    setMode(config.mode);
+    setTheme(config.theme);
+    if (config.scenarioBrief !== undefined) setScenarioBrief(config.scenarioBrief);
+    if (config.stages !== undefined) setStages(Math.max(1, Math.min(50, Math.round(config.stages))));
+    // Cenários: viram seed no MESMO estado do pacote de cenários (a UI de
+    // preview "N importados" e o submit de scenarioSeed já sabem lidar com ele).
+    if (config.scenarios) {
+      const tokensFallback = config.limits?.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS;
+      setPack({
+        format: 'ai-benchmark-pack@1',
+        theme: config.theme,
+        exportedAt: new Date().toISOString(),
+        prompt: { text: config.prompt?.text ?? '', source: 'base' },
+        scenarios: config.scenarios.map((sc, i) => ({
+          id: sc.id ?? `import-${i + 1}`,
+          question: sc.question,
+          productContext: sc.productContext ?? '',
+          maxTokens: sc.maxTokens ?? tokensFallback,
+          rubric: sc.rubric ?? '',
+          reference: sc.reference,
+          origin: 'import' as const,
+        })),
+      });
+      setPackError(null);
+    }
+    if (config.prompt?.text !== undefined) setBasePrompt(config.prompt.text);
+    if (config.prompt?.generateFrom !== undefined) setTaskDescription(config.prompt.generateFrom);
+    setDatagen([config.models.datagen]);
+    setJudge(config.models.judges);
+    if (config.models.reference !== undefined) setReferenceModel(config.models.reference ? [config.models.reference] : []);
+    if (config.models.contestant !== undefined) setContestantModel(config.models.contestant ? [config.models.contestant] : []);
+    if (config.models.competitors) {
+      setCompetitors(config.models.competitors);
+      setCompareAxis('models');
+    }
+    if (config.models.competitorConfigs) {
+      // Eixo compare-llms: a identidade é a tripla modelo+temperatura+reasoning.
+      setCompetitorConfigs(
+        config.models.competitorConfigs.map((c) => ({
+          modelId: c.model,
+          temperature: c.temperature !== undefined ? String(c.temperature) : '',
+          reasoningLevel: c.reasoning ?? '',
+        })),
+      );
+      setCompareAxis('configs');
+    }
+    if (config.models.rewriter !== undefined) setRewriterModel(config.models.rewriter ? [config.models.rewriter] : []);
+    if (config.effort?.competitor !== undefined) setReasoningCompetitor(config.effort.competitor);
+    if (config.effort?.judge !== undefined) setReasoningJudge(config.effort.judge);
+    if (config.effort?.rewriter !== undefined) setReasoningRewriter(config.effort.rewriter);
+    if (config.effort?.datagen !== undefined) setReasoningDatagen(config.effort.datagen);
+    if (config.variation?.optimize !== undefined) setOptimize(config.variation.optimize);
+    if (config.variation?.techniques) setTechniques(config.variation.techniques);
+    if (config.variation?.manualVariants) setManualVariants(config.variation.manualVariants);
+    if (config.training?.iterations !== undefined)
+      setIterations(Math.max(2, Math.min(10, Math.round(config.training.iterations))));
+    if (config.training?.minGain !== undefined) setMinGain(config.training.minGain);
+    if (config.training?.duels !== undefined) setDuels(config.training.duels);
+    if (config.training?.duelTopK !== undefined) setDuelTopK(config.training.duelTopK);
+    if (config.training?.holdoutRatio !== undefined)
+      setHoldoutRatio(Math.max(0, Math.min(0.5, config.training.holdoutRatio)));
+    if (config.training?.feedbackDriven !== undefined) setFeedbackDriven(config.training.feedbackDriven);
+    if (config.judging?.reference !== undefined) setRefJudgingChoice(config.judging.reference);
+    if (config.judging?.passes !== undefined) setTwoPassJudge(config.judging.passes === 2);
+    if (config.repeats !== undefined) setRepeats(Math.max(1, Math.min(3, Math.round(config.repeats))));
+    if (config.limits?.maxOutputTokens !== undefined) setMaxOutputTokens(String(config.limits.maxOutputTokens));
+    if (config.limits?.timeoutMs !== undefined) setTimeoutMs(config.limits.timeoutMs);
+    if (config.limits?.concurrency !== undefined) setConcurrency(config.limits.concurrency);
+    if (config.compliance) {
+      setComplianceArea(config.compliance.area);
+      setIncludeRessalvas(config.compliance.includeRessalvas);
+    }
+  }
+
+  // Importa configuração completa (JSON arena-config@1) — botão no rodapé do
+  // assistente. Erro vai p/ o wizard-error; sucesso aplica tudo e abre o banner.
+  async function handleConfigFile(file: File) {
+    setError(null);
+    try {
+      const res = await readArenaConfigFile(file);
+      if (!res.ok) {
+        setError(res.error);
+        return;
+      }
+      applyArenaConfig(res.config);
+      setConfigNotice(`Configuração importada: ${arenaConfigSummary(res.config)}`);
+    } catch (err) {
+      setError((err as Error).message);
+    }
   }
 
   // --- Validação por passo: o assistente só avança quando o passo está completo. ---
@@ -806,6 +940,8 @@ export function NewRun() {
     } else {
       setError(null);
     }
+    // O banner de config importada é contextual do passo onde caiu: some ao navegar.
+    setConfigNotice(null);
     setStepIdx(dest);
     scrollToTop();
   }
@@ -848,7 +984,7 @@ export function NewRun() {
     const customStages =
       useCustomStages && parsedCustomStages.stages?.length ? parsedCustomStages.stages : undefined;
 
-    // Reasoning por papel (seção Avançado): só papéis com escolha explícita.
+    // Reasoning por papel (select junto de cada seletor): só papéis com escolha explícita.
     const reasoning: ReasoningConfig = {};
     if (reasoningCompetitor) reasoning.competitor = reasoningCompetitor;
     if (reasoningJudge) reasoning.judge = reasoningJudge;
@@ -864,7 +1000,8 @@ export function NewRun() {
       judgeModelIds: judge,
       concurrency,
       timeoutMs,
-      maxOutputTokens,
+      // Campo livre: vazio/inválido já caiu no default em maxTokensNum.
+      maxOutputTokens: maxTokensNum,
       ...(customStages ? { customStages } : {}),
       ...(isLivre ? {} : { compliance: { area: complianceArea, includeRessalvas } }),
       // Evolução de prompts (strip de undefined/vazios):
@@ -909,6 +1046,8 @@ export function NewRun() {
         promptOptimization: optimize,
         techniqueIds: optimize ? techniques : undefined,
         manualVariants: optimize ? undefined : manualVariants.filter((v) => v.systemPrompt.trim()),
+        // Reescritor explícito (opcional): vazio = a engine usa o gerador.
+        ...(optimize && rewriterModel[0] ? { optimizerModelId: rewriterModel[0] } : {}),
         judgePasses: twoPassJudge ? 2 : 1,
         ...(mode === 'training'
           ? {
@@ -1008,6 +1147,31 @@ export function NewRun() {
           </button>
         </div>
       )}
+
+      {configNotice && (
+        <div
+          className="banner banner-neutral"
+          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}
+        >
+          <span>{configNotice}</span>
+          <button type="button" className="link-toggle" onClick={() => setConfigNotice(null)}>
+            dispensar
+          </button>
+        </div>
+      )}
+
+      {/* input de arquivo da config importada (acionado pelo botão do rodapé) */}
+      <input
+        ref={configFileRef}
+        type="file"
+        accept="application/json,.json"
+        style={{ display: 'none' }}
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) void handleConfigFile(file);
+          e.target.value = '';
+        }}
+      />
 
       <div className="wizard-panel" key={stepId}>
         {/* ---------------------------------------------------------- passo 1: objetivo */}
@@ -1152,17 +1316,18 @@ export function NewRun() {
                 {!useCustomStages && (
                   <Stepper label="Etapas" value={stages} onStep={(d) => step('stages', stages, setStages, d)} />
                 )}
-                <Stepper
-                  label="Max tokens"
-                  value={maxOutputTokens}
-                  onStep={(d) => step('maxOutputTokens', maxOutputTokens, setMaxOutputTokens, d)}
-                />
+                <label className="price-field">
+                  <span>Máx. tokens por resposta</span>
+                  <input
+                    type="number"
+                    className="input"
+                    min={50}
+                    placeholder={String(DEFAULT_MAX_OUTPUT_TOKENS)}
+                    value={maxOutputTokens}
+                    onChange={(e) => setMaxOutputTokens(e.target.value)}
+                  />
+                </label>
               </div>
-              {mode === 'training' && (
-                <div className="steppers-grid" style={{ marginTop: 14 }}>
-                  <Stepper label="Iterações" value={iterations} onStep={(d) => step('iterations', iterations, setIterations, d)} />
-                </div>
-              )}
               <p className="field-hint">
                 {useCustomStages ? (
                   <>
@@ -1173,11 +1338,38 @@ export function NewRun() {
                     <strong>Etapas</strong> = quantas perguntas diferentes o gerador cria.{' '}
                   </>
                 )}
-                <strong>Max tokens</strong> limita o tamanho de cada resposta
-                {useCustomStages && ' (usado quando a etapa não traz "maxTokens")'}.
-                {mode === 'training' && <> <strong>Iterações</strong> = quantas rodadas de evolução do prompt.</>}
+                <strong>Máx. tokens</strong> limita o tamanho de cada resposta
+                {useCustomStages && ' (usado quando a etapa não traz "maxTokens")'} — o teto real é o do modelo;
+                deixe alto p/ modelos de raciocínio. Vazio = {DEFAULT_MAX_OUTPUT_TOKENS}.
               </p>
             </div>
+
+            {/* Loop do treino (só training): explica a evolução e concentra as iterações. */}
+            {mode === 'training' && (
+              <div className="card field-card">
+                <label className="field-label">Como funciona o treino</label>
+                <ol className="field-hint" style={{ margin: '10px 0 0', paddingLeft: 18 }}>
+                  <li>Cada técnica reescreve o prompt.</li>
+                  <li>Todas as versões respondem os MESMOS cenários.</li>
+                  <li>O juiz compara cada resposta com o gabarito e as melhores duelam.</li>
+                  <li>
+                    A vencedora só vira a base da próxima iteração se superar a margem — senão o treino para
+                    (convergiu).
+                  </li>
+                </ol>
+                <div className="steppers-grid" style={{ marginTop: 14 }}>
+                  <Stepper
+                    label="Iterações (2–10)"
+                    value={iterations}
+                    onStep={(d) => step('iterations', iterations, setIterations, d)}
+                  />
+                </div>
+                <p className="field-hint">
+                  <strong>Iterações</strong> = quantas rodadas de evolução do prompt (no máximo — o treino pode
+                  convergir antes).
+                </p>
+              </div>
+            )}
 
             {/* Etapas manuais (JSON): substituem o datagen e ancoram o juiz pela rubrica. */}
             <div className="card field-card">
@@ -1228,7 +1420,7 @@ export function NewRun() {
                           type="button"
                           className="btn-secondary"
                           onClick={() => {
-                            setCollectorPrompt(buildCollectionPrompt(theme, collectorCount, maxOutputTokens));
+                            setCollectorPrompt(buildCollectionPrompt(theme, collectorCount, maxTokensNum));
                             setCollectorCopied(false);
                           }}
                         >
@@ -1520,6 +1712,11 @@ export function NewRun() {
                   models={participantModels}
                   loading={modelsLoading}
                 />
+                <EffortCard
+                  hint="Nível de raciocínio do modelo sob teste. 'Padrão do modelo' não envia nada — ele usa o próprio default."
+                  value={reasoningCompetitor}
+                  onChange={setReasoningCompetitor}
+                />
 
                 <div className="card field-card genbase-card">
                   <label className="field-label" htmlFor="taskDescription">
@@ -1601,6 +1798,27 @@ export function NewRun() {
                 ) : (
                   <ManualVariantsEditor value={manualVariants} onChange={setManualVariants} />
                 )}
+
+                {/* Reescritor: quem aplica as técnicas (vazio = o gerador de cenários). */}
+                {optimize && (
+                  <>
+                    <ModelSelector
+                      multi={false}
+                      title="Modelo reescritor (opcional)"
+                      hint="Reescreve os seus prompts aplicando cada técnica selecionada. Vazio = mesmo do gerador (passo Avaliação)."
+                      value={rewriterModel}
+                      onChange={setRewriterModel}
+                      excludeIds={contestantModel}
+                      models={models}
+                      loading={modelsLoading}
+                    />
+                    <EffortCard
+                      hint="Nível de raciocínio do reescritor (vale p/ o gerador quando ele faz a reescrita). 'Padrão do modelo' não envia nada."
+                      value={reasoningRewriter}
+                      onChange={setReasoningRewriter}
+                    />
+                  </>
+                )}
               </>
             )}
           </>
@@ -1626,6 +1844,11 @@ export function NewRun() {
               models={models}
               loading={modelsLoading}
             />
+            <EffortCard
+              hint="Nível de raciocínio do gerador de cenários. 'Padrão do modelo' não envia nada — ele usa o próprio default."
+              value={reasoningDatagen}
+              onChange={setReasoningDatagen}
+            />
 
             <ModelSelector
               multi
@@ -1636,6 +1859,11 @@ export function NewRun() {
               excludeIds={[...(mode === 'compare' ? competitors : contestantModel)]}
               models={models}
               loading={modelsLoading}
+            />
+            <EffortCard
+              hint="Nível de raciocínio de TODOS os juízes (e do gabarito — a referência usa o esforço do juiz). 'Padrão do modelo' não envia nada."
+              value={reasoningJudge}
+              onChange={setReasoningJudge}
             />
 
             <div className="roles-note">
@@ -1682,10 +1910,23 @@ export function NewRun() {
                     : 'Desligado: o juiz monta um ranking listwise comparando as respostas entre si (modo clássico).'
                 }
               />
-              <p className="field-hint" style={{ marginTop: 4 }}>
-                O gabarito é gerado pelo <strong>modelo de referência</strong> (seção Avançado abaixo; padrão = 1º
-                juiz). Cenários importados de pacote já podem trazer gabarito próprio.
-              </p>
+              {referenceJudging && (
+                <>
+                  <ModelSelector
+                    multi={false}
+                    title="Modelo de referência (gabarito)"
+                    hint="Escreve as respostas ideais com que o juiz compara cada resposta. Vazio = o 1º juiz."
+                    value={referenceModel}
+                    onChange={setReferenceModel}
+                    models={models}
+                    loading={modelsLoading}
+                  />
+                  <p className="field-hint" style={{ marginTop: 4 }}>
+                    O esforço da referência é o mesmo do juiz (a engine usa o esforço do juiz no gabarito).
+                    Cenários importados de pacote já podem trazer gabarito próprio.
+                  </p>
+                </>
+              )}
             </div>
 
             {mode === 'training' && (
@@ -1695,25 +1936,23 @@ export function NewRun() {
                   checked={duels}
                   onChange={setDuels}
                   label="Duelos (Copeland)"
-                  hint="Duelos pairwise entre os melhores de cada cenário (2 ordens por par; desacordo = empate). O placar Copeland decide a promoção do prompt."
+                  hint="As K melhores variantes de cada cenário duelam em pares (2 ordens); o placar dos duelos desempata a escolha do vencedor."
                 />
                 {duels && (
                   <>
                     <div className="steppers-grid">
                       <Stepper
-                        label="Top-K dos duelos"
+                        label="Quantas variantes duelam (Top-K)"
                         value={duelTopK}
                         onStep={(d) => setDuelTopK(Math.max(0, Math.min(32, duelTopK + d)))}
                       />
                     </div>
-                    <p className="field-hint">
-                      <strong>Top-K</strong> = tamanho do bracket (o controle sempre entra). 0 = todos contra todos.
-                    </p>
+                    <p className="field-hint">O controle sempre entra; 0 = todas contra todas.</p>
                   </>
                 )}
                 <div className="price-filter-row" style={{ marginTop: 12 }}>
                   <label className="price-field">
-                    <span>Margem mínima p/ promover (pp)</span>
+                    <span>Margem p/ promover (pontos)</span>
                     <input
                       type="number"
                       className="input"
@@ -1728,83 +1967,34 @@ export function NewRun() {
                     />
                   </label>
                   <label className="price-field">
-                    <span>Holdout (0–0.5)</span>
+                    <span>Cenários reservados p/ validação (0–50%)</span>
                     <input
                       type="number"
                       className="input"
                       min={0}
-                      max={0.5}
-                      step={0.05}
-                      value={holdoutRatio}
+                      max={50}
+                      step={5}
+                      value={Math.round(holdoutRatio * 100)}
                       onChange={(e) => {
                         const v = e.target.valueAsNumber;
-                        if (!Number.isNaN(v)) setHoldoutRatio(v);
+                        if (!Number.isNaN(v)) setHoldoutRatio(v / 100);
                       }}
                     />
                   </label>
                 </div>
                 <p className="field-hint">
-                  <strong>Margem mínima</strong>: ganho mínimo sobre o campeão p/ promover o vencedor (sem ganho =
-                  convergiu e o treino para). <strong>Holdout</strong>: fatia de cenários reservada p/ re-score
-                  anti-overfit (precisa ≥5 cenários).
+                  <strong>Margem</strong>: quanto a vencedora precisa superar o campeão atual p/ virar a nova base
+                  (0 = sempre promove a melhor). <strong>Validação</strong>: ficam fora do treino; no fim, campeão e
+                  base são reavaliados neles (anti-overfit; precisa ≥5 cenários).
                 </p>
                 <Toggle
                   checked={feedbackDriven}
                   onChange={setFeedbackDriven}
-                  label="Aprendizado por falhas (feedback)"
+                  label="Aprender com as falhas da rodada anterior"
                   hint="Ligado: o reescritor vê as falhas da rodada anterior ao gerar as próximas variantes."
                 />
               </div>
             )}
-
-            {/* Avançado: reasoning (esforço) por papel + modelo que escreve os gabaritos. */}
-            <div className="card steppers-card" style={{ marginTop: 16 }}>
-              {reasoningOpen && (
-                <>
-                  <div className="price-filter-row">
-                    <label className="price-field">
-                      <span>Reasoning — competidores</span>
-                      <ReasoningSelect value={reasoningCompetitor} onChange={setReasoningCompetitor} />
-                    </label>
-                    <label className="price-field">
-                      <span>Reasoning — juízes</span>
-                      <ReasoningSelect value={reasoningJudge} onChange={setReasoningJudge} />
-                    </label>
-                  </div>
-                  <div className="price-filter-row" style={{ marginTop: 10 }}>
-                    <label className="price-field">
-                      <span>Reasoning — reescritor</span>
-                      <ReasoningSelect value={reasoningRewriter} onChange={setReasoningRewriter} />
-                    </label>
-                    <label className="price-field">
-                      <span>Reasoning — gerador de cenários</span>
-                      <ReasoningSelect value={reasoningDatagen} onChange={setReasoningDatagen} />
-                    </label>
-                  </div>
-                  <ModelSelector
-                    multi={false}
-                    title="Modelo de referência (gabarito)"
-                    hint="Escreve as respostas ideais do julgamento por referência. Vazio = o 1º juiz."
-                    value={referenceModel}
-                    onChange={setReferenceModel}
-                    models={models}
-                    loading={modelsLoading}
-                  />
-                </>
-              )}
-              <button type="button" className="link-toggle" onClick={() => setReasoningOpen((v) => !v)}>
-                {reasoningOpen
-                  ? 'Ocultar avançado (reasoning, referência)'
-                  : 'Avançado: reasoning por papel, modelo de referência'}
-                <span className={`caret ${reasoningOpen ? 'open' : ''}`}>▶</span>
-              </button>
-              {reasoningOpen && (
-                <p className="field-hint">
-                  <strong>Reasoning</strong> = esforço de raciocínio por papel. "Padrão do modelo" não envia nada —
-                  cada modelo usa o seu próprio default.
-                </p>
-              )}
-            </div>
 
             <div className="card steppers-card">
               {advancedOpen && (
@@ -1881,13 +2071,37 @@ export function NewRun() {
                       <span className="v">Por referência{mode === 'training' && duels ? ' + duelos' : ''}</span>
                     </div>
                   )}
+                  {isSingle && (
+                    <div className="summary-row">
+                      <span className="k">Modelo sob teste</span>
+                      <span className="v v-mono">
+                        {contestantModel[0] ?? '—'}
+                        {reasoningCompetitor ? ` · effort:${reasoningCompetitor}` : ''}
+                      </span>
+                    </div>
+                  )}
+                  {isSingle && optimize && (rewriterModel[0] || reasoningRewriter) && (
+                    <div className="summary-row">
+                      <span className="k">Reescritor</span>
+                      <span className="v v-mono">
+                        {rewriterModel[0] ?? '(mesmo do gerador)'}
+                        {reasoningRewriter ? ` · effort:${reasoningRewriter}` : ''}
+                      </span>
+                    </div>
+                  )}
                   <div className="summary-row">
                     <span className="k">Gerador</span>
-                    <span className="v v-mono">{useCustomStages ? '— (etapas manuais)' : datagen[0] ?? '—'}</span>
+                    <span className="v v-mono">
+                      {useCustomStages ? '— (etapas manuais)' : datagen[0] ?? '—'}
+                      {!useCustomStages && reasoningDatagen ? ` · effort:${reasoningDatagen}` : ''}
+                    </span>
                   </div>
                   <div className="summary-row">
                     <span className="k">{judge.length > 1 ? `Juízes (${judge.length})` : 'Juiz'}</span>
-                    <span className="v v-mono">{judge.length ? judge.join(', ') : '—'}</span>
+                    <span className="v v-mono">
+                      {judge.length ? judge.join(', ') : '—'}
+                      {reasoningJudge ? ` · effort:${reasoningJudge}` : ''}
+                    </span>
                   </div>
                   <div className="summary-row">
                     <span className="k">Chamadas de modelo</span>
@@ -1936,15 +2150,25 @@ export function NewRun() {
           ) : (
             <span />
           )}
-          {stepId !== 'review' ? (
-            <button type="button" className="btn-primary" onClick={() => goTo(stepIdx + 1)}>
-              Continuar →
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <button
+              type="button"
+              className="btn-secondary"
+              title="Importa uma configuração completa (arena-config@1) e preenche o assistente"
+              onClick={() => configFileRef.current?.click()}
+            >
+              Importar config (JSON)
             </button>
-          ) : (
-            <button type="submit" className="btn-primary" disabled={submitting}>
-              {submitting ? 'Disparando…' : mode === 'training' ? '🚀 Disparar o treino' : '🚀 Disparar os robôs'}
-            </button>
-          )}
+            {stepId !== 'review' ? (
+              <button type="button" className="btn-primary" onClick={() => goTo(stepIdx + 1)}>
+                Continuar →
+              </button>
+            ) : (
+              <button type="submit" className="btn-primary" disabled={submitting}>
+                {submitting ? 'Disparando…' : mode === 'training' ? '🚀 Disparar o treino' : '🚀 Disparar os robôs'}
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </form>

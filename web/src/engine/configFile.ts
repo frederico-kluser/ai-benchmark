@@ -1,0 +1,426 @@
+// Arquivo de CONFIGURAÇÃO do assistente Nova Run (formato 'arena-config@1'): um
+// JSON gerado por uma IA externa que o usuário importa na UI para preencher TUDO
+// de uma vez (modo, modelos, effort, cenários pinados, prompt, toggles).
+//
+// CLIENT-ONLY de propósito: o arquivo espelha o ESTADO DO ASSISTENTE (NewRun) —
+// é a própria UI que o traduz para RunConfig; ele nunca vai ao backend (no modo
+// SPA estática sequer há backend). Por isso mora em web/src/engine, e não em src/.
+//
+// A validação (zod) NUNCA lança exceção: qualquer problema vira uma mensagem de
+// erro em PT-BR legível, para a UI exibir num banner sem derrubar nada.
+
+import { z } from 'zod';
+import { getTechnique } from './techniques';
+import type { ReasoningLevel } from './types';
+
+/** Valor do campo `format` — versão do contrato do arquivo de configuração. */
+export const ARENA_CONFIG_FORMAT = 'arena-config@1';
+
+/** Cenário pinado no arquivo de configuração (vira `scenarioSeed` da run). */
+export interface ArenaConfigScenario {
+  id?: string;
+  question: string; // min 1
+  productContext?: string; // default ''
+  /** A UI preenche os ausentes com `limits.maxOutputTokens`. */
+  maxTokens?: number; // int positivo <= 16000
+  rubric?: string; // default ''
+  /** Gabarito (opcional — a engine gera se ausente). */
+  reference?: string;
+}
+
+/** Contrato do arquivo de configuração importável do assistente Nova Run. */
+export interface ArenaConfigFile {
+  format: 'arena-config@1';
+  mode: 'compare' | 'variation' | 'training';
+  theme: string; // min 1
+  /** Briefing detalhado para guiar o datagen (max 4000). */
+  scenarioBrief?: string;
+  stages?: number; // int 1..50
+  /** Cenários pinados (viram scenarioSeed). */
+  scenarios?: ArenaConfigScenario[];
+  /** text = basePrompt; generateFrom = taskDescription p/ o botão "gerar base" da UI. */
+  prompt?: { text: string; generateFrom?: string };
+  models: {
+    datagen: string;
+    judges: string[]; // min 1
+    reference?: string; // default na prática: judges[0]
+    contestant?: string; // obrigatório em variation/training
+    competitors?: string[]; // compare eixo "modelos distintos" (>=2)
+    competitorConfigs?: { model: string; temperature?: number; reasoning?: ReasoningLevel }[]; // compare eixo "configs" (2..12)
+    rewriter?: string; // otimizador; default na prática: datagen
+  };
+  effort?: {
+    competitor?: ReasoningLevel;
+    judge?: ReasoningLevel;
+    rewriter?: ReasoningLevel;
+    datagen?: ReasoningLevel;
+  };
+  variation?: {
+    optimize?: boolean; // default true
+    techniques?: string[]; // ids validados contra getTechnique — id desconhecido = ERRO
+    manualVariants?: { label: string; systemPrompt: string }[];
+  };
+  training?: {
+    iterations?: number; // int 2..10
+    minGain?: number; // 0..100
+    duels?: boolean;
+    duelTopK?: number; // int 0..32
+    holdoutRatio?: number; // 0..0.5
+    feedbackDriven?: boolean;
+  };
+  judging?: { reference?: boolean; passes?: 1 | 2 };
+  /** Repetições de cada cenário (só compare; separa vencedor real de ruído). */
+  repeats?: number; // int 1..3
+  limits?: { maxOutputTokens?: number; timeoutMs?: number; concurrency?: number }; // int positivos
+  compliance?: { area: string; includeRessalvas: boolean };
+}
+
+// ----------------------------------------------------------------------------
+// parse (validação zod do shape inteiro; nunca lança exceção)
+// ----------------------------------------------------------------------------
+
+const reasoningLevelSchema = z.enum(
+  ['off', 'low', 'medium', 'high', 'max'],
+  "deve ser 'off', 'low', 'medium', 'high' ou 'max'",
+);
+
+// Mensagens inline já citam o nome do campo — o prefixo 'cenário N:' é
+// acrescentado em descreverIssues a partir do path do issue.
+const scenarioSchema = z.object({
+  id: z.string('id deve ser texto').min(1, 'id não pode ser vazio').optional(),
+  question: z.string('question obrigatória').min(1, 'question obrigatória'),
+  productContext: z.string('productContext deve ser texto').default(''),
+  maxTokens: z
+    .number('maxTokens deve ser número inteiro')
+    .int('maxTokens deve ser número inteiro')
+    .positive('maxTokens deve ser maior que zero')
+    .max(16000, 'maxTokens não pode passar de 16000')
+    .optional(),
+  rubric: z.string('rubric deve ser texto').default(''),
+  reference: z.string('reference deve ser texto').optional(),
+});
+
+const modelsSchema = z.object(
+  {
+    datagen: z.string('obrigatório').min(1, 'obrigatório'),
+    judges: z
+      .array(z.string('ids de juiz devem ser texto').min(1, 'id de juiz não pode ser vazio'), 'deve ser uma lista de ids de modelo')
+      .min(1, 'informe ao menos 1 juiz'),
+    // Default na prática: judges[0] (preenchido pela UI).
+    reference: z.string('deve ser texto').min(1, 'não pode ser vazio').optional(),
+    contestant: z.string('deve ser texto').min(1, 'não pode ser vazio').optional(),
+    competitors: z
+      .array(z.string().min(1, 'id de competidor não pode ser vazio'), 'deve ser uma lista de ids de modelo')
+      .min(2, 'informe ao menos 2 competidores')
+      .optional(),
+    competitorConfigs: z
+      .array(
+        z.object(
+          {
+            model: z.string('model obrigatório').min(1, 'model obrigatório'),
+            temperature: z.number('temperature deve ser número').optional(),
+            reasoning: reasoningLevelSchema.optional(),
+          },
+          'cada item deve ser { model, temperature?, reasoning? }',
+        ),
+        'deve ser uma lista de configurações',
+      )
+      .min(2, 'informe ao menos 2 configurações')
+      .max(12, 'não pode passar de 12 configurações')
+      .optional(),
+    // Default na prática: datagen (preenchido pela UI).
+    rewriter: z.string('deve ser texto').min(1, 'não pode ser vazio').optional(),
+  },
+  'models deve ser um objeto com { datagen, judges }',
+);
+
+const arenaConfigSchema = z
+  .object(
+    {
+      format: z.literal(ARENA_CONFIG_FORMAT),
+      mode: z.enum(['compare', 'variation', 'training'], "deve ser 'compare', 'variation' ou 'training'"),
+      theme: z.string('obrigatório').min(1, 'obrigatório'),
+      scenarioBrief: z
+        .string('deve ser texto')
+        .max(4000, 'não pode passar de 4000 caracteres')
+        .optional(),
+      stages: z
+        .number('deve ser número inteiro')
+        .int('deve ser número inteiro')
+        .min(1, 'deve ser ao menos 1')
+        .max(50, 'não pode passar de 50')
+        .optional(),
+      scenarios: z.array(scenarioSchema, 'deve ser uma lista de cenários').optional(),
+      prompt: z
+        .object(
+          {
+            text: z.string('prompt.text obrigatório').min(1, 'prompt.text obrigatório'),
+            generateFrom: z.string('generateFrom deve ser texto').optional(),
+          },
+          'prompt deve ser um objeto com { text }',
+        )
+        .optional(),
+      models: modelsSchema,
+      effort: z
+        .object(
+          {
+            competitor: reasoningLevelSchema.optional(),
+            judge: reasoningLevelSchema.optional(),
+            rewriter: reasoningLevelSchema.optional(),
+            datagen: reasoningLevelSchema.optional(),
+          },
+          'effort deve ser um objeto com níveis de reasoning por papel',
+        )
+        .optional(),
+      variation: z
+        .object(
+          {
+            optimize: z.boolean('deve ser boolean').default(true),
+            techniques: z
+              .array(z.string().min(1, 'id de técnica não pode ser vazio'), 'deve ser uma lista de ids de técnica')
+              .optional(),
+            manualVariants: z
+              .array(
+                z.object(
+                  {
+                    label: z.string('label obrigatório').min(1, 'label obrigatório'),
+                    systemPrompt: z.string('systemPrompt obrigatório').min(1, 'systemPrompt obrigatório'),
+                  },
+                  'cada variante manual deve ser { label, systemPrompt }',
+                ),
+                'deve ser uma lista de variantes',
+              )
+              .optional(),
+          },
+          'variation deve ser um objeto',
+        )
+        .optional(),
+      training: z
+        .object(
+          {
+            // Opcional no arquivo (default 3 na UI); se presente, 2..10.
+            iterations: z
+              .number('deve ser número inteiro')
+              .int('deve ser número inteiro')
+              .min(2, 'deve ser ao menos 2')
+              .max(10, 'não pode passar de 10')
+              .optional(),
+            minGain: z.number('deve ser número').min(0, 'mínimo 0').max(100, 'máximo 100').optional(),
+            duels: z.boolean('deve ser boolean').optional(),
+            duelTopK: z
+              .number('deve ser número inteiro')
+              .int('deve ser número inteiro')
+              .min(0, 'mínimo 0')
+              .max(32, 'máximo 32')
+              .optional(),
+            holdoutRatio: z.number('deve ser número').min(0, 'mínimo 0').max(0.5, 'máximo 0.5').optional(),
+            feedbackDriven: z.boolean('deve ser boolean').optional(),
+          },
+          'training deve ser um objeto',
+        )
+        .optional(),
+      judging: z
+        .object(
+          {
+            reference: z.boolean('deve ser boolean').optional(),
+            passes: z.union([z.literal(1), z.literal(2)], 'deve ser 1 ou 2').optional(),
+          },
+          'judging deve ser um objeto',
+        )
+        .optional(),
+      repeats: z
+        .number('deve ser número inteiro')
+        .int('deve ser número inteiro')
+        .min(1, 'mínimo 1')
+        .max(3, 'máximo 3')
+        .optional(),
+      limits: z
+        .object(
+          {
+            // LIVRE de propósito (sem teto aqui): o teto real de max_tokens é o
+            // da janela do modelo escolhido — o arquivo não deve adivinhá-lo.
+            maxOutputTokens: z
+              .number('deve ser número inteiro')
+              .int('deve ser número inteiro')
+              .positive('deve ser maior que zero')
+              .optional(),
+            timeoutMs: z
+              .number('deve ser número inteiro')
+              .int('deve ser número inteiro')
+              .positive('deve ser maior que zero')
+              .optional(),
+            concurrency: z
+              .number('deve ser número inteiro')
+              .int('deve ser número inteiro')
+              .positive('deve ser maior que zero')
+              .optional(),
+          },
+          'limits deve ser um objeto',
+        )
+        .optional(),
+      compliance: z
+        .object(
+          {
+            area: z.string('obrigatório').min(1, 'obrigatório'),
+            includeRessalvas: z.boolean('includeRessalvas deve ser boolean'),
+          },
+          'compliance deve ser um objeto com { area, includeRessalvas }',
+        )
+        .optional(),
+    },
+    'O arquivo deve ser um objeto de configuração',
+  )
+  .superRefine((cfg, ctx) => {
+    const { mode, models, variation } = cfg;
+
+    // compare: o eixo de competidores é XOR — modelos distintos OU configs.
+    if (mode === 'compare') {
+      const temLista = (models.competitors?.length ?? 0) > 0;
+      const temConfigs = (models.competitorConfigs?.length ?? 0) > 0;
+      if (temLista && temConfigs) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['models'],
+          message: "compare: use 'competitors' OU 'competitorConfigs', nunca os dois",
+        });
+      } else if (!temLista && !temConfigs) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['models'],
+          message: "compare: informe 'competitors' (>=2) ou 'competitorConfigs' (2..12)",
+        });
+      }
+    }
+
+    // variation/training: o modelo sob teste é obrigatório.
+    if (mode !== 'compare' && !models.contestant) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['models', 'contestant'],
+        message: mode === 'variation' ? 'obrigatório no modo variação' : 'obrigatório no modo treino',
+      });
+    }
+
+    // competitorConfigs: a identidade do contestant é a TRIPLA
+    // modelo+temperatura+reasoning — repetir a tripla criaria dois
+    // contestants indistinguíveis no placar.
+    if (models.competitorConfigs) {
+      const vistas = new Set<string>();
+      for (const c of models.competitorConfigs) {
+        const chave = `${c.model}${c.temperature ?? ''}${c.reasoning ?? ''}`;
+        if (vistas.has(chave)) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['models', 'competitorConfigs'],
+            message: `configuração duplicada para '${c.model}' (mesmo modelo, temperatura e reasoning)`,
+          });
+          break;
+        }
+        vistas.add(chave);
+      }
+    }
+
+    if (variation) {
+      // Otimização desligada => as variantes vêm verbatim do arquivo (mínimo 2).
+      if (variation.optimize === false && (variation.manualVariants?.length ?? 0) < 2) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['variation', 'manualVariants'],
+          message: 'com optimize desligado, informe ao menos 2 variantes manuais',
+        });
+      }
+      // Id de técnica desconhecido é ERRO (citando o id) — ignorar em silêncio
+      // daria a falsa impressão de que a técnica foi aplicada.
+      for (const id of variation.techniques ?? []) {
+        if (!getTechnique(id)) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['variation', 'techniques'],
+            message: `técnica desconhecida: '${id}'`,
+          });
+        }
+      }
+    }
+  });
+
+// Converte os issues do zod numa frase PT-BR com o caminho do campo —
+// ex.: 'models.judges: informe ao menos 1 juiz' / 'cenário 2: question
+// obrigatória'. Limita a 3 para não inundar a UI.
+function descreverIssues(error: z.ZodError): string {
+  const partes = error.issues.slice(0, 3).map((iss) => {
+    const [head, idx] = iss.path;
+    if (head === 'scenarios' && typeof idx === 'number') {
+      return `cenário ${idx + 1}: ${iss.message}`;
+    }
+    const caminho = iss.path.map(String).join('.');
+    return caminho ? `${caminho}: ${iss.message}` : iss.message;
+  });
+  const restantes = error.issues.length - partes.length;
+  return restantes > 0 ? `${partes.join('; ')} (+${restantes} erros)` : partes.join('; ');
+}
+
+/**
+ * Valida um JSON lido de arquivo como ArenaConfigFile. Nunca lança: qualquer
+ * problema (não-objeto, format divergente, campo inválido, regra cruzada) vira
+ * `{ ok: false, error }` com mensagem legível em PT-BR.
+ */
+export function parseArenaConfig(
+  json: unknown,
+): { ok: true; config: ArenaConfigFile } | { ok: false; error: string } {
+  // O discriminador `format` é checado à mão ANTES do zod, para garantir a
+  // mensagem exata quando o arquivo não é uma configuração (ou é de outra versão).
+  const formato =
+    json && typeof json === 'object' ? (json as Record<string, unknown>).format : undefined;
+  if (formato !== ARENA_CONFIG_FORMAT) {
+    const desc = typeof formato === 'string' && formato.trim() ? formato : 'desconhecido';
+    return {
+      ok: false,
+      error: `Arquivo não é uma configuração do ai-benchmark (formato ${desc})`,
+    };
+  }
+  const result = arenaConfigSchema.safeParse(json);
+  if (!result.success) return { ok: false, error: descreverIssues(result.error) };
+  return { ok: true, config: result.data };
+}
+
+/**
+ * Resumo de 1 linha da configuração, para o banner de confirmação da UI —
+ * ex.: 'treino · 3 iterações · 6 cenários (4 importados) · 2 técnicas · juiz gpt-x'.
+ */
+export function arenaConfigSummary(config: ArenaConfigFile): string {
+  const partes: string[] = [];
+  partes.push(
+    config.mode === 'training' ? 'treino' : config.mode === 'variation' ? 'variação' : 'comparação',
+  );
+
+  if (config.mode === 'training') {
+    // iterations ausente => default 3 (aplicado pela UI).
+    const n = config.training?.iterations ?? 3;
+    partes.push(`${n} ${n === 1 ? 'iteração' : 'iterações'}`);
+  }
+  if (config.mode === 'compare') {
+    partes.push(
+      config.models.competitorConfigs
+        ? `${config.models.competitorConfigs.length} configs`
+        : `${config.models.competitors?.length ?? 0} modelos`,
+    );
+  }
+
+  // Cenários: total pedido (stages) + quantos vêm pinados do arquivo.
+  const pinados = config.scenarios?.length ?? 0;
+  if (config.stages && pinados) partes.push(`${config.stages} cenários (${pinados} importados)`);
+  else if (config.stages) partes.push(`${config.stages} cenários`);
+  else if (pinados) partes.push(`${pinados} ${pinados === 1 ? 'cenário importado' : 'cenários importados'}`);
+
+  if (config.mode !== 'compare' && config.variation?.optimize === false) {
+    const n = config.variation.manualVariants?.length ?? 0;
+    partes.push(`${n} ${n === 1 ? 'variante manual' : 'variantes manuais'}`);
+  } else {
+    const tecnicas = config.variation?.techniques?.length ?? 0;
+    if (tecnicas) partes.push(`${tecnicas} ${tecnicas === 1 ? 'técnica' : 'técnicas'}`);
+  }
+
+  const juizes = config.models.judges;
+  partes.push(juizes.length === 1 ? `juiz ${juizes[0]}` : `${juizes.length} juízes`);
+  return partes.join(' · ');
+}

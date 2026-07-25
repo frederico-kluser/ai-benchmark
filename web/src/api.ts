@@ -23,6 +23,7 @@ import {
   deletePrompt as engineDeletePrompt,
 } from './engine/promptStore';
 import { parseScenarioPack } from './engine/scenarioPack';
+import { parseArenaConfig, type ArenaConfigFile } from './engine/configFile';
 
 export interface OpenRouterModel {
   id: string;
@@ -656,6 +657,32 @@ export async function readScenarioPackFile(
     return { ok: false, error: 'Arquivo não é um JSON válido' };
   }
   return parseScenarioPack(json);
+}
+
+// -------------- Arquivo de configuração do assistente (arena-config@1) --------------
+
+// Re-exportados do engine para a UI consumir só pela porta única (api.ts).
+// ATENÇÃO: `export { ... } from '...'` NÃO cria binding local neste módulo —
+// por isso parseArenaConfig/ArenaConfigFile também são importados no topo,
+// para uso em readArenaConfigFile.
+export { parseArenaConfig, arenaConfigSummary, ARENA_CONFIG_FORMAT } from './engine/configFile';
+export type { ArenaConfigFile, ArenaConfigScenario } from './engine/configFile';
+
+/**
+ * Lê um arquivo de configuração do assistente Nova Run (input type=file).
+ * Nunca lança: JSON inválido ou config malformada viram `{ ok: false, error }`
+ * em PT-BR, para a UI exibir num banner.
+ */
+export async function readArenaConfigFile(
+  file: File,
+): Promise<{ ok: true; config: ArenaConfigFile } | { ok: false; error: string }> {
+  let json: unknown;
+  try {
+    json = JSON.parse(await file.text());
+  } catch {
+    return { ok: false, error: 'Arquivo não é um JSON válido' };
+  }
+  return parseArenaConfig(json);
 }
 
 // -------------- Cache local (IndexedDB) --------------

@@ -2,7 +2,7 @@
 name: knowledge-frontend
 description: Padrões do frontend React/Vite do ai-benchmark — camada api.ts, cache IndexedDB (v2, com a biblioteca de prompts), o componente ModelSelector, o assistente Nova Run em passos (com compare-llms, pacote de cenários e toggles de evolução), SSE ao vivo (incl. eventos de gabarito/duelos) e design tokens CSS. Use ao adicionar/alterar qualquer coisa em web/src/ (telas, componentes, chamadas de API, estilos).
 metadata:
-  version: 0.3.0
+  version: 0.4.0
   type: knowledge
 ---
 # Frontend — ai-benchmark
@@ -69,10 +69,23 @@ Dev em `:5173` com proxy de `/v1` e `/health` → `:3001` (`vite.config.ts`).
   toggle do **eixo compare-llms** ("Mesmo modelo, configs diferentes"): editor de 2–12 linhas
   `{modelId, temperature, reasoningLevel}` (identidade = a tripla; aviso de duplicada) + stepper
   `repeats` 1–3. Passo Avaliação — toggle **`referenceJudging`** (todos os modos; default ON em
-  variation/training/compare-llms, OFF no compare clássico; vai sempre explícito no config), bloco
+  variation/training/compare-llms, OFF no compare clássico; vai sempre explícito no config; o
+  seletor de **modelo de referência** fica dentro deste card, visível só quando ligado) e bloco
   **"Treino evolutivo"** (só training: `duels`, `duelTopK` 0–32, `minGain` 0–100, `holdoutRatio`
-  0–0.5, `feedbackDriven`) e a seção colapsável **"Avançado"** (reasoning por papel —
-  competidores/juízes/reescritor/gerador — + `referenceModelId`; vazio = não envia).
+  0–0.5 exibido em %, `feedbackDriven`).
+- **Effort (reasoning) por papel fica JUNTO de cada seletor de modelo** (componente local
+  `EffortCard`): competidor (players), reescritor (players, com ModelSelector próprio opcional →
+  `optimizerModelId`), gerador e juízes (eval). O effort da referência é o do juiz. Não há mais
+  seção "Avançado" de reasoning (restou só a de concorrência/timeout).
+- **Max tokens por resposta é input numérico LIVRE** (sem teto na UI; estado string; vazio/inválido
+  → `DEFAULT_MAX_OUTPUT_TOKENS`). O Zod do backend aceita até 1 000 000.
+- **Importar config (JSON)** — botão no `wizard-foot` (todos os passos): lê `arena-config@1`
+  (`readArenaConfigFile`/`parseArenaConfig` de `api.ts` → `engine/configFile.ts`), aplica só os
+  campos presentes (`applyArenaConfig`) e mostra banner com `arenaConfigSummary`. Formato
+  documentado para IA geradora em **`ARENA-CONFIG.md`** (raiz). Cenários do arquivo viram o mesmo
+  estado `pack` do pacote de cenários (`origin: 'import'`).
+- **Treino:** o passo Tema tem o card "Como funciona o treino" (4 bullets do loop + stepper de
+  iterações dentro dele) — iterações não ficam mais no grid genérico.
 
 ## Estilos
 - Tudo em `web/src/styles.css` com tokens `var(--…)` e tema claro/escuro. Reaproveite classes/tokens existentes (ver `knowledge-code-style`).

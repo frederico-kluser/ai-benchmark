@@ -16,7 +16,7 @@
 - **[knowledge-frontend](knowledge-frontend/SKILL.md)** — React + Vite, `api.ts`, IndexedDB v2 (biblioteca de prompts), `ModelSelector`, assistente em passos (compare-llms, pacote de cenários), eventos de gabarito/duelos, design tokens, sem framework de testes.
 - **[knowledge-openrouter](knowledge-openrouter/SKILL.md)** — endpoints públicos vs autenticados, `chatCompletion`, cache de 24h, roteamento de provider/ZDR.
 - **[knowledge-benchmark-modes](knowledge-benchmark-modes/SKILL.md)** — modos `compare`/`variation`/`training` (+ eixo compare-llms), `contestants`, pipeline gerador→competidores→julgamento (referência + duelos, listwise de fallback).
-- **[knowledge-prompt-evolution](knowledge-prompt-evolution/SKILL.md)** — sistema de evolução de prompts: gabarito/refJudge/duelos Copeland, minGain, reflection GEPA, holdout + significância, datagen em lotes, pacote de cenários, reasoning por papel, biblioteca de prompts.
+- **[knowledge-prompt-evolution](knowledge-prompt-evolution/SKILL.md)** — sistema de evolução de prompts: gabarito/refJudge/duelos Copeland, minGain, reflection GEPA, holdout + significância, datagen em lotes, pacote de cenários, reasoning por papel, biblioteca de prompts, arquivo de config arena-config@1 (ARENA-CONFIG.md).
 - **[knowledge-lgpd-compliance](knowledge-lgpd-compliance/SKILL.md)** — filtro consultivo LGPD, base de conhecimento, regeneração do snapshot, gancho de enforcement (fase 2).
 
 ## Tarefa (memória procedural) — terminam com passo `<evolution>`
