@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import type { RunRecord, SessionRecord } from '../api';
+import type { RunRecord, SessionRecord, StageSpec } from '../api';
 import {
   cacheSession,
   fetchSession,
@@ -9,6 +9,9 @@ import {
   getLiveRun,
   subscribeRunLive,
   getConcurrency,
+  savePrompt,
+  buildScenarioPack,
+  downloadScenarioPack,
 } from '../api';
 import { useTheme } from '../theme';
 import { useProcessing } from '../processing';
@@ -115,8 +118,45 @@ function MedalBoard({ record, dark }: { record: RunRecord; dark: boolean }) {
   );
 }
 
-const VERDICT_CELL: Record<string, { glyph: string; bg: string; color: string }> = {
-  resolve: { glyph: '✓', bg: 'var(--ok-soft)', color: 'var(--ok)' },
+/** Classificacao Copeland (duelos) de uma rodada — vem agregada no record
+ *  (`standings`), na ordem em que o orchestrator ranqueou. */
+function CopelandBoard({ record, dark }: { record: RunRecord; dark: boolean }) {
+  const rows = record.standings ?? [];
+  if (!rows.length) return null;
+  // Mesma estetica do quadro de medalhas, com grade propria (pontos/V-E-D/winrate).
+  const grid = { gridTemplateColumns: '54px minmax(0, 1fr) 70px 120px 80px' };
+  return (
+    <div className="card medal-board">
+      <div className="medal-row medal-head" style={grid}>
+        <div>Col.</div>
+        <div>Variante</div>
+        <div title="Pontos Copeland: vitória 1, empate 0.5">Pontos</div>
+        <div title="Vitórias – Empates – Derrotas">V–E–D</div>
+        <div title="Taxa de vitória (empate conta metade)">WinRate</div>
+      </div>
+      {rows.map((row, idx) => (
+        <div className="medal-row" key={row.id} style={grid}>
+          <div>
+            <span className="place-badge" style={{ background: rankColor(idx + 1, rows.length, dark).solid }}>
+              {idx + 1}º
+            </span>
+          </div>
+          <div className="medal-model">
+            {row.label}
+            {row.isControl && <span className="control-tag">controle</span>}
+          </div>
+          <div className="medal-count">{row.points}</div>
+          <div className="medal-count">
+            {row.wins}–{row.ties}–{row.losses}
+          </div>
+          <div className="medal-count">{Math.round(row.winRate * 100)}%</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const VERDICT_CELL: Record<string, { glyph: string; bg: string; color: string }> = {  resolve: { glyph: '✓', bg: 'var(--ok-soft)', color: 'var(--ok)' },
   parcial: { glyph: '◐', bg: 'var(--warn-soft)', color: 'var(--warn)' },
   nao: { glyph: '✕', bg: 'var(--err-soft)', color: 'var(--err)' },
 };
@@ -167,8 +207,9 @@ function VerdictHeatmap({ record }: { record: RunRecord }) {
   );
 }
 
-/** Heatmap de progressao: variante x rodada; celula = colocacao, campea com 🏆. */
-function ProgressionHeatmap({ rounds, dark }: { rounds: RunRecord[]; dark: boolean }) {
+/** Heatmap de progressao: variante x rodada; celula = colocacao, campea com 🏆.
+ *  `holdoutAt` marca a coluna da run de holdout (iteracao N+1 vira "H"). */
+function ProgressionHeatmap({ rounds, dark, holdoutAt }: { rounds: RunRecord[]; dark: boolean; holdoutAt?: number }) {
   const perRound = useMemo(
     () =>
       rounds.map((r) => {
@@ -202,7 +243,13 @@ function ProgressionHeatmap({ rounds, dark }: { rounds: RunRecord[]; dark: boole
         <div className="heat-row head">
           <div className="heat-spacer" />
           {perRound.map((pr) => (
-            <div className="heat-col" key={pr.iteration}>R{pr.iteration + 1}</div>
+            <div
+              className="heat-col"
+              key={pr.iteration}
+              title={pr.iteration === holdoutAt ? 'Rodada de holdout (gate final)' : undefined}
+            >
+              {pr.iteration === holdoutAt ? 'H' : `R${pr.iteration + 1}`}
+            </div>
           ))}
         </div>
         {vars.map((v) => (
@@ -215,7 +262,11 @@ function ProgressionHeatmap({ rounds, dark }: { rounds: RunRecord[]; dark: boole
               const pos = pr.place.get(v.id);
               if (pos === undefined) {
                 return (
-                  <div className="heat-cell-wrap" key={pr.iteration} title={`Rodada ${pr.iteration + 1}: não participou`}>
+                  <div
+                    className="heat-cell-wrap"
+                    key={pr.iteration}
+                    title={`${pr.iteration === holdoutAt ? 'Holdout' : `Rodada ${pr.iteration + 1}`}: não participou`}
+                  >
                     <span className="heat-cell" style={{ background: 'var(--subtle)', color: 'var(--faint)' }}>·</span>
                   </div>
                 );
@@ -226,7 +277,7 @@ function ProgressionHeatmap({ rounds, dark }: { rounds: RunRecord[]; dark: boole
                 <div
                   className="heat-cell-wrap"
                   key={pr.iteration}
-                  title={`${v.label}: ${pos + 1}º na rodada ${pr.iteration + 1}${win ? ' (campeã)' : ''}`}
+                  title={`${v.label}: ${pos + 1}º ${pr.iteration === holdoutAt ? 'no holdout' : `na rodada ${pr.iteration + 1}`}${win ? ' (campeã)' : ''}`}
                 >
                   <span className={`heat-cell ${win ? 'winner' : ''}`} style={{ background: rc.soft, color: rc.text }}>
                     {win ? '🏆' : pos + 1}
@@ -241,17 +292,22 @@ function ProgressionHeatmap({ rounds, dark }: { rounds: RunRecord[]; dark: boole
   );
 }
 
-/** Estudio final: escolher qualquer variante de qualquer rodada, diff vs. original, copiar. */
+/** Estudio final: escolher qualquer variante de qualquer rodada, diff vs.
+ *  original, copiar e salvar na biblioteca local. */
 function BestPromptStudio({
   rounds,
   originalPrompt,
   defaultRunId,
   defaultCid,
+  sessionId,
+  holdoutAt,
 }: {
   rounds: RunRecord[];
   originalPrompt: string;
   defaultRunId?: string;
   defaultCid?: string;
+  sessionId: string;
+  holdoutAt?: number;
 }) {
   const data = useMemo(
     () =>
@@ -268,6 +324,11 @@ function BestPromptStudio({
   const [selCid, setSelCid] = useState<string | undefined>(defaultCid);
   const [showDiff, setShowDiff] = useState(true);
   const [copied, setCopied] = useState(false);
+  const [saveOpen, setSaveOpen] = useState(false);
+  const [saveName, setSaveName] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // Inicializa a selecao quando os dados/defaults chegam.
   useEffect(() => {
@@ -284,11 +345,52 @@ function BestPromptStudio({
   // useMemo antes de qualquer early-return (regras dos hooks).
   const diff = useMemo(() => diffLines(originalPrompt, selPrompt), [originalPrompt, selPrompt]);
 
+  // Trocar de rodada/variante reseta o form e o feedback de salvar.
+  useEffect(() => {
+    setSaveOpen(false);
+    setSaved(false);
+    setSaveError(null);
+  }, [selRunId, selCid]);
+
   function copy() {
     if (!selPrompt) return;
     navigator.clipboard?.writeText(selPrompt).catch(() => undefined);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
+  }
+
+  function openSaveForm() {
+    if (!selRound) return;
+    const tag = selRound.iteration === holdoutAt ? 'holdout' : `it. ${selRound.iteration + 1}`;
+    setSaveName(`Prompt ${selContestant?.label ?? selCid ?? 'variante'} · ${tag}`);
+    setSaveError(null);
+    setSaveOpen(true);
+  }
+
+  async function saveToLibrary() {
+    const name = saveName.trim();
+    if (!selRound || !selPrompt || !name || saving) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await savePrompt({
+        name,
+        text: selPrompt,
+        origin: {
+          kind: 'training',
+          sessionId,
+          runId: selRound.runId,
+          techniqueId: selContestant?.techniqueId,
+          iteration: selRound.iteration,
+        },
+      });
+      setSaved(true);
+      setSaveOpen(false);
+    } catch {
+      setSaveError('Não foi possível salvar na biblioteca.');
+    } finally {
+      setSaving(false);
+    }
   }
 
   if (!selRound) return null;
@@ -310,7 +412,7 @@ function BestPromptStudio({
           >
             {data.map((d) => (
               <option key={d.runId} value={d.runId}>
-                Rodada {d.iteration + 1}
+                {d.iteration === holdoutAt ? 'Holdout' : `Rodada ${d.iteration + 1}`}
               </option>
             ))}
           </select>
@@ -348,10 +450,45 @@ function BestPromptStudio({
           <button className={`tab ${!showDiff ? 'active' : ''}`} onClick={() => setShowDiff(false)}>Prompt</button>
           <button className={`tab ${showDiff ? 'active' : ''}`} onClick={() => setShowDiff(true)}>Diff vs. original</button>
         </div>
-        <button type="button" className="btn-secondary" onClick={copy} disabled={!selPrompt}>
-          {copied ? 'Copiado!' : 'Copiar prompt'}
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button type="button" className="btn-secondary" onClick={openSaveForm} disabled={!selPrompt || saved}>
+            {saved ? 'Salvo ✓' : 'Salvar na biblioteca'}
+          </button>
+          <button type="button" className="btn-secondary" onClick={copy} disabled={!selPrompt}>
+            {copied ? 'Copiado!' : 'Copiar prompt'}
+          </button>
+        </div>
       </div>
+
+      {saveOpen && (
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <input
+            className="input"
+            style={{ flex: '1 1 260px', width: 'auto' }}
+            value={saveName}
+            onChange={(e) => setSaveName(e.target.value)}
+            placeholder="Nome na biblioteca"
+          />
+          <button
+            type="button"
+            className="btn-primary"
+            style={{ fontSize: 14, padding: '10px 18px' }}
+            onClick={saveToLibrary}
+            disabled={saving || !saveName.trim()}
+          >
+            {saving ? 'Salvando…' : 'Salvar'}
+          </button>
+          <button type="button" className="btn-secondary" onClick={() => setSaveOpen(false)}>
+            Cancelar
+          </button>
+        </div>
+      )}
+      {saveError && <div className="banner banner-error" style={{ marginBottom: 0 }}>{saveError}</div>}
+      {saved && (
+        <div className="muted" style={{ fontSize: 13 }}>
+          Salvo ✓ · <Link to="/prompts">ver na biblioteca →</Link>
+        </div>
+      )}
 
       {!selPrompt ? (
         <div className="muted" style={{ fontSize: 13 }}>Esta variante usa o contexto do cenário (sem system prompt próprio).</div>
@@ -371,6 +508,163 @@ function BestPromptStudio({
   );
 }
 
+/** Gates finais do treino (suporte a decisao, nunca bloqueantes): holdout,
+ *  significancia estatistica e convergencia antecipada. Chegam ao vivo pelos
+ *  eventos session.holdout / session.converged e no fetch final da sessao. */
+function GateCards({ session }: { session: SessionRecord }) {
+  const holdout = session.holdout;
+  const sig = session.significance;
+  const converged = session.convergedAtIteration;
+  if (!holdout && sig === undefined && converged == null) return null;
+  const minGain = session.config.minGain ?? 1.0;
+  const signed = (n: number) => `${n >= 0 ? '+' : ''}${n.toFixed(1)}`;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 30 }}>
+      {converged != null && (
+        <div className="banner banner-neutral" style={{ marginBottom: 0 }}>
+          Convergiu na iteração {converged + 1} — o vencedor não superou a margem mínima
+          (minGain {minGain} pp); treino encerrado antes do planejado.
+        </div>
+      )}
+      {holdout && (
+        <div className="card" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <span style={{ fontWeight: 600 }}>Gate de holdout (n={holdout.n})</span>
+          <span style={{ color: 'var(--text-2)' }}>
+            controle {holdout.controlScore.toFixed(1)} vs campeão {holdout.championScore.toFixed(1)} (ganho{' '}
+            {signed(holdout.gain)} pp)
+          </span>
+          {holdout.regressed && <span className="pill pill-error">REGRESSOU</span>}
+        </div>
+      )}
+      {sig !== undefined && (
+        <div className="card" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <span style={{ fontWeight: 600 }}>Significância</span>
+          {sig === null ? (
+            <span style={{ color: 'var(--text-2)' }}>amostra insuficiente (n&lt;5)</span>
+          ) : (
+            <span style={{ color: 'var(--text-2)' }}>
+              Δ médio {signed(sig.meanDiffPp)} pp · IC95% [{sig.ci95Pp[0].toFixed(1)},{' '}
+              {sig.ci95Pp[1].toFixed(1)}] · {sig.pValue < 0.001 ? 'p<0.001' : `p=${sig.pValue.toFixed(3)}`}
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Exportacao do pacote JSON de cenarios+gabaritos (seed importavel em runs
+ *  futuras). Cenarios coletados das runs da sessao, com dedup por pergunta. */
+function ScenarioPackExport({ session }: { session: SessionRecord }) {
+  const [open, setOpen] = useState(false);
+  const [source, setSource] = useState<'champion' | 'base'>('champion');
+  const [scenarios, setScenarios] = useState<StageSpec[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const lastBest = session.bestPromptByIteration[session.bestPromptByIteration.length - 1];
+  const championOk = Boolean(lastBest?.systemPrompt);
+  const effectiveSource = championOk ? source : 'base';
+
+  // Ao abrir, coleta os cenarios de todas as runs da sessao: dedup por pergunta
+  // preferindo a versao COM gabarito; fallback = cenarios pinados da sessao.
+  useEffect(() => {
+    if (!open || scenarios) return;
+    let cancelled = false;
+    setBusy(true);
+    (async () => {
+      const byQuestion = new Map<string, StageSpec>();
+      for (const rid of session.runIds) {
+        try {
+          const run = await fetchRun(rid);
+          for (const st of denseStages(run.stages)) {
+            const spec = st.spec;
+            if (!spec?.question) continue;
+            const prev = byQuestion.get(spec.question);
+            if (!prev || (!prev.reference && spec.reference)) byQuestion.set(spec.question, spec);
+          }
+        } catch {
+          // Run perdida no cache: segue com as demais.
+        }
+      }
+      let list = [...byQuestion.values()];
+      if (!list.length && session.pinnedStages?.length) {
+        list = session.pinnedStages.filter((s) => s.question);
+      }
+      if (!cancelled) {
+        setScenarios(list);
+        setBusy(false);
+      }
+    })().catch(() => {
+      if (!cancelled) {
+        setError('Falha ao coletar os cenários das runs.');
+        setBusy(false);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, scenarios, session]);
+
+  const withRef = (scenarios ?? []).filter((s) => s.reference).length;
+
+  function download() {
+    if (!scenarios?.length) return;
+    const prompt =
+      effectiveSource === 'champion' && lastBest
+        ? { text: lastBest.systemPrompt, source: 'champion' as const, label: `Campeão da iteração ${lastBest.iteration + 1}` }
+        : { text: session.config.basePrompt ?? '', source: 'base' as const, label: 'Prompt base' };
+    downloadScenarioPack(buildScenarioPack({ theme: session.config.theme, prompt, scenarios }));
+  }
+
+  return (
+    <div style={{ marginBottom: 30 }}>
+      <button type="button" className="btn-secondary" onClick={() => setOpen((o) => !o)}>
+        {open ? 'Fechar pacote' : 'Baixar pacote (JSON)'}
+      </button>
+      {open && (
+        <div className="card" style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 14 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: championOk ? 'pointer' : 'not-allowed' }}>
+              <input
+                type="radio"
+                name="pack-prompt"
+                checked={effectiveSource === 'champion'}
+                disabled={!championOk}
+                onChange={() => setSource('champion')}
+              />
+              Campeão (recomendado)
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+              <input type="radio" name="pack-prompt" checked={effectiveSource === 'base'} onChange={() => setSource('base')} />
+              Prompt base
+            </label>
+          </div>
+          <div className="muted" style={{ fontSize: 13 }}>
+            {busy
+              ? 'Coletando cenários das runs…'
+              : scenarios
+                ? `${scenarios.length} cenários (${withRef} com gabarito) serão exportados.`
+                : 'Nenhum cenário disponível.'}
+          </div>
+          {error && <div className="banner banner-error" style={{ marginBottom: 0 }}>{error}</div>}
+          <div>
+            <button
+              type="button"
+              className="btn-primary"
+              style={{ fontSize: 14, padding: '10px 18px' }}
+              onClick={download}
+              disabled={busy || !scenarios?.length}
+            >
+              Baixar
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function TrainingView() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const theme = useTheme();
@@ -382,6 +676,7 @@ export function TrainingView() {
   const [pastRuns, setPastRuns] = useState<Record<string, RunRecord>>({});
   const [fanout, setFanout] = useState<{ limit: number; active: number; queued: number } | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
+  const [promotions, setPromotions] = useState<{ iteration: number; championId: string; gain: number }[]>([]);
   const { setIsProcessing } = useProcessing();
 
   useEffect(() => {
@@ -396,7 +691,15 @@ export function TrainingView() {
     let cancelled = false;
     const refetch = () =>
       fetchSession(sessionId)
-        .then((s) => !cancelled && setSession(s))
+        .then((s) => {
+          if (cancelled) return;
+          setSession(s);
+          // Mesma regra do snapshot: mais runs do que iteracoes concluidas => a
+          // ultima e a corrente (cobre a run de holdout, que NAO emite iteration.started).
+          const doneN = s.bestPromptByIteration.length;
+          const cur = s.runIds.length > doneN ? s.runIds[s.runIds.length - 1] : undefined;
+          if (cur) setCurrentRunId(cur);
+        })
         .catch((e) => !cancelled && setError(e.message));
     refetch();
     const close = openSessionStream(
@@ -427,6 +730,19 @@ export function TrainingView() {
           fetchRun(event.runId)
             .then((r) => !cancelled && setPastRuns((prev) => ({ ...prev, [event.runId]: r })))
             .catch(() => undefined);
+        }
+        if (event.type === 'iteration.promoted') {
+          setPromotions((prev) =>
+            prev.some((p) => p.iteration === event.iteration)
+              ? prev
+              : [...prev, { iteration: event.iteration, championId: event.championId, gain: event.gain }],
+          );
+        }
+        if (event.type === 'session.converged') {
+          setSession((prev) => (prev ? { ...prev, convergedAtIteration: event.iteration } : prev));
+        }
+        if (event.type === 'session.holdout') {
+          setSession((prev) => (prev ? { ...prev, holdout: event.holdout } : prev));
         }
         if (event.type === 'session.finished') void cacheSession(event.record);
         refetch();
@@ -511,11 +827,19 @@ export function TrainingView() {
   const done = session.bestPromptByIteration.length;
   const planned = session.config.iterations ?? 0;
   const isRunning = session.status === 'running';
+  // A run de holdout e marcada com iteracao == planned ("rodada H"): em toda
+  // lista de rodadas ela vira "Holdout", nunca "Rodada N+1".
+  const holdoutAt = planned > 0 ? planned : undefined;
+  const isHoldoutIter = (it: number | null | undefined) => it != null && it === holdoutAt;
   const best = session.bestPromptByIteration.length
     ? session.bestPromptByIteration.reduce((a, b) => (b.score >= a.score ? b : a))
     : undefined;
   const originalPrompt = session.config.basePrompt ?? '';
   const hasRounds = rounds.length > 0;
+  // Rodada mais recente com classificacao Copeland agregada (pode ser o holdout).
+  const copelandRecord = [...rounds].reverse().find((r) => (r.standings?.length ?? 0) > 0);
+  const holdoutRound = holdoutAt !== undefined ? rounds.find((r) => r.iteration === holdoutAt) : undefined;
+  const anyFinished = rounds.some((r) => r.status === 'finished');
 
   return (
     <div className="screen">
@@ -556,14 +880,24 @@ export function TrainingView() {
 
       <PhaseStepper status={session.status} done={done} planned={planned} />
 
+      {/* Log de promocoes (evento iteration.promoted, ao vivo) */}
+      {promotions.length > 0 && (
+        <div className="card" style={{ marginBottom: 24, padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {promotions.map((p) => (
+            <div key={p.iteration} className="muted" style={{ fontSize: 13 }}>
+              It. {p.iteration + 1}: <code className="mono-id">{p.championId}</code> promovido (+{p.gain.toFixed(1)} pp)
+            </div>
+          ))}
+        </div>
+      )}
+
       {isRunning && <FanOutBar fanout={fanout} liveRun={liveRun} />}
 
       {/* Rodada em andamento — quadro de medalhas + heatmap + streaming ao vivo */}
       {isRunning && (
         <>
           <div className="section-label">
-            Rodada {(liveRun?.iteration ?? done) + 1} — ao vivo
-            {analyzing && <span className="inline-status" style={{ marginLeft: 10 }}><span className="spinner" />otimizando o prompt para esta rodada…</span>}
+            {isHoldoutIter(liveRun?.iteration ?? done) ? 'Holdout' : `Rodada ${(liveRun?.iteration ?? done) + 1}`} — ao vivo
           </div>
           {liveRun ? (
             <>
@@ -587,11 +921,30 @@ export function TrainingView() {
         </>
       )}
 
+      {/* Classificacao Copeland da rodada mais recente que a tiver (duelos) */}
+      {copelandRecord && (
+        <>
+          <div className="section-label">
+            Classificação (duelos Copeland)
+            <span className="section-label-note">
+              {' · '}
+              {isHoldoutIter(copelandRecord.iteration) ? 'holdout' : `rodada ${(copelandRecord.iteration ?? 0) + 1}`}
+            </span>
+          </div>
+          <div style={{ marginBottom: 30 }}>
+            <CopelandBoard record={copelandRecord} dark={dark} />
+          </div>
+        </>
+      )}
+
+      {/* Gates finais: holdout, significancia, convergencia antecipada */}
+      <GateCards session={session} />
+
       {/* Evolução entre rodadas (colocação por rodada, campeã com troféu) */}
       {rounds.length > 0 && (
         <>
           <div className="section-label">Evolução por rodada (colocação — 🏆 = campeã que evoluiu)</div>
-          <ProgressionHeatmap rounds={rounds} dark={dark} />
+          <ProgressionHeatmap rounds={rounds} dark={dark} holdoutAt={holdoutAt} />
         </>
       )}
 
@@ -607,7 +960,17 @@ export function TrainingView() {
             originalPrompt={originalPrompt}
             defaultRunId={best?.runId}
             defaultCid={best?.winnerContestantId}
+            sessionId={session.id}
+            holdoutAt={holdoutAt}
           />
+        </>
+      )}
+
+      {/* Pacote JSON de cenarios+gabaritos (seed importavel em runs futuras) */}
+      {anyFinished && (
+        <>
+          <div className="section-label">Exportar cenários (pacote JSON)</div>
+          <ScenarioPackExport session={session} />
         </>
       )}
 
@@ -616,6 +979,20 @@ export function TrainingView() {
       <div className="rounds-list">
         {session.bestPromptByIteration.length === 0 && !liveRun && (
           <div className="card" style={{ color: 'var(--text-3)' }}>Iniciando…</div>
+        )}
+        {holdoutRound && (
+          <div className="iteration-row" key="holdout">
+            <div className="iteration-head">
+              <div className="iteration-title">
+                Holdout
+                <span className="pill pill-training">gate final</span>
+                <span className="iteration-meta">controle (base) vs campeão final</span>
+              </div>
+              <div className="iteration-links">
+                <Link to={`/runs/${holdoutRound.id}`}>abrir run →</Link>
+              </div>
+            </div>
+          </div>
         )}
         {[...session.bestPromptByIteration].reverse().map((it) => (
           <div className="iteration-row" key={it.iteration}>

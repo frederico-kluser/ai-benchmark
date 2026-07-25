@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import type { Contestant, JudgeVerdict, RunRecord, StageRecord } from '../api';
-import { cacheRun, fetchRun, normalizeContestants, openRunStream, runMode } from '../api';
+import type { Contestant, DuelOutcome, JudgeVerdict, RunRecord, StageDuels, StageRecord, StageSpec, Verdict } from '../api';
+import { buildScenarioPack, cacheRun, downloadScenarioPack, fetchRun, normalizeContestants, openRunStream, runMode } from '../api';
 import { useTheme } from '../theme';
 import { useProcessing } from '../processing';
 import {
@@ -35,6 +35,15 @@ function formatMs(ms: number): string {
 function shortModel(id: string): string {
   const slash = id.indexOf('/');
   return slash >= 0 ? id.slice(slash + 1) : id;
+}
+
+// Selo do veredito pointwise vs gabarito (bloco "Veredito vs gabarito").
+const VERDICT_SEAL: Record<Verdict, string> = { resolve: '✓', parcial: '◐', nao: '✕' };
+
+// Placement de duelos: fracionario em empate (ex.: 1.5) — mostra 1 casa so quando precisa.
+function formatPlacement(p: number | undefined): string {
+  if (p === undefined) return '—';
+  return Number.isInteger(p) ? `${p}º` : `${p.toFixed(1)}º`;
 }
 
 // denseStages: movido para ./runShared.
@@ -104,6 +113,16 @@ export function RunView() {
   const [openStage, setOpenStage] = useState<number | null>(null);
   const [tab, setTab] = useState<'resumo' | 'etapas' | null>(null);
   const { setIsProcessing } = useProcessing();
+  // Progresso agregado do julgamento por referencia (eventos `stage.gabarito` /
+  // `duel.progress`) — NUNCA passa pelo reducer: o primeiro vem com stageIndex
+  // -1 (agregado do lote) e o segundo nem stageIndex tem. Fica em estado local
+  // e alimenta o ProcessMonitor.
+  const [gabaritoProgress, setGabaritoProgress] = useState<{ done: number; total: number } | null>(null);
+  const [duelProgress, setDuelProgress] = useState<{ done: number; total: number } | null>(null);
+  // Dialog inline de export do pacote de cenarios (JSON) — so run variation
+  // terminada e com referencias (ver `canExportPack` abaixo).
+  const [packDialogOpen, setPackDialogOpen] = useState(false);
+  const [packSource, setPackSource] = useState<'champion' | 'base'>('champion');
 
   useEffect(() => {
     setIsProcessing(record?.status === 'running');
@@ -112,6 +131,8 @@ export function RunView() {
   useEffect(() => {
     if (!id) return;
     let cancelled = false;
+    setGabaritoProgress(null);
+    setDuelProgress(null);
 
     fetchRun(id)
       .then((r) => !cancelled && setRecord(r))
@@ -127,6 +148,17 @@ export function RunView() {
           return;
         }
         if (event.type === 'run.finished') void cacheRun(event.record);
+        // Ramifica ANTES do applyEvent: progresso agregado nao e uma etapa —
+        // `stage.gabarito` tem stageIndex -1 e `duel.progress` nem stageIndex
+        // tem (o reducer tambem os devolve sem tocar em `stages`, por defesa).
+        if (event.type === 'stage.gabarito') {
+          setGabaritoProgress({ done: event.done, total: event.total });
+          return;
+        }
+        if (event.type === 'duel.progress') {
+          setDuelProgress({ done: event.done, total: event.total });
+          return;
+        }
         setRecord((prev) => prev && applyEvent(prev, event));
       },
       () => {
@@ -153,6 +185,55 @@ export function RunView() {
   // Etapas densas (sem buracos) e ordenadas — base de toda a UI de resultados.
   const stages = useMemo(() => (record ? denseStages(record.stages) : []), [record]);
 
+  // Judge-score vs gabarito por competidor (desc) — so existe em runs com
+  // julgamento por referencia.
+  const judgeScoreRows = useMemo(() => {
+    const scores = record?.judgeScoreByContestant;
+    if (!record || !scores) return [];
+    return contestants
+      .map((c) => ({ id: c.id, label: c.label, isControl: Boolean(c.isOriginal), score: scores[c.id] ?? 0 }))
+      .sort((a, b) => b.score - a.score);
+  }, [record, contestants]);
+
+  // Standings Copeland agregados (duelos) — vazio em runs listwise.
+  const copelandStandings = useMemo(() => record?.standings ?? [], [record]);
+
+  // Cenarios do pacote de export: spec de cada etapa, dedup por question
+  // (repeats/seeds podem repetir a mesma pergunta; o gabarito viaja no spec).
+  const packScenarios = useMemo(() => {
+    const seen = new Set<string>();
+    const out: StageSpec[] = [];
+    for (const s of stages) {
+      const spec = s.spec;
+      if (!spec) continue;
+      const key = spec.question.trim();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(spec);
+    }
+    return out;
+  }, [stages]);
+  const packRefCount = packScenarios.filter((s) => s.reference?.trim()).length;
+
+  // Prompt "campeao" do pacote: maior judge-score entre NAO-controle;
+  // fallback: 1o do standings; fallback: controle.
+  const packChampion = useMemo(() => {
+    if (!record) return undefined;
+    const scores = record.judgeScoreByContestant;
+    if (scores) {
+      const best = contestants
+        .filter((c) => !c.isOriginal && scores[c.id] !== undefined)
+        .sort((a, b) => (scores[b.id] ?? 0) - (scores[a.id] ?? 0))[0];
+      if (best) return best;
+    }
+    const first = record.standings?.[0];
+    if (first) {
+      const c = byId.get(first.id);
+      if (c) return c;
+    }
+    return contestants.find((c) => c.isOriginal) ?? contestants[0];
+  }, [record, contestants, byId]);
+
   if (error) return <div className="screen center-screen"><div className="banner banner-error">{error}</div></div>;
   if (!record) return <div className="screen center-screen"><div className="loading-note">Carregando…</div></div>;
 
@@ -171,6 +252,26 @@ export function RunView() {
   const showScoreboard = hasScoreboard && effectiveTab === 'resumo';
   const showStages = !hasScoreboard || effectiveTab === 'etapas';
   const isSingle = mode !== 'compare';
+  // Pacote de cenarios: SO variation terminada e com referencias. Compare com
+  // referencias NAO exporta aqui — seus contestants sao modelos, sem
+  // systemPrompt proprio, e o schema do pacote exige `prompt.text` nao-vazio
+  // (nao ha "prompt campeao" p/ embutir). Treino exporta pela TrainingView.
+  const canExportPack =
+    record.status === 'finished' && mode === 'variation' && packRefCount > 0 && Boolean(packChampion);
+  const hasBasePrompt = Boolean(record.config.basePrompt?.trim());
+
+  function exportScenarioPack() {
+    if (!record || !packChampion) return;
+    const prompt =
+      packSource === 'base'
+        ? { text: record.config.basePrompt ?? '', source: 'base' as const, label: 'Prompt base' }
+        : { text: packChampion.systemPrompt ?? '', source: 'champion' as const, label: packChampion.label };
+    // O schema do pacote exige prompt.text nao-vazio — sem prompt, nao exporta.
+    if (!prompt.text.trim()) return;
+    const pack = buildScenarioPack({ theme: record.config.theme, prompt, scenarios: packScenarios });
+    downloadScenarioPack(pack);
+    setPackDialogOpen(false);
+  }
 
   return (
     <div className="screen runview">
@@ -224,12 +325,50 @@ export function RunView() {
             <div className="run-stat-label" style={{ marginBottom: 6 }}>Custo total</div>
             <div className="run-cost">{formatUsd(record.totalCostUsd)}</div>
             <div className="export-row">
+              {canExportPack && (
+                <button type="button" className="export-btn" onClick={() => setPackDialogOpen((v) => !v)}>Baixar pacote (JSON)</button>
+              )}
               <button type="button" className="export-btn" onClick={() => download(`run-${record.id}.json`, JSON.stringify(record, null, 2), 'application/json')}>JSON</button>
               <button type="button" className="export-btn" onClick={() => download(`run-${record.id}.csv`, runToCsv(record, byId), 'text/csv;charset=utf-8')}>CSV</button>
             </div>
           </div>
         </div>
       </div>
+
+      {packDialogOpen && canExportPack && packChampion && (
+        <div className="card" style={{ marginBottom: 22 }}>
+          <div className="section-label" style={{ marginBottom: 8 }}>Baixar pacote (JSON)</div>
+          <p className="muted" style={{ fontSize: 13, margin: '0 0 12px' }}>
+            {packScenarios.length} cenários ({packRefCount} com gabarito) + o prompt escolhido —
+            importável como seed numa próxima run.
+          </p>
+          <label style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 6, fontSize: 14 }}>
+            <input
+              type="radio"
+              name="pack-prompt"
+              checked={packSource === 'champion'}
+              onChange={() => setPackSource('champion')}
+            />
+            <span>
+              Melhor variação — <strong>{packChampion.label}</strong>
+            </span>
+          </label>
+          <label style={{ display: 'flex', alignItems: 'baseline', gap: 8, fontSize: 14, color: hasBasePrompt ? undefined : 'var(--text-3)' }}>
+            <input
+              type="radio"
+              name="pack-prompt"
+              disabled={!hasBasePrompt}
+              checked={packSource === 'base'}
+              onChange={() => setPackSource('base')}
+            />
+            <span>Prompt base (controle)</span>
+          </label>
+          <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'flex-end' }}>
+            <button type="button" className="btn-secondary" onClick={() => setPackDialogOpen(false)}>Cancelar</button>
+            <button type="button" className="btn-primary" onClick={exportScenarioPack}>Baixar</button>
+          </div>
+        </div>
+      )}
 
       {record.status === 'error' && record.error && (
         <div className="banner banner-error"><strong>A run falhou:</strong> {record.error}</div>
@@ -242,7 +381,9 @@ export function RunView() {
 
       {isSingle && <ContestantsPanel contestants={contestants} />}
 
-      {isRunning && <ProcessMonitor record={record} totalCompetitors={totalCompetitors} />}
+      {isRunning && (
+        <ProcessMonitor record={record} totalCompetitors={totalCompetitors} gabarito={gabaritoProgress} duelos={duelProgress} />
+      )}
 
       {!isRunning && hasScoreboard && (
         <div className="run-tabs-bar">
@@ -328,6 +469,63 @@ export function RunView() {
               ))}
             </div>
           </div>
+          {judgeScoreRows.length > 0 && (
+            <>
+              <div className="section-label">Judge-score vs gabarito (0–100)</div>
+              <div className="score-card">
+                <div className="score-head" style={{ gridTemplateColumns: 'minmax(0, 1fr) 110px' }}>
+                  <div>{isSingle ? 'Variante' : 'Modelo'}</div>
+                  <div>Judge-score</div>
+                </div>
+                {judgeScoreRows.map((row) => (
+                  <div className="score-row" key={row.id} style={{ gridTemplateColumns: 'minmax(0, 1fr) 110px' }}>
+                    <div className="score-model">
+                      {row.label}
+                      {row.isControl && <span className="control-tag" style={{ marginLeft: 8 }}>controle</span>}
+                    </div>
+                    <div className="score-points">{row.score.toFixed(1)}</div>
+                  </div>
+                ))}
+                <div className="score-foot">
+                  Judge-score = (resolve + 0,5 × parcial) / total × 100, sobre as etapas com gabarito.
+                </div>
+              </div>
+            </>
+          )}
+
+          {copelandStandings.length > 0 && (
+            <>
+              <div className="section-label">Classificação Copeland (duelos)</div>
+              <div className="score-card">
+                <div className="score-head" style={{ gridTemplateColumns: '54px minmax(0, 1fr) 76px 96px 80px' }}>
+                  <div>Col.</div>
+                  <div>{isSingle ? 'Variante' : 'Modelo'}</div>
+                  <div>Pontos</div>
+                  <div>V-E-D</div>
+                  <div>Win rate</div>
+                </div>
+                {copelandStandings.map((s, idx) => (
+                  <div className="score-row" key={s.id} style={{ gridTemplateColumns: '54px minmax(0, 1fr) 76px 96px 80px' }}>
+                    <div>
+                      <span className="place-badge" style={{ background: rankColor(idx + 1, copelandStandings.length, dark).solid }}>
+                        {idx + 1}º
+                      </span>
+                    </div>
+                    <div className="score-model">
+                      {s.label}
+                      {s.isControl && <span className="control-tag" style={{ marginLeft: 8 }}>controle</span>}
+                    </div>
+                    <div className="score-points">{s.points}</div>
+                    <div className="score-num">{s.wins}-{s.ties}-{s.losses}</div>
+                    <div className="score-num">{Math.round(s.winRate * 100)}%</div>
+                  </div>
+                ))}
+                <div className="score-foot">
+                  Copeland dos duelos pairwise: vitória 1 ponto, empate 0,5. V-E-D = vitórias–empates–derrotas.
+                </div>
+              </div>
+            </>
+          )}
         </>
       )}
 
@@ -342,6 +540,7 @@ export function RunView() {
               key={stage.index}
               stage={stage}
               byId={byId}
+              contestants={contestants}
               open={openStage === stage.index}
               onToggle={() => toggleStage(stage.index)}
               totalCompetitors={totalCompetitors}
@@ -407,6 +606,7 @@ function ContestantsPanel({ contestants }: { contestants: Contestant[] }) {
 function StageCard({
   stage,
   byId,
+  contestants,
   open,
   onToggle,
   totalCompetitors,
@@ -417,6 +617,8 @@ function StageCard({
 }: {
   stage: StageRecord;
   byId: Map<string, Contestant>;
+  /** Contestants na ordem da run — dirige o bloco "Veredito vs gabarito". */
+  contestants: Contestant[];
   open: boolean;
   onToggle: () => void;
   totalCompetitors: number;
@@ -429,6 +631,10 @@ function StageCard({
   onNext?: () => void;
 }) {
   const judge = stage.judge;
+  // Julgamento por referencia (quando a etapa tem gabarito): veredito pointwise
+  // por competidor + duelos Copeland. Extraidos p/ const p/ narrowing no JSX.
+  const refJudge = stage.referenceJudge;
+  const stageDuels = stage.duels;
   const ranking = judge?.rankedContestantIds ?? [];
   const blindMap = judge?.blindMap ?? {};
   const contestantToLetter: Record<string, string> = {};
@@ -519,6 +725,12 @@ function StageCard({
                   <pre className="context-pre">{stage.spec.rubric}</pre>
                 </div>
               )}
+              {stage.spec.reference?.trim() && (
+                <div className="stage-block">
+                  <div className="label-mini">Gabarito (resposta de referência)</div>
+                  <pre className="context-pre">{stage.spec.reference}</pre>
+                </div>
+              )}
             </>
           )}
 
@@ -557,6 +769,33 @@ function StageCard({
                   Respostas enviadas ao juiz — aguardando ranking às cegas…
                 </div>
               )}
+            </div>
+          )}
+
+          {refJudge && (
+            <div className="stage-block">
+              <div className="label-mini">
+                Veredito vs gabarito · {shortModel(refJudge.judgeModelId)}
+              </div>
+              <div className="judge-verdicts" style={{ marginTop: 8 }}>
+                {contestants.map((c) => {
+                  const v = refJudge.verdictByContestant[c.id];
+                  const meta = v ? VERDICT_META[v] : undefined;
+                  const explanation = refJudge.explanationByContestant[c.id];
+                  return (
+                    <div className="judge-verdict" key={c.id}>
+                      <span className={`verdict-dot ${meta?.cls ?? 'bad'}`} />
+                      <span className="judge-verdict-model">{c.label}</span>
+                      {v && meta && (
+                        <span className={`verdict-pill ${meta.cls}`}>
+                          {VERDICT_SEAL[v]} {meta.label}
+                        </span>
+                      )}
+                      <span className="judge-verdict-motivo">{explanation || '—'}</span>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
 
@@ -626,8 +865,100 @@ function StageCard({
               })}
             </div>
           )}
+
+          {stageDuels && <DuelsPanel duels={stageDuels} byId={byId} dark={dark} />}
         </div>
       )}
+    </div>
+  );
+}
+
+// Painel de auditoria dos duelos pairwise da etapa (Copeland): tabela de
+// placements + lista expansivel com as DUAS ordens de cada duelo (desacordo
+// entre ordens = empate). So e montado quando a etapa tem `duels` — runs
+// listwise (sem gabarito) ficam como estao.
+function DuelsPanel({
+  duels,
+  byId,
+  dark,
+}: {
+  duels: StageDuels;
+  byId: Map<string, Contestant>;
+  dark: boolean;
+}) {
+  const [open, setOpen] = useState<Set<number>>(new Set());
+  const labelOf = (id: string) => byId.get(id)?.label ?? id;
+  const total = duels.order.length;
+  function toggle(i: number) {
+    setOpen((prev) => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i);
+      else next.add(i);
+      return next;
+    });
+  }
+  // Vencedor de UMA ordem do duelo, com label real ('tie' = empate).
+  const winnerLabel = (d: DuelOutcome, w: 'a' | 'b' | 'tie') =>
+    w === 'tie' ? 'empate' : labelOf(w === 'a' ? d.a : d.b);
+  return (
+    <div className="stage-block">
+      <div className="label-mini">
+        Duelos (Copeland){duels.topK > 0 ? ` · bracket top ${duels.topK}` : ' · round-robin completo'}
+      </div>
+      <div className="score-card" style={{ marginTop: 8, marginBottom: duels.duels.length ? 12 : 0 }}>
+        <div className="score-head" style={{ gridTemplateColumns: '54px minmax(0, 1fr) 76px' }}>
+          <div>Pos.</div>
+          <div>Competidor</div>
+          <div>Pontos</div>
+        </div>
+        {duels.order.map((id) => {
+          const placement = duels.placementByContestant[id];
+          return (
+            <div className="score-row" key={id} style={{ gridTemplateColumns: '54px minmax(0, 1fr) 76px' }}>
+              <div>
+                <span className="place-badge" style={{ background: rankColor(placement ?? total, total, dark).solid }}>
+                  {formatPlacement(placement)}
+                </span>
+              </div>
+              <div className="score-model">{labelOf(id)}</div>
+              <div className="score-num">{duels.points[id] ?? 0}</div>
+            </div>
+          );
+        })}
+      </div>
+      {duels.duels.map((d, i) => (
+        <div className="contestant-row" key={`${d.a}-${d.b}-${i}`}>
+          <button type="button" className="contestant-head" onClick={() => toggle(i)}>
+            <span className="contestant-label">
+              {labelOf(d.a)} × {labelOf(d.b)}
+            </span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span className={`stage-badge ${d.outcome === 'tie' ? 'b-neutral' : 'b-ok'}`}>
+                {d.outcome === 'tie' ? 'Empate' : `Venceu: ${winnerLabel(d, d.outcome)}`}
+              </span>
+              <span className={`stage-caret ${open.has(i) ? 'open' : ''}`}>▶</span>
+            </span>
+          </button>
+          {open.has(i) && (
+            <div className="judge-verdicts" style={{ padding: '4px 14px 12px', marginBottom: 0 }}>
+              <div className="judge-verdict">
+                <span className="judge-verdict-model">Ordem 1</span>
+                <span className="judge-verdict-motivo">
+                  <strong>{winnerLabel(d, d.order1.winner)}</strong>
+                  {d.order1.explanation ? ` — ${d.order1.explanation}` : ''}
+                </span>
+              </div>
+              <div className="judge-verdict">
+                <span className="judge-verdict-model">Ordem 2</span>
+                <span className="judge-verdict-motivo">
+                  <strong>{winnerLabel(d, d.order2.winner)}</strong>
+                  {d.order2.explanation ? ` — ${d.order2.explanation}` : ''}
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+      ))}
     </div>
   );
 }

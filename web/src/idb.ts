@@ -3,8 +3,12 @@
 // servidor não as tiver mais. Degrada para no-op se o IndexedDB estiver indisponível.
 
 const DB_NAME = 'benchmark-arena';
-const DB_VERSION = 1;
-export const STORES = ['runs', 'sessions', 'runSummaries', 'sessionSummaries'] as const;
+// v2: adiciona a store 'prompts' (biblioteca de prompts salvos/evoluídos).
+// O upgrade de clientes existentes já está coberto: o onupgradeneeded itera
+// STORES e cria apenas as stores que faltam, então quem vem da v1 ganha a
+// store nova sem perder os dados das demais.
+const DB_VERSION = 2;
+export const STORES = ['runs', 'sessions', 'runSummaries', 'sessionSummaries', 'prompts'] as const;
 export type Store = (typeof STORES)[number];
 
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -85,5 +89,20 @@ export async function idbGetAll<T>(store: Store): Promise<T[]> {
     return (await reqProm<T[]>(tx.objectStore(store).getAll() as IDBRequest<T[]>)) ?? [];
   } catch {
     return [];
+  }
+}
+
+export async function idbDelete(store: Store, key: string): Promise<void> {
+  try {
+    const db = await openDb();
+    const tx = db.transaction(store, 'readwrite');
+    tx.objectStore(store).delete(key);
+    await new Promise<void>((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    });
+  } catch {
+    /* idb indisponível — degrada silenciosamente */
   }
 }

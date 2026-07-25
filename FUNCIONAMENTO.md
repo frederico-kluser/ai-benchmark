@@ -12,6 +12,12 @@ sequenciais hoje e poderiam ser paralelizados/otimizados**.
 > **listwise** e há um **limitador global adaptativo** em `openrouter.ts`. As seções abaixo
 > refletem esse estado; a análise de "o que era sequencial" fica como histórico/racional.
 >
+> **Status (2026-07, port do prompt-arena):** o julgamento default passou a ser **por referência**
+> (gabarito temp-0 por cenário + juiz **pointwise** com vereditos resolve/parcial/não + **duelos
+> Copeland** top-K), com o listwise como **fallback**; o treino ganhou promoção por margem
+> (`minGain`), reflection GEPA determinístico (a LLM `analyzeIteration` foi **removida**), holdout
+> e significância bootstrap. As seções de etapa e de treino abaixo já refletem esse fluxo.
+>
 > Este mesmo pipeline foi **portado para o navegador** (`web/src/engine/`) no modo client-side
 > (SPA estática) — a mecânica das etapas é idêntica; muda só onde roda. Ver o README.
 
@@ -42,13 +48,13 @@ sequenciais hoje e poderiam ser paralelizados/otimizados**.
 | **Etapa** (*stage*) | Um mini-benchmark auto-contido: 1 cenário + respostas + julgamento | `StageRecord`, `StageSpec` |
 | **Contestant** | Um participante. Em compare = um modelo; em variation/training = o mesmo modelo com um *system prompt* diferente | `Contestant` |
 | **Datagen** | Modelo que gera o cenário da etapa (pergunta + contexto + maxTokens) | `datagen.ts` |
-| **Juiz** | Ranqueia as respostas às cegas (torneio pairwise) | `judge.ts` |
-| **Avaliador** | Diz, por resposta, se é "aceitável para o trabalho" | `evaluator.ts` |
+| **Juiz** | Ranqueia as respostas às cegas — por **referência** (vereditos pointwise + duelos Copeland) ou **listwise** (fallback) | `refJudge.ts` / `duels.ts` / `judge.ts` |
+| **Gabarito** | Resposta de referência (temp 0) gerada por cenário; régua do juiz pointwise | `gabarito.ts` |
 | **Optimizer** | Modelo que reescreve prompts aplicando técnicas (variation/training) | `variator.ts` |
 
 Papéis de modelo numa run: **participantes** (competidores/contestant) + **gerador** (`datagenModelId`)
-+ **juiz** (`judgeModelId`, que acumula ranking **e** avaliação) + **optimizer** (`optimizerModelId`,
-default = gerador).
++ **juízes** (`judgeModelIds`, que acumulam ranking **e** vereditos) + **optimizer** (`optimizerModelId`,
+default = gerador) + **referência** (`referenceModelId`, default = 1º juiz — gera o gabarito).
 
 ---
 
@@ -61,12 +67,13 @@ os cenários são pré-gerados juntos (fase 1) e depois todas as etapas executam
 ```mermaid
 flowchart TB
   subgraph Etapa i
-    DG[1 · Datagen<br/>gera o cenário<br/>1 chamada LLM · 2 tentativas] --> CMP
+    DG[1 · Datagen em lotes<br/>gera o cenário<br/>temp 0.8 · dedup ROUGE-L] --> CMP
     CMP{2 · Participantes respondem<br/>streaming · cap = concurrency} --> JE
-    subgraph JE [3 · Julgamento — em paralelo]
+    subgraph JE [3 · Julgamento por referência — default]
       direction LR
-      J[Juiz: torneio pairwise<br/>C·N,2· confrontos] 
-      E[Avaliador: aceitabilidade<br/>1 chamada listwise]
+      G[Gabarito temp 0<br/>1 chamada/etapa] --> R
+      R[Juiz pointwise vs gabarito<br/>vereditos resolve/parcial/não] --> D
+      D[Duelos Copeland top-K<br/>2 ordens por par]
     end
   end
   JE --> SB[(Placar += pontos<br/>Custo += tokens)]
@@ -75,23 +82,31 @@ flowchart TB
 
 Passo a passo (`runLoop`):
 
-1. **Datagen** (`generateStage`): 1 chamada ao modelo gerador, em JSON-mode, com **2 tentativas** e
-   timeout estendido `max(timeoutMs, 90s)`. Produz `{ question, productContext, maxTokens }`. Se
-   falhar nas 2 tentativas, a **etapa é pulada** (`stage.failed`) — a run nunca trava.
+1. **Datagen** (`generateStages`): os cenários são pré-gerados em **lotes paralelos**
+   (`batchCount = clamp(ceil(n/4), 1, 8)`, temp 0.8), com dedup exato + ROUGE-L 0.7 e 1 backfill.
+   Um `scenarioBrief` opcional guia a distribuição; um `scenarioSeed` (pacote importado) entra
+   primeiro e nunca é deduplicado. Se a geração de uma etapa falhar, a **etapa é pulada**
+   (`stage.failed`) — a run nunca trava.
 2. **Participantes** (`runCompetitor`): cada contestant responde **em streaming** ao mesmo cenário
    (`productContext` vira o *system prompt*, salvo override do contestant; `question` é a mensagem do
    usuário). Rodam **em paralelo com teto** (`runWithLimit(tasks, concurrency)`). `maxTokens` efetivo
    = `min(maxOutputTokens, maxTokens do datagen)`. Cada competidor tem **1 retry** (sequencial).
    Falha → `status: 'error'` (resposta vazia) e segue.
-3. **Juiz + Avaliador** (`Promise.allSettled`, em paralelo):
-   - **Juiz** (`judgeStage`): **torneio round-robin pairwise** (Copeland). Para N respostas válidas,
-     gera **C(N,2) = N·(N−1)/2 confrontos**; cada confronto é 1 chamada (ou 2, se `judgePasses: 2`).
-     Confrontos rodam em paralelo com teto (hardcoded `concurrency = 6`). Pairwise é mais confiável
-     que listwise quando as respostas são parecidas (caso do variation).
-   - **Avaliador** (`evaluateStage`): **1 chamada listwise** que classifica cada resposta como
-     aceitável/não. Respostas com erro/vazias já são "não aceitáveis" sem gastar LLM.
-4. **Agregação**: `applyScoreboard` soma pontos (1º = N−1, … último = 0); custo acumula. Persiste o
-   record e emite `stage.judged`.
+3. **Julgamento** (por etapa):
+   - **Por referência (default fora do compare clássico):** um **gabarito** temp-0 é gerado por
+     cenário (`gabarito.ts`, modelo = `referenceModelId ?? judgeModelIds[0]`); o juiz **pointwise**
+     (`refJudge.ts`) classifica cada resposta isoladamente contra o gabarito em
+     `resolve/parcial/nao` (multi-juiz agrega por média ordinal) e os melhores vão a **duelos
+     Copeland** top-K (`duels.ts`, bracket default 5 com o controle sempre dentro; cada par julgado
+     nas **2 ordens**, desacordo = empate; shuffle semeado FNV-1a+mulberry32). Do resultado é
+     **sintetizado um `JudgeResult`** (ranking = ordem Copeland; aceitável = veredito ≠ `nao`) que
+     mantém placar/medalhas/UI inalterados.
+   - **Listwise (fallback):** etapa sem gabarito (ou compare clássico) usa o `judge.ts` clássico —
+     1 chamada por juiz (ou 2 passes em ordens opostas) devolvendo ranking + veredito ternário por
+     resposta. A run nunca trava: sem gabarito e sem juiz, a etapa fica inconclusiva.
+4. **Agregação**: `applyScoreboard` soma pontos (1º = N−1, … último = 0; referência pontua 1×,
+   listwise pontua por juiz); custo acumula. Persiste o record e emite `stage.judged` (com
+   `stage.gabarito`/`stage.dueled`/`duel.progress` antes, no fluxo por referência).
 
 > **Cego (blind):** antes do juiz/avaliador as respostas são embaralhadas e rotuladas `A, B, C…`.
 > O `blindMap` guarda a correspondência só para a UI exibir "(era A)".
@@ -131,25 +146,43 @@ o pipeline de etapa acima é o mesmo.
 ```mermaid
 flowchart TB
   I0[Iteração 0<br/>generateContestants base] --> R0[Run completa<br/>loop de etapas]
-  R0 --> PIN[Pina os cenários<br/>·pinnedStages·]
-  R0 --> W0[pickWinner]
+  R0 --> PIN[Pina os cenários ·pinnedStages·<br/>+ split de holdout intercalado]
+  R0 --> W0[pickWinner<br/>margem ·minGain· sobre o controle]
   PIN --> R1
-  W0 -->|vencedora = base| AN[analyzeIteration<br/>critica acionável]
-  AN --> GC[generateContestants<br/>base = vencedora + hint + carry]
+  W0 -->|promovida ·gain ≥ minGain·| LS[buildLessons GEPA<br/>até 8 falhas da campeã]
+  W0 -->|sem margem| CV[·convergedAtIteration·<br/>session.converged + break]
+  LS --> GC[generateContestants<br/>base = campeã + lições + carry]
   GC --> R1[Run da iteração i<br/>·cenários pinados, sem datagen·]
-  R1 --> WI[pickWinner] -->|semente da próxima| AN
-  R1 -.->|repete até N| AN
+  R1 --> WI[pickWinner] -->|semente da próxima| LS
+  WI -->|sem margem| CV
+  CV --> H[Run de holdout<br/>controle × campeão · piso 5 cenários]
+  H --> SIG[pairedSignificance<br/>bootstrap pareado 2000 · seed 1337]
 ```
 
 Características:
 
 - **Iteração 0** gera as variantes a partir do base, roda a run e **pina os cenários**
   (`pinnedStages`) — assim **todas as iterações usam as mesmas perguntas** (comparação justa) e o
-  **datagen roda só uma vez na sessão**.
-- **Iterações ≥ 1**: `analyzeIteration` (1 chamada ao optimizer) gera uma crítica acionável do prompt
-  vencedor; `generateContestants` então deriva novas variantes da **vencedora** (+ a vencedora levada
+  **datagen roda só uma vez na sessão**. No pino já é feito o **split de holdout** (`holdoutRatio`
+  default 0.2, intercalado e determinístico; **piso de 5 cenários** — abaixo disso o holdout é
+  descartado e tudo vira treino). O holdout fica só em memória até o fim da sessão.
+- **Iterações ≥ 1**: o feedback é o **reflection GEPA determinístico** (`buildLessons`): até **8**
+  etapas em que a campeã não deu `resolve` viram lições curtas injetadas pelo variator em
+  **`<licoes_da_iteracao_anterior>`** (cap 4000 chars; `feedbackDriven: false` desliga). A antiga
+  chamada LLM **`analyzeIteration` foi removida** — e o evento `iteration.analyzing` **não é mais
+  emitido**. `generateContestants` então deriva novas variantes da **campeã** (+ a campeã levada
   *verbatim* como `carry` + o controle original). A run usa os cenários pinados (**pula o datagen**).
-- **`pickWinner`**: mais pontos → mais etapas aceitáveis → ordem. A vencedora é a semente da próxima.
+- **`pickWinner` com margem** (`rank.ts`): ranking por **judge-score** (vereditos vs gabarito:
+  `(resolve + 0,5·parcial)/total × 100`) → posição média nos duelos → menos erros → prompt mais
+  curto. A promoção só acontece se o ganho sobre o controle (`original` na it. 0, `carry` nas
+  demais) for **≥ `minGain`** (default **1** p.p.). Promovida → evento `iteration.promoted`;
+  **sem margem → `convergedAtIteration` + `session.converged` + break** (vale já na iteração 0).
+- **Gate final** (nunca derruba a sessão): se houver campeão diferente do base e holdout ≥ 5,
+  roda **1 run extra** (marcador `iteration = config.iterations`, contestants `holdout-control` ×
+  `holdout-champion` nos cenários de holdout) → `session.holdout {n, controlScore, championScore,
+  gain, regressed}`; em seguida `pairedSignificance` (`stats.ts` — bootstrap pareado de **2000**
+  iterações, seed **1337**, **n ≥ 5**) grava `session.significance {n, meanDiffPp, ci95Pp, pValue}`.
+  Sem run de holdout, a significância tenta parear base × campeão na última run (ou vira `null`).
 - As **iterações são sequenciais por dependência de dados** (cada uma precisa da vencedora anterior).
 
 ---
@@ -159,15 +192,19 @@ Características:
 | Onde | Como | Limite |
 |---|---|---|
 | **Etapas (todas)** | `Promise.all` sobre as etapas (fase 2) | semáforo global |
-| **Datagen (todos os cenários)** | `Promise.all` na pré-geração (fase 1) | semáforo global |
+| **Datagen (lotes de cenários)** | `Promise.all` na pré-geração em lotes (fase 1) | semáforo global |
+| **Gabaritos (1 por etapa)** | `Promise.all` na fase de referências | semáforo global |
 | Participantes de uma etapa | `Promise.all` (sem cap local) | semáforo global |
-| Juiz × Avaliador | `Promise.allSettled([...])` | os dois juntos |
-| **Passes do juiz (judgePasses=2)** | `Promise.all` (2 ordens listwise) | semáforo global |
+| **Juiz pointwise (juiz × competidor)** | `Promise.all` (1 chamada por par) | semáforo global |
+| **Duelos (pares × 2 ordens)** | `Promise.all` dentro do bracket top-K | semáforo global |
+| **Passes do juiz listwise (judgePasses=2, fallback)** | `Promise.all` (2 ordens) | semáforo global |
 | Variantes por técnica (variator) | `Promise.all(techniques.map(...))` | semáforo global |
 
 Tudo é gateado por **um único limitador global adaptativo** (`openrouter.ts`): cresce até o
 OpenRouter recusar (429), recua pela metade e volta a crescer (AIMD), com retry/backoff. O juiz
-passou de **torneio pairwise O(N²)** para **listwise** (1–2 chamadas por etapa).
+passou de **torneio pairwise O(N²)** para **listwise** (1–2 chamadas por etapa) e, no port do
+prompt-arena, para **julgamento por referência** como default: gabarito + pointwise (1 chamada por
+juiz × competidor) + duelos Copeland restritos ao bracket top-K (não mais round-robin completo).
 
 ---
 
@@ -336,5 +373,6 @@ fácil e consistente.
 - **Training continua sequencial entre iterações** por dependência de dados — nenhuma otimização muda
   isso; o ganho lá está **dentro** de cada iteração (item 3).
 - Os achados acima refletem o código em `src/orchestrator.ts`, `trainer.ts`, `variator.ts`,
-  `competitor.ts`, `judge.ts`, `datagen.ts`, `evaluator.ts` — reconfira ao evoluir o pipeline. Vale
+  `competitor.ts`, `judge.ts`, `datagen.ts` e os módulos de evolução (`gabarito.ts`, `refJudge.ts`,
+  `duels.ts`, `rank.ts`, `holdout.ts`, `stats.ts`) — reconfira ao evoluir o pipeline. Vale
   destilar este conhecimento na skill [`knowledge-benchmark-modes`](./.agents/skills/knowledge-benchmark-modes/SKILL.md).

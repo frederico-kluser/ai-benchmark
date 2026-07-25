@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import ReactDOM, { createPortal } from 'react-dom';
+import { createPortal } from 'react-dom';
+import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Routes, Route, NavLink, useNavigate, Navigate } from 'react-router-dom';
 import { NewRun } from './pages/NewRun';
 import { RunView } from './pages/RunView';
@@ -7,6 +8,7 @@ import { RunsList } from './pages/RunsList';
 import { TrainingView } from './pages/TrainingView';
 import { KeyGate } from './components/KeySetup';
 import { SettingsPage } from './pages/Settings';
+import { PromptsPage } from './pages/PromptsPage';
 import { HelpModal } from './components/HelpModal';
 import { ThemeContext, type Theme, persistTheme, applyTheme } from './theme';
 import { HelpContext, markFirstOpen, type HelpTutorial } from './help';
@@ -72,6 +74,7 @@ function Layout({ children }: { children: React.ReactNode }) {
                           <div className="nav-menu-pop">
                             <NavLink to="/new" className="nav-link" onClick={() => setMenuOpen(false)}>Nova Run</NavLink>
                             <NavLink to="/runs" className="nav-link" onClick={() => setMenuOpen(false)}>Histórico</NavLink>
+                            <NavLink to="/prompts" className="nav-link" onClick={() => setMenuOpen(false)}>Prompts</NavLink>
                             <NavLink to="/settings" className="nav-link" onClick={() => setMenuOpen(false)}>Configurações</NavLink>
                           </div>
                         </>,
@@ -80,6 +83,7 @@ function Layout({ children }: { children: React.ReactNode }) {
                   </div>
                   <NavLink to="/new" className="nav-link nav-link-desktop">Nova Run</NavLink>
                   <NavLink to="/runs" className="nav-link nav-link-desktop">Histórico</NavLink>
+                  <NavLink to="/prompts" className="nav-link nav-link-desktop">Prompts</NavLink>
                   <NavLink to="/settings" className="nav-link nav-link-desktop">Configurações</NavLink>
                   <span className="nav-divider nav-link-desktop" />
                   <button
@@ -102,7 +106,7 @@ function Layout({ children }: { children: React.ReactNode }) {
   );
 }
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
+createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <BrowserRouter>
       <Layout>
@@ -113,6 +117,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
           <Route path="/runs" element={<RunsList />} />
           <Route path="/runs/:id" element={<RunView />} />
           <Route path="/training/:sessionId" element={<TrainingView />} />
+          <Route path="/prompts" element={<PromptsPage />} />
         </Routes>
       </Layout>
     </BrowserRouter>

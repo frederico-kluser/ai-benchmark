@@ -158,9 +158,15 @@ export function medalStandings(record: RunRecord): MedalStanding[] {
 export function ProcessMonitor({
   record,
   totalCompetitors,
+  gabarito,
+  duelos,
 }: {
   record: RunRecord;
   totalCompetitors: number;
+  /** Progresso agregado da geracao de gabaritos (evento `stage.gabarito`). */
+  gabarito?: { done: number; total: number } | null;
+  /** Progresso agregado dos duelos por etapa (evento `duel.progress`). */
+  duelos?: { done: number; total: number } | null;
 }) {
   const total = record.config.stages;
   const stages = denseStages(record.stages);
@@ -175,6 +181,16 @@ export function ProcessMonitor({
         </div>
         <span className="process-progress-label">{done}/{total} etapas concluídas</span>
       </div>
+      {gabarito && (
+        <div className="process-progress">
+          <span className="process-progress-label">Gabaritos: {gabarito.done}/{gabarito.total}</span>
+        </div>
+      )}
+      {duelos && (
+        <div className="process-progress">
+          <span className="process-progress-label">Duelos: {duelos.done}/{duelos.total}</span>
+        </div>
+      )}
       {stages.length === 0 && (
         <div className="card" style={{ color: 'var(--text-3)' }}>Preparando as etapas…</div>
       )}
@@ -321,6 +337,23 @@ export function applyEvent(prev: RunRecord, event: any): RunRecord {
       }
       return next;
     }
+    case 'stage.dueled': {
+      // Duelos (Copeland) da etapa — chegam ANTES do `stage.judged`, que traz o
+      // JudgeResult sintetizado. Por indice, como os demais handlers: sob
+      // execucao paralela os eventos chegam fora de ordem e push desalinharia
+      // o array (era o bug do heatmap/resumo).
+      const s = next.stages[event.stageIndex];
+      if (s) s.duels = event.duels;
+      return next;
+    }
+    case 'stage.gabarito':
+    case 'duel.progress':
+      // Progresso AGREGADO do julgamento por referencia: `stage.gabarito` vem
+      // com stageIndex -1 (NUNCA indexar `stages` com ele) e `duel.progress`
+      // nem stageIndex tem. O record nao muda — as paginas guardam esse
+      // progresso em estado proprio. Retorna `prev` (sem copia) p/ evitar
+      // re-render inutil.
+      return prev;
     case 'stage.judged': {
       const s = next.stages[event.stageIndex];
       if (s) {

@@ -15,6 +15,14 @@ import {
   cacheSessionRecord,
 } from './engine/events';
 import { loadRun, loadSession, listRuns as engineListRuns, listSessions as engineListSessions } from './engine/storage';
+import {
+  savePrompt as engineSavePrompt,
+  updatePrompt as engineUpdatePrompt,
+  getPrompt as engineGetPrompt,
+  listPrompts as engineListPrompts,
+  deletePrompt as engineDeletePrompt,
+} from './engine/promptStore';
+import { parseScenarioPack } from './engine/scenarioPack';
 
 export interface OpenRouterModel {
   id: string;
@@ -26,6 +34,17 @@ export interface OpenRouterModel {
 }
 
 export type RunMode = 'compare' | 'variation' | 'training';
+
+/** Nivel de esforco de raciocinio: off = desligado; low..max = budgets crescentes. */
+export type ReasoningLevel = 'off' | 'low' | 'medium' | 'high' | 'max';
+
+/** Reasoning por papel da run; papel ausente = desligado. */
+export interface ReasoningConfig {
+  competitor?: ReasoningLevel;
+  judge?: ReasoningLevel;
+  rewriter?: ReasoningLevel;
+  datagen?: ReasoningLevel;
+}
 
 export interface ManualVariant {
   label: string;
@@ -40,6 +59,10 @@ export interface Contestant {
   techniqueId?: string;
   isOriginal?: boolean;
   parentContestantId?: string;
+  /** Override de temperatura deste contestant (compare-llms). Default 0. */
+  temperature?: number;
+  /** Nivel de reasoning deste contestant (compare-llms; identidade = tripla modelo/temp/reasoning). */
+  reasoningLevel?: ReasoningLevel;
 }
 
 /** Tecnica exposta por GET /techniques (sem o meta-prompt). */
@@ -71,6 +94,31 @@ export interface RunConfig {
   compliance?: { area: string; includeRessalvas: boolean };
   /** Etapas fornecidas pelo usuario (JSON); pulam o datagen e fixam `stages`. */
   customStages?: StageSpec[];
+  // evolucao de prompts / compare-llms:
+  /** Reasoning (esforco) por papel: competitor/judge/rewriter/datagen. */
+  reasoning?: ReasoningConfig;
+  /** Modelo que gera os gabaritos (respostas de referencia). Default = 1o juiz. */
+  referenceModelId?: string;
+  /** Julgamento por referencia (pointwise vs gabarito + duelos). */
+  referenceJudging?: boolean;
+  /** Descricao detalhada do que testar — guia o datagen. */
+  scenarioBrief?: string;
+  /** Cenarios importados de pacote JSON (seed). */
+  scenarioSeed?: StageSpec[];
+  /** compare: repeticoes de cada cenario (1-3). */
+  repeats?: number;
+  /** compare-llms: variantes de config {modelo, temp, reasoning}. */
+  competitorConfigs?: { modelId: string; temperature?: number; reasoningLevel?: ReasoningLevel }[];
+  /** training: margem minima de ganho (pp) p/ promover; sem ganho = convergiu. Default 1.0. */
+  minGain?: number;
+  /** training: liga duelos pairwise (Copeland). */
+  duels?: boolean;
+  /** training: top-K do bracket de duelos (0 = round-robin completo). Default 5. */
+  duelTopK?: number;
+  /** training: fracao de cenarios p/ holdout (clamp [0, 0.5]). Default 0.2. */
+  holdoutRatio?: number;
+  /** training: variantes recebem licoes das falhas do campeao (GEPA). */
+  feedbackDriven?: boolean;
   // meta:
   datagenModelId: string;
   /** Um ou mais juizes — rodam em paralelo. */
@@ -98,6 +146,10 @@ export interface StageSpec {
   maxTokens: number;
   /** Criterio de corretude da etapa; injetado no juiz como rubrica ancorada. */
   rubric?: string;
+  /** Gabarito: resposta de referencia ideal (juiz pointwise + duelos). */
+  reference?: string;
+  /** Proveniencia da etapa: gerada pela IA ou importada de pacote JSON. */
+  origin?: 'ai' | 'import';
 }
 
 /** Veredito ternario: resolve / parcial / nao. */
@@ -135,6 +187,39 @@ export interface JudgeResult {
   inconclusive?: boolean;
 }
 
+/** Julgamento pointwise contra o gabarito (`StageSpec.reference`). Base do judge-score. */
+export interface ReferenceJudgeResult {
+  /** Veredito ternario por contestant (consenso entre juizes, quando ha mais de um). */
+  verdictByContestant: Record<string, Verdict>;
+  /** Explicacao curta (1 frase) por contestant. */
+  explanationByContestant: Record<string, string>;
+  judgeModelId: string;
+  inconclusive?: boolean;
+}
+
+/** Resultado de UM duelo pairwise (2 ordens; desacordo entre ordens = empate). */
+export interface DuelOutcome {
+  a: string;
+  b: string;
+  order1: { winner: 'a' | 'b' | 'tie'; explanation: string };
+  order2: { winner: 'a' | 'b' | 'tie'; explanation: string };
+  /** Resultado combinado das 2 ordens. */
+  outcome: 'a' | 'b' | 'tie';
+}
+
+/** Duelos round-robin da etapa (bracket top-K): placar Copeland, placements fracionarios em empate. */
+export interface StageDuels {
+  /** Placement final por contestant (1 = melhor; fracionario em empate). */
+  placementByContestant: Record<string, number>;
+  /** ContestantIds ordenados do melhor ao pior placement. */
+  order: string[];
+  /** Pontos Copeland por contestant (vitoria 1, empate 0.5). */
+  points: Record<string, number>;
+  duels: DuelOutcome[];
+  /** Tamanho do bracket usado (0 = round-robin completo). */
+  topK: number;
+}
+
 /** @deprecated Avaliador fundido no juiz; mantido p/ ler records antigos. */
 export interface EvaluationVerdict {
   contestantId: string;
@@ -158,6 +243,10 @@ export interface StageRecord {
   responses: CompetitorResponse[];
   live?: Record<string, CompetitorLiveState>;
   judge?: JudgeResult;
+  /** Julgamento pointwise contra o gabarito (quando a etapa tem `reference`). */
+  referenceJudge?: ReferenceJudgeResult;
+  /** Duelos pairwise (Copeland) da etapa (quando duelos ligados). */
+  duels?: StageDuels;
   /** @deprecated Avaliador fundido no juiz. Presente so em records antigos. */
   evaluation?: StageEvaluation;
   /** Preenchido quando a etapa falhou (datagen/imprevisto) e foi pulada. */
@@ -186,6 +275,19 @@ export interface RunRecord {
   stages: StageRecord[];
   scoreboard: Record<string, number>;
   costByContestant?: Record<string, number>;
+  /** Judge-score agregado por contestant: (resolve + 0.5*parcial) / total * 100. */
+  judgeScoreByContestant?: Record<string, number>;
+  /** Classificacao final agregada (Copeland dos duelos / pontos do placar). */
+  standings?: {
+    id: string;
+    label: string;
+    isControl: boolean;
+    points: number;
+    wins: number;
+    ties: number;
+    losses: number;
+    winRate: number;
+  }[];
   totalCostUsd: number;
   startedAt: string;
   finishedAt?: string;
@@ -296,6 +398,7 @@ export async function createRun(config: RunConfig): Promise<string> {
         manualVariants: cfg.manualVariants,
         promptOptimization,
         optimizerModelId,
+        reasoningLevel: cfg.reasoning?.rewriter,
         timeoutMs: cfg.timeoutMs,
       });
   }
@@ -367,11 +470,60 @@ export interface SessionRecord {
   status: RunRecord['status'];
   config: RunConfig;
   runIds: string[];
+  /** Cenarios congelados apos a iteracao 0 (benchmark pinado). */
+  pinnedStages?: StageSpec[];
   bestPromptByIteration: SessionIterationSummary[];
   totalCostUsd: number;
   startedAt: string;
   finishedAt?: string;
   error?: string;
+  /** Gate de holdout: re-score campeao vs controle nos cenarios reservados. */
+  holdout?: {
+    n: number;
+    controlScore: number;
+    championScore: number;
+    gain: number;
+    regressed: boolean;
+  };
+  /** Significancia estatistica (bootstrap pareado). null = amostra insuficiente. */
+  significance?: {
+    n: number;
+    meanDiffPp: number;
+    ci95Pp: [number, number];
+    pValue: number;
+  } | null;
+  /** Iteracao em que o treino convergiu (ganho < minGain), quando parou antes do fim. */
+  convergedAtIteration?: number;
+}
+
+/** Prompt versionado da biblioteca local no IndexedDB (nova versao a cada promocao). */
+export interface SavedPrompt {
+  id: string;
+  name: string;
+  text: string;
+  version: number;
+  /** Versoes anteriores (a versao corrente esta em `text`/`version`). */
+  history: { version: number; text: string; savedAt: string; note?: string }[];
+  /** Proveniencia do prompt. */
+  origin?: {
+    kind: 'training' | 'variation' | 'manual';
+    sessionId?: string;
+    runId?: string;
+    techniqueId?: string;
+    iteration?: number;
+  };
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Pacote JSON de cenarios+gabaritos exportado ao fim da run (importavel como seed). */
+export interface ScenarioPack {
+  format: 'ai-benchmark-pack@1';
+  theme: string;
+  exportedAt: string;
+  /** Prompt escolhido na exportacao (campeao ou base). */
+  prompt: { text: string; source: 'champion' | 'base'; label?: string };
+  scenarios: (StageSpec & { id: string })[];
 }
 
 export async function createSession(config: RunConfig): Promise<string> {
@@ -426,6 +578,84 @@ export function openSessionStream(
   return () => {
     active = false;
   };
+}
+
+// -------------- Biblioteca de prompts (IndexedDB, client-only) --------------
+
+// Client-side-first: estes wrappers delegam direto ao engine (promptStore,
+// store 'prompts' do IndexedDB) — não há backend envolvido. O versionamento é
+// por TEXTO: mudar o texto cria versão nova no history; renomear não versiona.
+
+export async function savePrompt(input: {
+  name: string;
+  text: string;
+  origin?: SavedPrompt['origin'];
+  note?: string;
+}): Promise<SavedPrompt> {
+  return engineSavePrompt(input);
+}
+
+export async function updatePrompt(
+  id: string,
+  input: { text?: string; name?: string; note?: string },
+): Promise<SavedPrompt | undefined> {
+  return engineUpdatePrompt(id, input);
+}
+
+export async function getPrompt(id: string): Promise<SavedPrompt | undefined> {
+  return engineGetPrompt(id);
+}
+
+export async function listPrompts(): Promise<SavedPrompt[]> {
+  return engineListPrompts();
+}
+
+export async function deletePrompt(id: string): Promise<void> {
+  return engineDeletePrompt(id);
+}
+
+// -------------- Pacotes de cenários (export/import JSON) --------------
+
+// Re-exportados do engine para a UI consumir só pela porta única (api.ts).
+export { buildScenarioPack, parseScenarioPack, SCENARIO_PACK_FORMAT } from './engine/scenarioPack';
+
+/** Baixa o pacote de cenários como arquivo JSON (Blob + <a download> temporário). */
+export function downloadScenarioPack(pack: ScenarioPack): void {
+  const slug =
+    pack.theme
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'pack';
+  const now = new Date();
+  const p = (n: number) => String(n).padStart(2, '0');
+  const ymd = `${now.getFullYear()}${p(now.getMonth() + 1)}${p(now.getDate())}`;
+  const blob = new Blob([JSON.stringify(pack, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `arena-pack-${slug}-${ymd}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * Lê um arquivo de pacote de cenários (input type=file). Nunca lança:
+ * JSON inválido ou pacote malformado viram `{ ok: false, error }` em PT-BR.
+ */
+export async function readScenarioPackFile(
+  file: File,
+): Promise<{ ok: true; pack: ScenarioPack } | { ok: false; error: string }> {
+  let json: unknown;
+  try {
+    json = JSON.parse(await file.text());
+  } catch {
+    return { ok: false, error: 'Arquivo não é um JSON válido' };
+  }
+  return parseScenarioPack(json);
 }
 
 // -------------- Cache local (IndexedDB) --------------

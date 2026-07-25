@@ -1,8 +1,8 @@
 ---
 name: knowledge-architecture
-description: Mapa do repositório ai-benchmark — layout do monorepo, separação backend/frontend, fluxo de dados ponta a ponta e comandos exatos de build/run. Use no início de qualquer tarefa para saber ONDE mora cada coisa antes de varrer o codebase, ou quando precisar entender como as peças se conectam.
+description: Mapa do repositório ai-benchmark — layout do monorepo (incl. os módulos do sistema de evolução de prompts em src/ e web/src/engine/), separação backend/frontend, fluxo de dados ponta a ponta e comandos exatos de build/run. Use no início de qualquer tarefa para saber ONDE mora cada coisa antes de varrer o codebase, ou quando precisar entender como as peças se conectam.
 metadata:
-  version: 0.2.0
+  version: 0.3.0
   type: knowledge
 ---
 # Arquitetura — ai-benchmark
@@ -23,16 +23,22 @@ src/            backend (Express, ESM NodeNext — imports com extensão .js)
   server.ts     entrypoint: monta /v1/benchmark, /health, estático web/dist, SPA fallback
   routes.ts     todas as rotas /v1/benchmark + schemas Zod
   orchestrator.ts / trainer.ts / variator.ts   pipelines de run/treino/variação
-  datagen.ts / competitor.ts / judge.ts / evaluator.ts   etapas do pipeline
+  datagen.ts / competitor.ts / judge.ts   etapas do pipeline (juiz listwise = fallback)
+  gabarito.ts / refJudge.ts / duels.ts    julgamento por referência: gabarito temp-0, vereditos pointwise, duelos Copeland
+  rank.ts / holdout.ts / stats.ts         promoção (minGain), split de holdout, significância bootstrap
+  llmVariants.ts / reasoning.ts / dedup.ts / scenarioPack.ts   compare-llms, reasoning por papel, dedup ROUGE-L, pacote de cenários
   openrouter.ts client HTTP do OpenRouter (chat, models, key)
   storage.ts    persistência atômica em data/runs/*.json e data/sessions/*.json
   events.ts     pub/sub para SSE; techniques.ts  biblioteca de técnicas; lgpd.ts  base LGPD
-  normalize.ts  migração de records antigos; types.ts  tipos compartilhados
+  normalize.ts  migração de records antigos; types.ts  tipos compartilhados; medals.ts  medalhas
   data/         JSON ESTÁTICO versionado (techniques não; lgpd-*.json sim)
 web/src/        frontend
   api.ts        wrappers fetch + tipos espelhados do backend
-  idb.ts        cache IndexedDB (db "benchmark-arena")
-  pages/        NewRun (assistente 5 passos), RunView (SSE ao vivo), RunsList, TrainingView, Settings
+  idb.ts        cache IndexedDB v2 (db "benchmark-arena", stores runs/sessions/*Summaries/prompts)
+  engine/       CÓPIA client-side do pipeline (ver abaixo) + promptStore.ts (biblioteca de prompts)
+  diff.ts       diff linha-a-linha (versões de prompt / diff vs. original)
+  pages/        NewRun (assistente 5 passos), RunView, RunsList, TrainingView, PromptsPage, Settings
+  pages/runShared.tsx   reducer applyEvent + ProcessMonitor + standings (compartilhado RunView/TrainingView)
   components/    ModelSelector, Toggle, TechniqueSelector, ManualVariantsEditor, KeySetup, HelpModal
   lgpd.ts       classificação/filtragem de conformidade; styles.css  design tokens (claro/escuro)
 data/           runtime: runs/ e sessions/ (IGNORADO no git; ver /data/ no .gitignore)
@@ -51,9 +57,13 @@ data/           runtime: runs/ e sessions/ (IGNORADO no git; ver /data/ no .giti
   direto, orquestra na aba, persiste no IndexedDB). Permite SPA estática (Vercel, `vercel.json`).
   `web/src/api.ts` delega ao engine; `engine/events.ts` (pub/sub) e `engine/storage.ts` (IndexedDB)
   substituem `events.ts`/`storage.ts` do Node.
-- **⚠️ `web/src/engine/*` é uma CÓPIA de `src/*`** (datagen/competitor/judge/evaluator/variator/
-  orchestrator/trainer/openrouter/normalize/techniques/types). Ao mudar a lógica do pipeline,
-  **atualize os dois lados** (ou só o engine, se o backend já é legado no seu caso).
+- **⚠️ `web/src/engine/*` é uma CÓPIA de `src/*`** (datagen/competitor/judge/variator/orchestrator/
+  trainer/openrouter/normalize/techniques/types **e os módulos de evolução**: gabarito/refJudge/
+  duels/rank/holdout/stats/llmVariants/reasoning/dedup/scenarioPack/medals). Ao mudar a lógica do
+  pipeline, **atualize os dois lados** (ou só o engine, se o backend já é legado no seu caso).
+  Exceções: `engine/promptStore.ts` (biblioteca de prompts) é **client-only**, e do `scenarioPack`
+  o backend só usa `mergeScenarios` (export/import do pacote acontece no frontend). Detalhes do
+  sistema de evolução em `knowledge-prompt-evolution`.
 
 ## Gotcha de path
 `server.ts` resolve `web/dist` por `__dirname` (relativo ao arquivo). Mas **dados runtime e JSON

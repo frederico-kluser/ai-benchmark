@@ -1,4 +1,5 @@
-import type { OpenRouterModel } from './types';
+import { applyReasoning } from './reasoning';
+import type { OpenRouterModel, ReasoningLevel } from './types';
 
 // Permite apontar para um gateway compativel com a OpenRouter (proxy
 // corporativo, mock de teste). Default: API publica da OpenRouter.
@@ -304,6 +305,9 @@ export interface ChatCompletionParams {
   timeoutMs?: number;
   signal?: AbortSignal;
   responseFormatJson?: boolean;
+  // Nivel de raciocinio (reasoning effort). Ausente = nao envia `reasoning`
+  // (comportamento anterior, identico). 'off' desliga explicitamente.
+  reasoningLevel?: ReasoningLevel;
 }
 
 export async function chatCompletion(params: ChatCompletionParams): Promise<ChatCompletionResult> {
@@ -316,6 +320,7 @@ export async function chatCompletion(params: ChatCompletionParams): Promise<Chat
     timeoutMs = 60_000,
     signal: externalSignal,
     responseFormatJson,
+    reasoningLevel,
   } = params;
 
   const body: Record<string, unknown> = {
@@ -329,6 +334,9 @@ export async function chatCompletion(params: ChatCompletionParams): Promise<Chat
   if (responseFormatJson) {
     body.response_format = { type: 'json_object' };
   }
+  // Depois do max_tokens: applyReasoning sobe o teto para caber o budget
+  // de raciocinio + headroom de resposta (ver reasoning.ts).
+  if (reasoningLevel) applyReasoning(body, reasoningLevel);
 
   const { res, startedAt, finish } = await guardedFetch(
     `${OPENROUTER_BASE}/chat/completions`,
@@ -387,6 +395,7 @@ export async function chatCompletionStream(
     timeoutMs = 60_000,
     signal: externalSignal,
     responseFormatJson,
+    reasoningLevel,
     onDelta,
   } = params;
 
@@ -399,6 +408,8 @@ export async function chatCompletionStream(
   };
   if (typeof maxTokens === 'number' && maxTokens > 0) body.max_tokens = maxTokens;
   if (responseFormatJson) body.response_format = { type: 'json_object' };
+  // Mesma regra do chatCompletion: reasoning depois do max_tokens (headroom).
+  if (reasoningLevel) applyReasoning(body, reasoningLevel);
 
   const { res, startedAt, finish } = await guardedFetch(
     `${OPENROUTER_BASE}/chat/completions`,

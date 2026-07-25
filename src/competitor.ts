@@ -1,5 +1,5 @@
 import { chatCompletionStream, computeCost, getModel } from './openrouter.js';
-import type { CompetitorResponse, StageSpec } from './types.js';
+import type { CompetitorResponse, ReasoningLevel, StageSpec } from './types.js';
 
 export interface RunCompetitorParams {
   apiKey: string;
@@ -12,6 +12,13 @@ export interface RunCompetitorParams {
   timeoutMs?: number;
   retries?: number;
   maxOutputTokens?: number;
+  /** Temperatura deste contestant (compare-llms: parte da tripla de identidade). Default 0. */
+  temperature?: number;
+  /**
+   * Nivel de reasoning ja RESOLVIDO pelo chamador (orquestrador aplica a
+   * prioridade contestant.reasoningLevel ?? config.reasoning.competitor).
+   */
+  reasoningLevel?: ReasoningLevel;
   onProgress?: (chars: number, charsPerSec: number, preview: string) => void;
 }
 
@@ -27,6 +34,8 @@ export async function runCompetitor(params: RunCompetitorParams): Promise<Compet
     timeoutMs = 60_000,
     retries = 1,
     maxOutputTokens,
+    temperature = 0,
+    reasoningLevel,
     onProgress,
   } = params;
 
@@ -49,7 +58,10 @@ export async function runCompetitor(params: RunCompetitorParams): Promise<Compet
           { role: 'system', content: systemPrompt ?? stage.productContext },
           { role: 'user', content: stage.question },
         ],
-        temperature: 0,
+        // deterministicSampling (openrouter.ts) so envia temperature a quem
+        // suporta — reasoning models ignoram sem quebrar.
+        temperature,
+        reasoningLevel,
         maxTokens: effectiveMaxTokens,
         timeoutMs,
         onDelta: (_delta, fullText) => {

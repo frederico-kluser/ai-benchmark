@@ -47,25 +47,25 @@ mini-benchmark independente e auto-contido:
 flowchart LR
   T([Tema + config]) --> DG[1 · Datagen<br/>gera o cenário]
   DG --> C{2 · Participantes<br/>respondem em paralelo}
-  C --> J[3 · Juiz<br/>ranqueia às cegas]
-  C --> E[3 · Avaliador<br/>aceitável p/ o trabalho?]
+  C --> J[3 · Juiz<br/>veredito vs gabarito<br/>+ duelos Copeland]
   J --> S[(Placar + Heatmap)]
-  E --> S
   S -->|próxima etapa| DG
   S --> R([Run finalizada])
 ```
 
-1. **Datagen** — um modelo recebe o tema e o índice da etapa e produz um **cenário**:
-   uma pergunta de usuário (`question`), um **contexto de produto** (`productContext`, que
-   vira o *system prompt*: políticas, FAQs, dados, restrições) e um teto de tokens sugerido
-   (`maxTokens`). Cada etapa varia o tipo de tarefa (extração, raciocínio, comparação, recusa…).
+1. **Datagen** — um modelo recebe o tema (e um `scenarioBrief` opcional) e produz os **cenários**
+   em lotes paralelos: uma pergunta de usuário (`question`), um **contexto de produto**
+   (`productContext`, que vira o *system prompt*: políticas, FAQs, dados, restrições) e um teto de
+   tokens sugerido (`maxTokens`). Cada etapa varia o tipo de tarefa (extração, raciocínio,
+   comparação, recusa…). Um **pacote de cenários** importado vira seed e mescla com os gerados.
 2. **Participantes** — respondem **ao mesmo cenário em paralelo** (com limite de concorrência),
    em *streaming*. A UI mostra o texto crescendo, a velocidade (chars/s), latência, tokens e custo.
-3. **Juiz + Avaliador** — o **mesmo modelo juiz** roda **duas avaliações independentes e em
-   paralelo** sobre as respostas anonimizadas:
-   - **Juiz (ranking):** ordena da melhor para a pior. Vira pontos no placar e cores no heatmap.
-   - **Avaliador (qualitativo):** escolhe o vencedor + explica *por que* venceu e dá, para cada
-     resposta, um veredito de **aceitabilidade** ("dá para usar em produção sem causar erro/dano?").
+3. **Julgamento** — por default (fora do compare clássico) é **por referência**: um **gabarito**
+   temp-0 é gerado por cenário, o juiz classifica cada resposta isoladamente contra ele
+   (**resolve / parcial / não**, com explicação de 1 frase) e os melhores disputam **duelos
+   Copeland** (cada par nas duas ordens; empate em desacordo). Sem gabarito (ou no compare
+   clássico), cai no **juiz listwise** clássico: ordena as respostas às cegas e dá o veredito de
+   aceitabilidade ("dá para usar em produção sem causar erro/dano?").
 4. **Todas as etapas rodam em paralelo** (cenários pré-gerados juntos; execução concorrente
    limitada por um semáforo global adaptativo). O placar é aditivo, então a ordem de término não
    importa; ao final a run é `finished` e fica no histórico (com export JSON/CSV).
@@ -92,8 +92,11 @@ e atende três objetivos. O que muda é **quem é o "participante"** (`Contestan
   curada em `src/techniques.ts`); **desligada** → você escreve as variações manualmente
   (`manualVariants`). Um `basePrompt` opcional roda como **controle**.
 - **Treino** repete a variação por `N` iterações (`src/trainer.ts`): a melhor versão de cada rodada
-  é a semente da próxima, convergindo para o melhor prompt. Os cenários são **congelados** após a
-  iteração 0 (`pinnedStages`) para comparação justa. Acompanhe em `TrainingView`.
+  é a semente da próxima — mas **só é promovida se superar o campeão por `minGain`** (default 1
+  p.p.); sem margem, a sessão **converge** e para. Os cenários são **congelados** após a iteração 0
+  (`pinnedStages`, com split de **holdout**) para comparação justa; o feedback vem de **lições
+  determinísticas** das falhas do campeão (sem LLM extra). Ao final, uma run de **holdout** e uma
+  **significância bootstrap** validam o campeão. Acompanhe em `TrainingView`.
 - Nos modos de um modelo, o **juiz nunca é o modelo sob teste** (anti-viés de auto-preferência), e
   há a opção **"juiz em 2 ordens"** (`judgePasses: 2`) contra viés de posição.
 
@@ -108,9 +111,10 @@ Toda run tem **modelos de apoio** (gerador + juiz) além dos participantes:
 
 | Papel | Quantos | O que faz | Configuração |
 |---|---|---|---|
-| **Participante** | compare: **≥2**; variation/training: **1** (+ variações) | Respondem ao cenário e disputam o ranking | `competitorModelIds[]` / `contestantModelId` |
-| **Gerador (datagen)** | exatamente **1** | Inventa o cenário (pergunta + contexto + maxTokens) | `datagenModelId` |
-| **Juiz** | exatamente **1** | Faz **ranking** *e* **avaliação qualitativa** | `judgeModelId` |
+| **Participante** | compare: **≥2** (ou 2–12 configs); variation/training: **1** (+ variações) | Respondem ao cenário e disputam o ranking | `competitorModelIds[]` / `competitorConfigs[]` / `contestantModelId` |
+| **Gerador (datagen)** | exatamente **1** | Inventa os cenários (pergunta + contexto + maxTokens) | `datagenModelId` |
+| **Juiz** | **1 ou mais** | Vereditos vs gabarito + duelos (ou ranking listwise, no fallback) | `judgeModelIds[]` |
+| **Referência (gabarito)** | 1 (default = 1º juiz) | Gera a resposta de referência temp-0 por cenário | `referenceModelId` |
 | **Optimizer** | 1 (variation/training) | Reescreve prompts aplicando técnicas | `optimizerModelId` (default = `datagenModelId`) |
 
 **Regras validadas no backend** (Zod) — config inválida é recusada com `400`:
@@ -159,13 +163,15 @@ sequenceDiagram
   participant O as Orquestrador
   participant D as Datagen
   participant K as Participantes
-  participant J as Juiz e Avaliador
+  participant J as Juiz (referência/listwise)
   participant UI as Navegador SSE
 
   O->>UI: stage.generating
-  O->>D: gera cenário (até 2 tentativas)
+  O->>D: gera cenário (lotes paralelos)
   D-->>O: {question, productContext, maxTokens}
   O->>UI: stage.generated (cenário completo)
+  O->>J: gabarito temp 0 (referência)
+  O->>UI: stage.gabarito (progresso agregado)
   par participantes em paralelo (cap = concurrency)
     O->>K: responder (streaming)
     K-->>O: deltas de texto
@@ -174,21 +180,21 @@ sequenceDiagram
     O->>UI: competitor.finished
   end
   O->>UI: stage.judging
-  par ranking + avaliação (Promise.allSettled)
-    O->>J: ranquear A,B,C… (cego)
-    O->>J: avaliar aceitabilidade (cego)
-  end
-  J-->>O: ranking + veredito qualitativo
+  O->>J: vereditos vs gabarito (pointwise, cego)
+  O->>J: duelos Copeland (2 ordens por par)
+  O->>UI: stage.dueled / duel.progress
+  J-->>O: vereditos + ordem Copeland (JudgeResult sintetizado)
   O->>UI: stage.judged (placar + custo atualizados)
 ```
 
 Pontos-chave (`src/orchestrator.ts`):
 
-- **Datagen com folga e retry:** timeout `max(timeout da run, 90s)` e **2 tentativas**.
-- **Cego (blind):** antes do juiz/avaliador, as respostas são **embaralhadas** e rotuladas
-  `A, B, C…` — o juiz não sabe qual modelo é qual. A UI mostra "(era A)" depois.
-- **Ranking e avaliação em paralelo** via `Promise.allSettled`: um nunca derruba o outro nem a run.
-- **Etapa isolada:** se o datagen falhar, a etapa é **marcada e pulada** — a run **nunca trava**.
+- **Datagen em lotes:** cenários pré-gerados em paralelo (`generateStages`), com dedup ROUGE-L e
+  backfill; falha de uma etapa **pula a etapa** — a run **nunca trava**.
+- **Cego (blind):** antes do juiz, as respostas são **embaralhadas** e rotuladas
+  `A, B, C…` — o juiz não sabe qual modelo é qual. A UI mostra "(era A)" depois (no fluxo listwise).
+- **Referência com fallback:** etapa sem gabarito (ou compare clássico) cai no juiz **listwise**;
+  o resultado do julgamento por referência é **sintetizado num `JudgeResult`** para placar e UI.
 
 ---
 
@@ -207,14 +213,17 @@ O **heatmap** mostra a posição de cada participante em cada etapa, do **verde*
 **vermelho** (pior); `·` = "não ranqueado". A classificação final ordena por: **pontos** →
 **posição média** → **nº de 1ºs lugares** → id.
 
-### 2. Aceitabilidade (avaliador) → "dá pra usar no trabalho?"
+### 2. Vereditos de aceitabilidade → "dá pra usar no trabalho?"
 
-Independente do ranking, o avaliador classifica **cada** resposta como:
+Independente do ranking, cada resposta recebe um **veredito**:
 
-- ✅ **aceitável** — resolve a necessidade de forma correta e segura, **mesmo não sendo a melhor**;
-- ❌ **não aceitável** — erro factual, viola contexto/política, ou incompleta a ponto de não servir.
+- ✅ **resolve** — resolve a necessidade de forma correta e segura, **mesmo não sendo a melhor**;
+- ◐ **parcial** — serve em parte (falta algo ou desvia do contexto);
+- ❌ **não** — erro factual, viola contexto/política, ou incompleta a ponto de não servir.
 
-Respostas com **erro/vazias** são automaticamente **não aceitáveis** (sem gastar chamada de LLM).
+"**Aceitável**" = veredito ≠ `não`. Respostas com **erro/vazias** são automaticamente **não
+aceitáveis** (sem gastar chamada de LLM). No julgamento por referência o veredito é **pointwise
+contra o gabarito**; no listwise, vem do próprio juiz.
 
 > É a diferença entre "**quem ganhou**" (ranking) e "**quem serve**" (aceitabilidade): um modelo
 > pode quase nunca vencer e ainda assim ser aceitável em 100% das etapas.
@@ -260,7 +269,10 @@ ai-benchmark/
 │  ├─ variator.ts            # Gera variações de prompt (técnicas / manuais)
 │  ├─ datagen.ts             # Gera o cenário (question/productContext/maxTokens)
 │  ├─ competitor.ts          # Roda 1 participante (streaming, retry, progresso, custo)
-│  ├─ judge.ts / evaluator.ts# Juiz (ranking cego) / Avaliador (aceitabilidade)
+│  ├─ judge.ts               # Juiz listwise (fallback — ranking cego + vereditos)
+│  ├─ gabarito.ts / refJudge.ts / duels.ts   # Julgamento por referência: gabarito, vereditos pointwise, duelos Copeland
+│  ├─ rank.ts / holdout.ts / stats.ts        # Promoção (minGain), holdout, significância bootstrap
+│  ├─ llmVariants.ts / reasoning.ts / dedup.ts / scenarioPack.ts   # compare-llms, reasoning por papel, dedup, pacote de cenários
 │  ├─ openrouter.ts          # Cliente OpenRouter: models, chat, stream, custo, validateKey
 │  ├─ techniques.ts          # Biblioteca curada de técnicas de prompt
 │  ├─ lgpd.ts                # Serve a base de conhecimento LGPD (GET /lgpd)
@@ -271,11 +283,11 @@ ai-benchmark/
 │  └─ src/
 │     ├─ main.tsx            # Router, layout, navegação
 │     ├─ api.ts              # Cliente HTTP/SSE + tipos + key no localStorage
-│     ├─ idb.ts              # Cache IndexedDB; theme.ts / help.ts (contexts)
+│     ├─ idb.ts              # Cache IndexedDB v2 (incl. store `prompts`); theme.ts / help.ts (contexts)
 │     ├─ lgpd.ts             # Classificação/filtragem de conformidade
 │     ├─ styles.css          # Design tokens (claro/escuro)
 │     ├─ components/         # ModelSelector, Toggle, TechniqueSelector, ManualVariantsEditor, KeySetup, HelpModal
-│     └─ pages/              # NewRun (assistente 5 passos), RunsList, RunView, TrainingView, Settings
+│     └─ pages/              # NewRun (assistente 5 passos), RunsList, RunView, TrainingView, PromptsPage, Settings
 │
 ├─ scripts/gen-lgpd-allowlist.mjs   # Regenera o snapshot LGPD (endpoints públicos)
 ├─ .agents/skills/          # Biblioteca de Knowledge Skills (fonte única) — ver seção abaixo
@@ -431,10 +443,12 @@ O backend mantém um **barramento de eventos por run** (`src/events.ts`). Ao abr
 | `stage.failed` | Datagen falhou (etapa pulada) | `error` |
 | `competitor.started` / `competitor.progress` / `competitor.finished` | Participante | `modelId` / `chars`,`charsPerSec`,`preview` / `response` |
 | `stage.judging` / `stage.judged` | Juiz | `stageIndex` / `judge`,`evaluation`,`scoreboard`,`totalCostUsd` |
+| `stage.gabarito` / `stage.dueled` / `duel.progress` | Julgamento por referência | progresso agregado / `duels` da etapa |
 | `run.finished` / `run.error` | Fim / erro | Record final / `error` |
 
 Sessões de **treino** têm eventos análogos (`session.started`, `iteration.started/finished`,
-`session.finished/error`) em `GET /sessions/:id/events`.
+`iteration.promoted`, `session.converged`, `session.holdout`, `session.finished/error`) em
+`GET /sessions/:id/events`.
 
 Runs **terminais** (`finished`/`error`/`aborted`) não abrem stream "vivo": o servidor manda o
 evento terminal e fecha; o cliente fecha o `EventSource` (sem reconexão infinita). *Keepalive* a cada 15 s.
@@ -471,7 +485,7 @@ curl -X POST http://localhost:3001/v1/benchmark/runs \
     "stages": 5,
     "competitorModelIds": ["openai/gpt-5-mini", "openai/gpt-5-nano"],
     "datagenModelId": "deepseek/deepseek-v4-pro",
-    "judgeModelId": "moonshotai/kimi-k2.6",
+    "judgeModelIds": ["moonshotai/kimi-k2.6"],
     "concurrency": 8, "timeoutMs": 60000, "maxOutputTokens": 500
   }'
 # -> 202 { "runId": "..." }   (acompanhe em /runs/:id/events)
@@ -494,6 +508,9 @@ Runs em `data/runs/<id>.json` e sessões de treino em `data/sessions/<id>.json` 
   (`markOrphansAsAborted`).
 - **Cache no cliente:** o frontend espelha resumos/records em **IndexedDB** (`web/src/idb.ts`) — o
   servidor é a fonte de verdade; o cache é fallback offline.
+- **Biblioteca de prompts:** prompts salvos (campeões de treino/variação) vivem **só no cliente**,
+  na store `prompts` do IndexedDB v2 (`web/src/engine/promptStore.ts`), com versionamento por texto
+  — nada disso passa pelo backend.
 
 ---
 

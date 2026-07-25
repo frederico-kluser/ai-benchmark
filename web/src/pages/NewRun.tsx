@@ -13,10 +13,14 @@ import {
   fetchModels,
   generateBasePrompt,
   getStoredKey,
+  readScenarioPackFile,
   type ManualVariant,
   type OpenRouterModel,
+  type ReasoningConfig,
+  type ReasoningLevel,
   type RunConfig,
   type RunMode,
+  type ScenarioPack,
   type StageSpec,
 } from '../api';
 import { AREA_LIVRE, creatorPrefix, familiaFor, filterModels, isAllowed, type LgpdData } from '../lgpd';
@@ -58,6 +62,43 @@ const PRESETS: { label: string; theme: string }[] = [
       'Triagem automática de tickets de suporte de um SaaS: classifica a prioridade (P0–P3) e roteia para a fila certa.',
   },
 ];
+
+// Opções de reasoning (esforço). '' = "padrão": não envia nada — cada modelo
+// usa o seu próprio default. 'off' = sem raciocínio.
+const REASONING_OPTIONS: { value: '' | ReasoningLevel; label: string }[] = [
+  { value: '', label: 'Padrão do modelo' },
+  { value: 'off', label: 'Sem raciocínio' },
+  { value: 'low', label: 'Baixo' },
+  { value: 'medium', label: 'Médio' },
+  { value: 'high', label: 'Alto' },
+  { value: 'max', label: 'Máximo' },
+];
+
+// Linha do editor de configs do compare-llms. A identidade do concorrente é a
+// TRIPLA modelo+temperatura+reasoning. temperature como texto: '' = padrão (não enviado).
+interface ConfigRow {
+  modelId: string;
+  temperature: string;
+  reasoningLevel: '' | ReasoningLevel;
+}
+
+function ReasoningSelect({
+  value,
+  onChange,
+}: {
+  value: '' | ReasoningLevel;
+  onChange: (v: '' | ReasoningLevel) => void;
+}) {
+  return (
+    <select className="input" value={value} onChange={(e) => onChange(e.target.value as '' | ReasoningLevel)}>
+      {REASONING_OPTIONS.map((o) => (
+        <option key={o.value} value={o.value}>
+          {o.label}
+        </option>
+      ))}
+    </select>
+  );
+}
 
 // Exemplo de etapas manuais (JSON) — mostrado no editor para o usuário partir dele.
 const CUSTOM_STAGES_EXAMPLE = JSON.stringify(
@@ -360,6 +401,42 @@ export function NewRun() {
   const [iterations, setIterations] = useState(3);
   const [twoPassJudge, setTwoPassJudge] = useState(false);
 
+  // Evolução de prompts: descrição detalhada p/ guiar o datagen + pacote de
+  // cenários importado (seed), exportado ao fim de uma run anterior.
+  const [scenarioBrief, setScenarioBrief] = useState('');
+  const [pack, setPack] = useState<ScenarioPack | null>(null);
+  const [packError, setPackError] = useState<string | null>(null);
+  // Handoff da biblioteca de prompts (/prompts): aviso discreto ao pré-preencher.
+  const [draftNotice, setDraftNotice] = useState<string | null>(null);
+
+  // compare: eixo 'models' (modelos distintos) × 'configs' (mesmo modelo,
+  // configs diferentes — compare-llms). `repeats` repete cada cenário (1–3).
+  const [compareAxis, setCompareAxis] = useState<'models' | 'configs'>('models');
+  const [competitorConfigs, setCompetitorConfigs] = useState<ConfigRow[]>([
+    { modelId: '', temperature: '', reasoningLevel: '' },
+    { modelId: '', temperature: '', reasoningLevel: '' },
+  ]);
+  const [repeats, setRepeats] = useState(1);
+
+  // Julgamento por referência (gabarito). null = segue o default do modo/eixo
+  // (on p/ variation/training e compare-llms; off p/ compare clássico) — a 1ª
+  // escolha manual do usuário passa a valer e não é mais pisada.
+  const [refJudgingChoice, setRefJudgingChoice] = useState<boolean | null>(null);
+  // training: duelos Copeland + gates de promoção/holdout.
+  const [duels, setDuels] = useState(false);
+  const [duelTopK, setDuelTopK] = useState(5);
+  const [minGain, setMinGain] = useState(1);
+  const [holdoutRatio, setHoldoutRatio] = useState(0.2);
+  const [feedbackDriven, setFeedbackDriven] = useState(true);
+  // Avançado (passo Avaliação): reasoning por papel ('' = padrão, não envia) +
+  // modelo que escreve os gabaritos (vazio = 1º juiz).
+  const [reasoningOpen, setReasoningOpen] = useState(false);
+  const [reasoningCompetitor, setReasoningCompetitor] = useState<'' | ReasoningLevel>('');
+  const [reasoningJudge, setReasoningJudge] = useState<'' | ReasoningLevel>('');
+  const [reasoningRewriter, setReasoningRewriter] = useState<'' | ReasoningLevel>('');
+  const [reasoningDatagen, setReasoningDatagen] = useState<'' | ReasoningLevel>('');
+  const [referenceModel, setReferenceModel] = useState<string[]>([]);
+
   // Etapas manuais (JSON): substituem o datagen e trazem a rubrica que ancora o juiz.
   const [useCustomStages, setUseCustomStages] = useState(false);
   const [customStagesText, setCustomStagesText] = useState('');
@@ -391,6 +468,9 @@ export function NewRun() {
 
   const isSingle = mode === 'variation' || mode === 'training';
   const modeMeta = MODE_META.find((m) => m.id === mode)!;
+  // Default do julgamento por referência muda com o modo/eixo — sem pisar em
+  // escolha manual posterior (refJudgingChoice !== null).
+  const referenceJudging = refJudgingChoice ?? (mode !== 'compare' || compareAxis === 'configs');
 
   // Catálogo compartilhado entre os seletores + estimativa de custo.
   const [models, setModels] = useState<OpenRouterModel[]>([]);
@@ -405,6 +485,24 @@ export function NewRun() {
     return () => {
       active = false;
     };
+  }, []);
+
+  // Handoff da biblioteca de prompts (/prompts → Nova Run): lê UMA vez no
+  // mount, preenche o prompt base e REMOVE a chave p/ não reaplicar depois.
+  useEffect(() => {
+    const raw = localStorage.getItem('arena:prompt-draft');
+    if (!raw) return;
+    localStorage.removeItem('arena:prompt-draft');
+    try {
+      const data = JSON.parse(raw) as { text?: unknown; name?: unknown };
+      if (typeof data.text === 'string' && data.text.trim()) {
+        setBasePrompt(data.text);
+        const name = typeof data.name === 'string' && data.name.trim() ? data.name : 'sem nome';
+        setDraftNotice(`Prompt '${name}' carregado da biblioteca como base.`);
+      }
+    } catch {
+      // JSON inválido: ignora (a chave já foi removida acima).
+    }
   }, []);
 
   const priceById = useMemo(() => {
@@ -450,8 +548,8 @@ export function NewRun() {
 
   // Espelho das seleções p/ a poda ler o estado mais recente sem re-rodar a cada
   // clique de seleção (só quando área/rigor/base mudam).
-  const selRef = useRef({ competitors, contestantModel, datagen, judge });
-  selRef.current = { competitors, contestantModel, datagen, judge };
+  const selRef = useRef({ competitors, contestantModel, datagen, judge, competitorConfigs });
+  selRef.current = { competitors, contestantModel, datagen, judge, competitorConfigs };
 
   // Ao mudar os filtros (LGPD/área/rigor/preço), remove dos PARTICIPANTES os
   // modelos que saíram do catálogo permitido e avisa. Gerador e juiz NÃO são
@@ -471,11 +569,19 @@ export function NewRun() {
         removed.add(id);
         return false;
       });
-    const { competitors: c, contestantModel: cm } = selRef.current;
+    const { competitors: c, contestantModel: cm, competitorConfigs: cf } = selRef.current;
     const nc = keep(c);
     const ncm = keep(cm);
+    // Eixo configs (compare-llms): limpa só o modelo da linha (não remove a
+    // linha) p/ não perder temperatura/reasoning já escolhidos.
+    const ncf = cf.map((r) => {
+      if (!r.modelId || allowed.has(r.modelId)) return r;
+      removed.add(r.modelId);
+      return { ...r, modelId: '' };
+    });
     if (nc.length !== c.length) setCompetitors(nc);
     if (ncm.length !== cm.length) setContestantModel(ncm);
+    if (ncf.some((r, i) => r !== cf[i])) setCompetitorConfigs(ncf);
     setPrunedNotice(
       removed.size
         ? `Removidos dos participantes pelo filtro (área/preço): ${[...removed].join(', ')}.`
@@ -492,11 +598,15 @@ export function NewRun() {
 
   // nº de variantes (modos de 1 LLM) ou de competidores (compare).
   const variantCount = useMemo(() => {
-    if (!isSingle) return competitors.length;
+    if (!isSingle) {
+      return compareAxis === 'configs'
+        ? competitorConfigs.filter((r) => r.modelId).length
+        : competitors.length;
+    }
     const base = basePrompt.trim() ? 1 : 0;
     if (optimize) return techniques.length + base;
     return manualVariants.filter((v) => v.systemPrompt.trim()).length + base;
-  }, [isSingle, competitors, basePrompt, optimize, techniques, manualVariants]);
+  }, [isSingle, compareAxis, competitorConfigs, competitors, basePrompt, optimize, techniques, manualVariants]);
 
   // Parse das etapas manuais (memoizado); maxTokens ausente herda o teto global.
   const parsedCustomStages = useMemo(
@@ -507,6 +617,12 @@ export function NewRun() {
   const effectiveStages = useCustomStages && parsedCustomStages.stages
     ? parsedCustomStages.stages.length
     : stages;
+  // Cenários do pacote importado (seed). Com etapas manuais o JSON manda — o
+  // pacote é ignorado (aviso no card do pacote).
+  const seedCount = !useCustomStages && pack ? pack.scenarios.length : 0;
+  // O orchestrator só gera o que falta p/ `stages`; garante etapas >= qtd. do
+  // seed p/ nenhum cenário importado ficar de fora (ajuste aplicado no submit).
+  const plannedStages = Math.max(effectiveStages, seedCount);
 
   // Guard-rail anti-viés de painel (consultivo): alerta quando um juiz é da MESMA
   // família dos modelos avaliados (viés de auto-preferência) ou quando o painel
@@ -535,6 +651,21 @@ export function NewRun() {
     return warns;
   }, [judge, competitors, contestantModel, mode, lgpd]);
 
+  // Compare-llms: a identidade do concorrente é a tripla modelo+temperatura+
+  // reasoning. Tripla repetida = concorrentes indistinguíveis (aviso consultivo).
+  const dupConfigWarning = useMemo(() => {
+    if (compareAxis !== 'configs') return null;
+    const counts = new Map<string, number>();
+    for (const r of competitorConfigs) {
+      if (!r.modelId) continue;
+      const key = `${r.modelId}|${r.temperature.trim() || '0'}|${r.reasoningLevel || 'padrao'}`;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return [...counts.values()].some((c) => c > 1)
+      ? 'Há configs repetidas (mesmo modelo + temperatura + reasoning) — a identidade do concorrente é essa tripla; ajuste para diferenciar.'
+      : null;
+  }, [compareAxis, competitorConfigs]);
+
   const estimate = useMemo(() => {
     const ctxIn = 500;
     const n = variantCount;
@@ -542,31 +673,78 @@ export function NewRun() {
       ? contestantModel[0]
         ? new Array(n).fill(contestantModel[0])
         : []
-      : competitors;
+      : compareAxis === 'configs'
+        ? competitorConfigs.filter((r) => r.modelId).map((r) => r.modelId)
+        : competitors;
     // passes do juiz so se aplica nos modos de 1 LLM (toggle visivel la).
     const passes = isSingle && twoPassJudge ? 2 : 1;
     let perStage = 0;
     for (const id of contestantIds) perStage += costOf(id, ctxIn, maxOutputTokens);
     if (datagen[0]) perStage += costOf(datagen[0], 300, 450);
-    // cada juiz le o contexto + todas as respostas; com 2 passagens, conta x2.
-    for (const jid of judge) perStage += costOf(jid, ctxIn + n * maxOutputTokens, 350) * passes;
+    let judgeCalls = judge.length * passes;
+    let extraCalls = 0;
+    if (referenceJudging) {
+      // gabarito: 1 chamada do modelo de referência por estágio (~1500 tokens out).
+      const refId = referenceModel[0] ?? judge[0];
+      if (refId) perStage += costOf(refId, ctxIn + 600, 1500);
+      extraCalls += 1;
+      // pointwise: cada juiz avalia CADA competidor contra o gabarito.
+      for (const jid of judge) perStage += costOf(jid, ctxIn + maxOutputTokens + 1500, 350) * n;
+      judgeCalls = judge.length * n;
+      if (mode === 'training' && duels && judge[0]) {
+        // duelos: bracket top-K (0 = todos contra todos), 2 ordens por par, 1º juiz.
+        const k = duelTopK > 0 ? Math.min(duelTopK, n) : n;
+        const pairs = (k * (k - 1)) / 2;
+        perStage += pairs * 2 * costOf(judge[0], ctxIn + 2 * maxOutputTokens + 1500, 350);
+        extraCalls += pairs * 2;
+      }
+    } else {
+      // cada juiz le o contexto + todas as respostas; com 2 passagens, conta x2.
+      for (const jid of judge) perStage += costOf(jid, ctxIn + n * maxOutputTokens, 350) * passes;
+    }
     const iters = mode === 'training' ? iterations : 1;
-    const point = perStage * effectiveStages * iters;
-    const judgeCalls = judge.length * passes;
+    // compare: `repeats` clona cada cenário — o custo escala junto.
+    const stageCount = mode === 'compare' ? plannedStages * repeats : plannedStages;
+    const point = perStage * stageCount * iters;
     return {
       n,
-      stages: effectiveStages,
+      stages: plannedStages,
       iters,
-      calls: effectiveStages * (n + 1 + judgeCalls) * iters,
+      calls: stageCount * (n + 1 + judgeCalls + extraCalls) * iters,
       low: point * 0.45,
       high: point,
+      refTerms: referenceJudging,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, isSingle, competitors, contestantModel, variantCount, datagen, judge, twoPassJudge, effectiveStages, maxOutputTokens, iterations, priceById]);
+  }, [mode, isSingle, competitors, compareAxis, competitorConfigs, contestantModel, variantCount, datagen, judge, twoPassJudge, plannedStages, repeats, referenceJudging, referenceModel, duels, duelTopK, maxOutputTokens, iterations, priceById]);
 
   function step(key: keyof typeof RANGES, current: number, setter: (v: number) => void, dir: 1 | -1) {
     const [min, max, by] = RANGES[key];
     setter(Math.max(min, Math.min(max, current + dir * by)));
+  }
+
+  // Importa pacote de cenários (JSON exportado ao fim de uma run anterior):
+  // vira seed do datagen e pré-preenche tema + prompt base (editáveis depois).
+  async function handlePackFile(file: File) {
+    setPackError(null);
+    try {
+      const res = await readScenarioPackFile(file);
+      if (!res.ok) {
+        setPack(null);
+        setPackError(res.error);
+        return;
+      }
+      setPack(res.pack);
+      setTheme(res.pack.theme);
+      setBasePrompt(res.pack.prompt.text);
+    } catch (err) {
+      setPack(null);
+      setPackError((err as Error).message);
+    }
+  }
+
+  function updateConfigRow(i: number, patch: Partial<ConfigRow>) {
+    setCompetitorConfigs((rows) => rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
   }
 
   // --- Validação por passo: o assistente só avança quando o passo está completo. ---
@@ -582,8 +760,14 @@ export function NewRun() {
         }
         return null;
       case 'players':
-        if (mode === 'compare')
+        if (mode === 'compare') {
+          if (compareAxis === 'configs') {
+            return competitorConfigs.filter((r) => r.modelId).length >= 2
+              ? null
+              : 'Preencha o modelo em pelo menos 2 linhas de configuração.';
+          }
           return competitors.length >= 2 ? null : 'Selecione pelo menos 2 modelos competidores.';
+        }
         if (contestantModel.length !== 1) return 'Selecione 1 modelo sob teste.';
         if (variantCount < 2)
           return optimize
@@ -644,7 +828,12 @@ export function NewRun() {
     if (judge.length < 1) return setError('Selecione ao menos 1 modelo para juiz.');
 
     if (mode === 'compare') {
-      if (competitors.length < 2) return setError('Selecione pelo menos 2 competidores.');
+      if (compareAxis === 'configs') {
+        if (competitorConfigs.filter((r) => r.modelId).length < 2)
+          return setError('Preencha o modelo em pelo menos 2 linhas de configuração.');
+      } else if (competitors.length < 2) {
+        return setError('Selecione pelo menos 2 competidores.');
+      }
     } else {
       if (contestantModel.length !== 1) return setError('Selecione 1 modelo sob teste.');
       if (variantCount < 2) {
@@ -659,9 +848,18 @@ export function NewRun() {
     const customStages =
       useCustomStages && parsedCustomStages.stages?.length ? parsedCustomStages.stages : undefined;
 
+    // Reasoning por papel (seção Avançado): só papéis com escolha explícita.
+    const reasoning: ReasoningConfig = {};
+    if (reasoningCompetitor) reasoning.competitor = reasoningCompetitor;
+    if (reasoningJudge) reasoning.judge = reasoningJudge;
+    if (reasoningRewriter) reasoning.rewriter = reasoningRewriter;
+    if (reasoningDatagen) reasoning.datagen = reasoningDatagen;
+
     const common = {
       theme: theme.trim(),
-      stages: customStages ? customStages.length : stages,
+      // Com pacote importado, sobe p/ N se stages < N (senão cenários do seed
+      // ficariam de fora — o orchestrator só preenche o que falta p/ `stages`).
+      stages: customStages ? customStages.length : plannedStages,
       datagenModelId: datagen[0],
       judgeModelIds: judge,
       concurrency,
@@ -669,11 +867,39 @@ export function NewRun() {
       maxOutputTokens,
       ...(customStages ? { customStages } : {}),
       ...(isLivre ? {} : { compliance: { area: complianceArea, includeRessalvas } }),
+      // Evolução de prompts (strip de undefined/vazios):
+      ...(scenarioBrief.trim() ? { scenarioBrief: scenarioBrief.trim() } : {}),
+      // Seed do pacote: perde o `id` do arquivo (o engine re-rotula as etapas).
+      ...(seedCount > 0 && pack ? { scenarioSeed: pack.scenarios.map(({ id, ...spec }) => spec) } : {}),
+      // Explícito: o default muda por modo/eixo, então o valor efetivo vai sempre.
+      referenceJudging,
+      ...(referenceModel[0] ? { referenceModelId: referenceModel[0] } : {}),
+      ...(Object.keys(reasoning).length ? { reasoning } : {}),
     };
 
     let config: RunConfig;
     if (mode === 'compare') {
-      config = { mode, ...common, competitorModelIds: competitors };
+      if (compareAxis === 'configs') {
+        // Eixo configs (compare-llms): NÃO enviar competitorModelIds — a
+        // identidade do concorrente é a tripla modelo/temp/reasoning.
+        config = {
+          mode,
+          ...common,
+          competitorConfigs: competitorConfigs
+            .filter((r) => r.modelId)
+            .map((r) => {
+              const t = parseFloat(r.temperature);
+              return {
+                modelId: r.modelId,
+                ...(Number.isFinite(t) ? { temperature: Math.max(0, Math.min(2, t)) } : {}),
+                ...(r.reasoningLevel ? { reasoningLevel: r.reasoningLevel } : {}),
+              };
+            }),
+          ...(repeats > 1 ? { repeats } : {}),
+        };
+      } else {
+        config = { mode, ...common, competitorModelIds: competitors, ...(repeats > 1 ? { repeats } : {}) };
+      }
     } else {
       config = {
         mode,
@@ -684,7 +910,15 @@ export function NewRun() {
         techniqueIds: optimize ? techniques : undefined,
         manualVariants: optimize ? undefined : manualVariants.filter((v) => v.systemPrompt.trim()),
         judgePasses: twoPassJudge ? 2 : 1,
-        ...(mode === 'training' ? { iterations } : {}),
+        ...(mode === 'training'
+          ? {
+              iterations,
+              minGain: Math.max(0, Math.min(100, minGain)),
+              holdoutRatio: Math.max(0, Math.min(0.5, holdoutRatio)),
+              feedbackDriven,
+              ...(duels ? { duels: true, duelTopK: Math.max(0, Math.min(32, Math.round(duelTopK))) } : {}),
+            }
+          : {}),
       };
     }
 
@@ -763,6 +997,18 @@ export function NewRun() {
 
       <StepProgress current={stepIdx} firstInvalid={fi} onJump={goTo} />
 
+      {draftNotice && (
+        <div
+          className="banner banner-neutral"
+          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}
+        >
+          <span>{draftNotice}</span>
+          <button type="button" className="link-toggle" onClick={() => setDraftNotice(null)}>
+            dispensar
+          </button>
+        </div>
+      )}
+
       <div className="wizard-panel" key={stepId}>
         {/* ---------------------------------------------------------- passo 1: objetivo */}
         {stepId === 'mode' && (
@@ -822,6 +1068,83 @@ export function NewRun() {
                 placeholder="Ex.: Atendimento de clínica de exames laboratoriais com FAQs e políticas de agendamento"
                 rows={5}
               />
+            </div>
+
+            <div className="card field-card">
+              <label className="field-label" htmlFor="scenarioBrief">
+                Descreva em detalhe o que você quer testar (opcional)
+              </label>
+              <textarea
+                id="scenarioBrief"
+                className="textarea"
+                style={{ marginTop: 10 }}
+                value={scenarioBrief}
+                onChange={(e) => setScenarioBrief(e.target.value)}
+                placeholder="Ex.: quero ver se os modelos respeitam as regras de jejum de cada exame e não inventam orientações médicas…"
+                rows={3}
+              />
+              <p className="field-hint">
+                Guia a <strong>geração de cenários</strong>: o gerador usa esta descrição p/ criar perguntas focadas
+                no que importa p/ você. Vazio = só o tema acima.
+              </p>
+            </div>
+
+            {/* Pacote de cenários (JSON): importa cenários+gabaritos de uma run
+                anterior como seed; o gerador só cria o que faltar p/ `stages`. */}
+            <div className="card field-card">
+              <div className="field-head">
+                <label className="field-label">Pacote de cenários (JSON)</label>
+                {pack && <span className="proposito-count">{pack.scenarios.length} cenários importados</span>}
+              </div>
+              <p className="field-hint" style={{ marginTop: 0 }}>
+                Importe o pacote exportado ao fim de uma run anterior: os cenários entram como <strong>seed</strong>{' '}
+                (com gabaritos) e o gerador só cria o que faltar. Tema e prompt base são pré-preenchidos (editáveis).
+              </p>
+              <div className="preset-row">
+                <label className="chip-tag" style={{ cursor: 'pointer' }}>
+                  Importar pacote .json
+                  <input
+                    type="file"
+                    accept="application/json,.json"
+                    style={{ display: 'none' }}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) void handlePackFile(file);
+                      e.target.value = '';
+                    }}
+                  />
+                </label>
+                {pack && (
+                  <button
+                    type="button"
+                    className="chip-tag"
+                    onClick={() => {
+                      setPack(null);
+                      setPackError(null);
+                    }}
+                  >
+                    Remover pacote
+                  </button>
+                )}
+              </div>
+              {packError && <div className="proposito-pruned">⚠️ {packError}</div>}
+              {pack && (
+                <p className="field-hint">
+                  <strong>{pack.scenarios.length} cenários importados</strong> (
+                  {pack.scenarios.filter((s) => s.reference?.trim()).length} com gabarito)
+                  {useCustomStages
+                    ? ' — ignorado: com etapas manuais ligadas, o JSON de etapas é que manda.'
+                    : ` — ${
+                        Math.max(0, plannedStages - pack.scenarios.length) > 0
+                          ? `serão gerados mais ${Math.max(0, plannedStages - pack.scenarios.length)} até completar ${plannedStages} etapas.`
+                          : 'o gerador não precisa criar novos.'
+                      }${
+                        stages < pack.scenarios.length
+                          ? ` O nº de etapas será ajustado para ${pack.scenarios.length} no envio.`
+                          : ''
+                      }`}
+                </p>
+              )}
             </div>
 
             <div className="card steppers-card">
@@ -1053,16 +1376,120 @@ export function NewRun() {
                   foi melhor, sem saber qual modelo é qual.
                 </StepIntro>
                 {priceFilterCard}
-                <ModelSelector
-                  multi
-                  title="Competidores"
-                  hint="2 ou mais modelos — respondem ao cenário e disputam o ranking."
-                  value={competitors}
-                  onChange={setCompetitors}
-                  excludeIds={[...datagen, ...judge]}
-                  models={participantModels}
-                  loading={modelsLoading}
-                />
+                <div className="card field-card">
+                  <Toggle
+                    checked={compareAxis === 'configs'}
+                    onChange={(v) => setCompareAxis(v ? 'configs' : 'models')}
+                    label="Mesmo modelo, configs diferentes (compare-LLMs)"
+                    hint={
+                      compareAxis === 'configs'
+                        ? 'Ligado: compare temperaturas e níveis de reasoning do mesmo modelo — a identidade de cada concorrente é a tripla modelo+temperatura+reasoning.'
+                        : 'Desligado: modelos distintos disputam o ranking (fluxo clássico).'
+                    }
+                  />
+                </div>
+                {compareAxis === 'models' ? (
+                  <ModelSelector
+                    multi
+                    title="Competidores"
+                    hint="2 ou mais modelos — respondem ao cenário e disputam o ranking."
+                    value={competitors}
+                    onChange={setCompetitors}
+                    excludeIds={[...datagen, ...judge]}
+                    models={participantModels}
+                    loading={modelsLoading}
+                  />
+                ) : (
+                  <div className="card field-card">
+                    <div className="field-head">
+                      <label className="field-label">Configs comparadas</label>
+                      <span className="proposito-count">
+                        {competitorConfigs.filter((r) => r.modelId).length} de 2–12 preenchidas
+                      </span>
+                    </div>
+                    <div className="selector-hint">
+                      2 a 12 configs. O modelo pode se repetir entre as linhas — o que diferencia cada concorrente é a
+                      temperatura e/ou o reasoning.
+                    </div>
+                    {competitorConfigs.map((row, i) => (
+                      <div key={i} className="manual-variant">
+                        <div className="manual-variant-head">
+                          <span className="field-label" style={{ flex: 1 }}>
+                            Config {i + 1}
+                          </span>
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            disabled={competitorConfigs.length <= 2}
+                            onClick={() => setCompetitorConfigs((rows) => rows.filter((_, idx) => idx !== i))}
+                          >
+                            Remover
+                          </button>
+                        </div>
+                        <ModelSelector
+                          multi={false}
+                          title={`Modelo da config ${i + 1}`}
+                          hint="Pode repetir o mesmo modelo de outra config."
+                          value={row.modelId ? [row.modelId] : []}
+                          onChange={(ids) => updateConfigRow(i, { modelId: ids[0] ?? '' })}
+                          excludeIds={[...datagen, ...judge]}
+                          models={participantModels}
+                          loading={modelsLoading}
+                        />
+                        <div className="price-filter-row" style={{ marginTop: 10 }}>
+                          <label className="price-field">
+                            <span>Temperatura (0–2 · vazio = padrão)</span>
+                            <input
+                              type="number"
+                              className="input"
+                              min={0}
+                              max={2}
+                              step={0.1}
+                              placeholder="padrão"
+                              value={row.temperature}
+                              onChange={(e) => updateConfigRow(i, { temperature: e.target.value })}
+                            />
+                          </label>
+                          <label className="price-field">
+                            <span>Reasoning</span>
+                            <ReasoningSelect
+                              value={row.reasoningLevel}
+                              onChange={(v) => updateConfigRow(i, { reasoningLevel: v })}
+                            />
+                          </label>
+                        </div>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      disabled={competitorConfigs.length >= 12}
+                      onClick={() =>
+                        setCompetitorConfigs((rows) => [...rows, { modelId: '', temperature: '', reasoningLevel: '' }])
+                      }
+                    >
+                      + Adicionar config
+                    </button>
+                    {dupConfigWarning && (
+                      <div className="proposito-pruned" style={{ marginTop: 10 }}>
+                        ⚠️ {dupConfigWarning}
+                      </div>
+                    )}
+                  </div>
+                )}
+                <div className="card steppers-card">
+                  <div className="steppers-grid">
+                    <Stepper
+                      label="Repetições"
+                      value={repeats}
+                      onStep={(d) => setRepeats(Math.max(1, Math.min(3, repeats + d)))}
+                    />
+                  </div>
+                  <p className="field-hint">
+                    <strong>Repetições</strong> repete cada cenário p/ separar ruído de diferença real entre os
+                    concorrentes (1 = sem repetição).
+                  </p>
+                </div>
               </>
             ) : (
               <>
@@ -1244,6 +1671,141 @@ export function NewRun() {
               </div>
             )}
 
+            <div className="card field-card" style={{ marginTop: 16 }}>
+              <Toggle
+                checked={referenceJudging}
+                onChange={setRefJudgingChoice}
+                label="Julgamento por referência (gabarito)"
+                hint={
+                  referenceJudging
+                    ? 'Ligado: um modelo forte escreve a resposta ideal (gabarito) de cada cenário e o juiz compara cada resposta contra ela, uma a uma (pointwise).'
+                    : 'Desligado: o juiz monta um ranking listwise comparando as respostas entre si (modo clássico).'
+                }
+              />
+              <p className="field-hint" style={{ marginTop: 4 }}>
+                O gabarito é gerado pelo <strong>modelo de referência</strong> (seção Avançado abaixo; padrão = 1º
+                juiz). Cenários importados de pacote já podem trazer gabarito próprio.
+              </p>
+            </div>
+
+            {mode === 'training' && (
+              <div className="card field-card" style={{ marginTop: 16 }}>
+                <label className="field-label">Treino evolutivo</label>
+                <Toggle
+                  checked={duels}
+                  onChange={setDuels}
+                  label="Duelos (Copeland)"
+                  hint="Duelos pairwise entre os melhores de cada cenário (2 ordens por par; desacordo = empate). O placar Copeland decide a promoção do prompt."
+                />
+                {duels && (
+                  <>
+                    <div className="steppers-grid">
+                      <Stepper
+                        label="Top-K dos duelos"
+                        value={duelTopK}
+                        onStep={(d) => setDuelTopK(Math.max(0, Math.min(32, duelTopK + d)))}
+                      />
+                    </div>
+                    <p className="field-hint">
+                      <strong>Top-K</strong> = tamanho do bracket (o controle sempre entra). 0 = todos contra todos.
+                    </p>
+                  </>
+                )}
+                <div className="price-filter-row" style={{ marginTop: 12 }}>
+                  <label className="price-field">
+                    <span>Margem mínima p/ promover (pp)</span>
+                    <input
+                      type="number"
+                      className="input"
+                      min={0}
+                      max={100}
+                      step={0.5}
+                      value={minGain}
+                      onChange={(e) => {
+                        const v = e.target.valueAsNumber;
+                        if (!Number.isNaN(v)) setMinGain(v);
+                      }}
+                    />
+                  </label>
+                  <label className="price-field">
+                    <span>Holdout (0–0.5)</span>
+                    <input
+                      type="number"
+                      className="input"
+                      min={0}
+                      max={0.5}
+                      step={0.05}
+                      value={holdoutRatio}
+                      onChange={(e) => {
+                        const v = e.target.valueAsNumber;
+                        if (!Number.isNaN(v)) setHoldoutRatio(v);
+                      }}
+                    />
+                  </label>
+                </div>
+                <p className="field-hint">
+                  <strong>Margem mínima</strong>: ganho mínimo sobre o campeão p/ promover o vencedor (sem ganho =
+                  convergiu e o treino para). <strong>Holdout</strong>: fatia de cenários reservada p/ re-score
+                  anti-overfit (precisa ≥5 cenários).
+                </p>
+                <Toggle
+                  checked={feedbackDriven}
+                  onChange={setFeedbackDriven}
+                  label="Aprendizado por falhas (feedback)"
+                  hint="Ligado: o reescritor vê as falhas da rodada anterior ao gerar as próximas variantes."
+                />
+              </div>
+            )}
+
+            {/* Avançado: reasoning (esforço) por papel + modelo que escreve os gabaritos. */}
+            <div className="card steppers-card" style={{ marginTop: 16 }}>
+              {reasoningOpen && (
+                <>
+                  <div className="price-filter-row">
+                    <label className="price-field">
+                      <span>Reasoning — competidores</span>
+                      <ReasoningSelect value={reasoningCompetitor} onChange={setReasoningCompetitor} />
+                    </label>
+                    <label className="price-field">
+                      <span>Reasoning — juízes</span>
+                      <ReasoningSelect value={reasoningJudge} onChange={setReasoningJudge} />
+                    </label>
+                  </div>
+                  <div className="price-filter-row" style={{ marginTop: 10 }}>
+                    <label className="price-field">
+                      <span>Reasoning — reescritor</span>
+                      <ReasoningSelect value={reasoningRewriter} onChange={setReasoningRewriter} />
+                    </label>
+                    <label className="price-field">
+                      <span>Reasoning — gerador de cenários</span>
+                      <ReasoningSelect value={reasoningDatagen} onChange={setReasoningDatagen} />
+                    </label>
+                  </div>
+                  <ModelSelector
+                    multi={false}
+                    title="Modelo de referência (gabarito)"
+                    hint="Escreve as respostas ideais do julgamento por referência. Vazio = o 1º juiz."
+                    value={referenceModel}
+                    onChange={setReferenceModel}
+                    models={models}
+                    loading={modelsLoading}
+                  />
+                </>
+              )}
+              <button type="button" className="link-toggle" onClick={() => setReasoningOpen((v) => !v)}>
+                {reasoningOpen
+                  ? 'Ocultar avançado (reasoning, referência)'
+                  : 'Avançado: reasoning por papel, modelo de referência'}
+                <span className={`caret ${reasoningOpen ? 'open' : ''}`}>▶</span>
+              </button>
+              {reasoningOpen && (
+                <p className="field-hint">
+                  <strong>Reasoning</strong> = esforço de raciocínio por papel. "Padrão do modelo" não envia nada —
+                  cada modelo usa o seu próprio default.
+                </p>
+              )}
+            </div>
+
             <div className="card steppers-card">
               {advancedOpen && (
                 <div className="steppers-grid">
@@ -1289,20 +1851,34 @@ export function NewRun() {
                     </span>
                   </div>
                   <div className="summary-row">
-                    <span className="k">{isSingle ? 'Variantes de prompt' : 'Competidores'}</span>
+                    <span className="k">
+                      {isSingle ? 'Variantes de prompt' : compareAxis === 'configs' ? 'Configs comparadas' : 'Competidores'}
+                    </span>
                     <span className="v">{estimate.n}</span>
                   </div>
                   <div className="summary-row">
                     <span className="k">Etapas</span>
                     <span className="v">
                       {estimate.stages}
-                      {useCustomStages ? ' · JSON manual (com rubrica)' : ''}
+                      {useCustomStages ? ' · JSON manual (com rubrica)' : seedCount > 0 ? ` · ${seedCount} do pacote` : ''}
                     </span>
                   </div>
                   {mode === 'training' && (
                     <div className="summary-row">
                       <span className="k">Iterações</span>
                       <span className="v">{estimate.iters}</span>
+                    </div>
+                  )}
+                  {mode === 'compare' && repeats > 1 && (
+                    <div className="summary-row">
+                      <span className="k">Repetições</span>
+                      <span className="v">{repeats}×</span>
+                    </div>
+                  )}
+                  {referenceJudging && (
+                    <div className="summary-row">
+                      <span className="k">Julgamento</span>
+                      <span className="v">Por referência{mode === 'training' && duels ? ' + duelos' : ''}</span>
                     </div>
                   )}
                   <div className="summary-row">
@@ -1332,6 +1908,11 @@ export function NewRun() {
                   Estima a inferência do benchmark pelo teto de tokens. A geração/análise de variações (otimização) não está
                   inclusa.
                 </div>
+                {estimate.refTerms && (
+                  <div className="est-note" style={{ marginTop: 6 }}>
+                    Inclui gabaritos{mode === 'training' && duels ? ' + duelos' : ''} (aprox.).
+                  </div>
+                )}
                 {keyConnected ? (
                   <div className="aside-key-ok">✓ chave conectada</div>
                 ) : (

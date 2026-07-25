@@ -10,12 +10,13 @@
 - **[project-router](project-router/SKILL.md)** — despacha toda tarefa para as skills certas antes de qualquer passo de implementação.
 
 ## Conhecimento (memória semântica)
-- **[knowledge-architecture](knowledge-architecture/SKILL.md)** — mapa do monorepo, fluxo de dados, comandos exatos de build/run, arquivos-chave.
+- **[knowledge-architecture](knowledge-architecture/SKILL.md)** — mapa do monorepo (incl. os módulos de evolução em `src/` + `web/src/engine/`), fluxo de dados, comandos exatos de build/run, arquivos-chave.
 - **[knowledge-code-style](knowledge-code-style/SKILL.md)** — convenções: PT-BR, ESM com extensão `.js`, TS strict, `interface Props`, tokens CSS.
 - **[knowledge-backend](knowledge-backend/SKILL.md)** — Express + Zod, `openrouter.ts`, escrita atômica em `storage.ts`, SSE, orquestrador, leitura de dados via `process.cwd()`.
-- **[knowledge-frontend](knowledge-frontend/SKILL.md)** — React + Vite, `api.ts`, cache IndexedDB, `ModelSelector`, assistente em passos, design tokens, sem framework de testes.
+- **[knowledge-frontend](knowledge-frontend/SKILL.md)** — React + Vite, `api.ts`, IndexedDB v2 (biblioteca de prompts), `ModelSelector`, assistente em passos (compare-llms, pacote de cenários), eventos de gabarito/duelos, design tokens, sem framework de testes.
 - **[knowledge-openrouter](knowledge-openrouter/SKILL.md)** — endpoints públicos vs autenticados, `chatCompletion`, cache de 24h, roteamento de provider/ZDR.
-- **[knowledge-benchmark-modes](knowledge-benchmark-modes/SKILL.md)** — modos `compare`/`variation`/`training`, `contestants`, pipeline gerador→competidores→juiz.
+- **[knowledge-benchmark-modes](knowledge-benchmark-modes/SKILL.md)** — modos `compare`/`variation`/`training` (+ eixo compare-llms), `contestants`, pipeline gerador→competidores→julgamento (referência + duelos, listwise de fallback).
+- **[knowledge-prompt-evolution](knowledge-prompt-evolution/SKILL.md)** — sistema de evolução de prompts: gabarito/refJudge/duelos Copeland, minGain, reflection GEPA, holdout + significância, datagen em lotes, pacote de cenários, reasoning por papel, biblioteca de prompts.
 - **[knowledge-lgpd-compliance](knowledge-lgpd-compliance/SKILL.md)** — filtro consultivo LGPD, base de conhecimento, regeneração do snapshot, gancho de enforcement (fase 2).
 
 ## Tarefa (memória procedural) — terminam com passo `<evolution>`

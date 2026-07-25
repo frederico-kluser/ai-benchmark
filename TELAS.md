@@ -5,7 +5,7 @@ em quais **estados** pode estar e como reage **em tempo real**. Para entender o 
 um todo (arquitetura, API, como rodar), veja o [`README.md`](./README.md).
 
 A interface é uma **SPA em React + React Router** (`web/`), com **tema escuro** e CSS próprio
-(`web/src/styles.css`). São **4 telas** mais um *gate* de chave e dois componentes reutilizáveis.
+(`web/src/styles.css`). São **6 telas** mais um *gate* de chave e dois componentes reutilizáveis.
 
 > **Nota (modo client-side / deploy estático):** no deploy estático (Vercel) **não há backend** — o
 > pipeline roda no próprio navegador (`web/src/engine/`). As telas são as mesmas, mas: o tempo real
@@ -27,6 +27,8 @@ A interface é uma **SPA em React + React Router** (`web/`), com **tema escuro**
 - [Componente: ModelSelector](#componente-modelselector)
 - [Tela: Histórico](#tela-histórico-runs)
 - [Tela: Visão da Run](#tela-visão-da-run-runsid)
+- [Tela: Treino](#tela-treino-trainingsessionid)
+- [Tela: Prompts](#tela-prompts-prompts)
 - [Comportamento em tempo real](#comportamento-em-tempo-real)
 - [Legenda de cores e badges](#legenda-de-cores-e-badges)
 - [Console do navegador](#console-do-navegador)
@@ -72,8 +74,9 @@ Toda tela é renderizada dentro de um **Layout** comum (`web/src/main.tsx`):
 ```
 
 - **Topbar:** à esquerda a marca **"Benchmark Arena"** (link para a raiz `/`); à direita a
-  **navegação** com três links: **Nova Run** (`/new`), **Histórico** (`/runs`),
-  **Configurações** (`/settings`). Links ficam *muted* e clareiam no *hover*.
+  **navegação** com quatro links: **Nova Run** (`/new`), **Histórico** (`/runs`), **Prompts**
+  (`/prompts`) e **Configurações** (`/settings`). Links ficam *muted* e clareiam no *hover*.
+  No mobile, os links viram um menu hambúrguer (portal com overlay).
 - Não há rodapé nem barra lateral — a interface é enxuta.
 
 ---
@@ -86,6 +89,8 @@ Toda tela é renderizada dentro de um **Layout** comum (`web/src/main.tsx`):
 | `/new` | **Nova Run** | Protegida pelo **KeyGate** (exige key) |
 | `/runs` | **Histórico** | Lista de runs |
 | `/runs/:id` | **Visão da Run** | Detalhe ao vivo de uma run |
+| `/training/:sessionId` | **Treino** | Acompanhamento de uma sessão de treino |
+| `/prompts` | **Prompts** | Biblioteca de prompts salvos (IndexedDB) |
 | `/settings` | **Configurações** | Gerenciar a API key |
 
 ---
@@ -175,10 +180,10 @@ Monte seu benchmark em 5 passos. Cada etapa explica o que faz — no fim, é só
 | # | Passo | Conteúdo | Regra para avançar |
 |---|---|---|---|
 | 1 | **Objetivo** | 3 cartões de modo (Comparar / Variação / Treino) + diagrama do pipeline + link p/ tutorial | sempre válido |
-| 2 | **Tema** | `textarea` do tema + presets; steppers **Etapas** e **Max tokens** (+ **Iterações** no Treino) | tema preenchido |
-| 3 | **Participantes** | **Filtro de preço** (input/output máx., $/1M — só participantes) + *compare:* Competidores (≥2); *variação/treino:* Modelo sob teste + prompt base + toggle de otimização + técnicas/variantes manuais | ≥2 competidores **ou** 1 modelo + ≥2 variantes |
-| 4 | **Avaliação** | Gerador (1) + Juiz (1) — **podem ser o mesmo modelo** e veem o catálogo completo (não filtrados por área/preço); toggle "Juiz em 2 ordens" (modos de 1 LLM); "Ajustes avançados" | 1 gerador + 1 juiz |
-| 5 | **Revisar** | Resumo (modo, nº de participantes, etapas, iterações, gerador, juiz, nº de chamadas) + **custo estimado** + tema | sempre válido |
+| 2 | **Tema** | `textarea` do tema + presets; **brief de cenário** (`scenarioBrief`, opcional — guia o gerador); **import de pacote de cenários** `.json` (pré-preenche tema/prompt base; vira `scenarioSeed` e eleva o nº de etapas); steppers **Etapas** e **Max tokens** (+ **Iterações** no Treino) | tema preenchido |
+| 3 | **Participantes** | **Filtro de preço** (input/output máx., $/1M — só participantes) + *compare:* Competidores (≥2) **ou** o eixo **compare-LLMs** ("Mesmo modelo, configs diferentes": 2–12 linhas `{modelo, temperatura, reasoning}` — a identidade é a tripla — + **repetições** 1–3 por cenário); *variação/treino:* Modelo sob teste + prompt base + toggle de otimização + técnicas/variantes manuais | ≥2 competidores **ou** 1 modelo + ≥2 variantes |
+| 4 | **Avaliação** | Gerador (1) + Juiz (1) — **podem ser o mesmo modelo** e veem o catálogo completo (não filtrados por área/preço); toggle **"Julgamento por referência (gabarito)"** (todos os modos; ligado por default fora do compare clássico); toggle "Juiz em 2 ordens" (modos de 1 LLM); bloco **"Treino evolutivo"** (só Treino: duelos Copeland, top-K, `minGain`, holdout, aprendizado por falhas); seção **"Avançado"** (reasoning por papel — competidores/juízes/reescritor/gerador — e modelo de referência do gabarito); "Ajustes avançados" (concorrência/timeout) | 1 gerador + 1 juiz |
+| 5 | **Revisar** | Resumo (modo, nº de participantes, etapas — incl. as do pacote —, iterações, gerador, juiz, julgamento, repetições, nº de chamadas) + **custo estimado** (já inclui gabaritos/duelos/repeats) + tema | sempre válido |
 
 **Defaults:** Etapas 5 · Max tokens 500 · Concorrência 8 · Timeout 60.000 ms · Iterações 3 ·
 Competidores: 4 modelos GPT-5 · Gerador `deepseek/deepseek-v4-pro` · Juiz `moonshotai/kimi-k2.6`.
@@ -200,6 +205,10 @@ tempo, competidor e gerador/juiz); no variação/treino o juiz ainda não pode s
 (anti-viés). No passo 5, o botão é desabilitado durante o envio
 (*"Disparando…"*); o backend revalida tudo (Zod) e, em sucesso, **navega para `/runs/:id`** (ou
 `/training/:sessionId` no Treino), onde o acompanhamento ao vivo começa.
+
+**Entrada pela biblioteca:** o botão **"Usar como base"** de um prompt salvo em `/prompts` grava um
+rascunho no `localStorage` e abre a Nova Run com o **prompt base já preenchido** (mais um banner
+dispensável indicando a origem).
 
 ---
 
@@ -300,6 +309,9 @@ ETAPAS
 - **Bloco de stats** à direita: **Status** (badge), **Etapas** `concluídas/total`,
   **Custo total** (formatado, com notação científica para valores ínfimos) e **links**
   **JSON** (abre o record bruto) e **CSV** (baixa o export).
+- **"Baixar pacote (JSON)"** (só variação terminada, com ≥1 gabarito): exporta um **pacote de
+  cenários** reutilizável (tema + cenários com gabarito + o prompt da melhor variação ou do
+  controle, escolhido num dialog) — importável depois no passo Tema da Nova Run.
 
 ### 2. Banners de estado
 
@@ -328,7 +340,26 @@ do modelo naquela etapa, com **cor** do verde (1º) ao vermelho (último); `·` 
 ranqueado. *Tooltip* no *hover* mostra *"Etapa N: posição"*. Rola horizontalmente se houver
 muitas etapas. É a leitura visual rápida de "quem foi consistente".
 
-### 5. Etapas (cartões colapsáveis)
+### 5. Painéis do julgamento por referência (quando ativo)
+
+Quando a run rodou com **julgamento por referência** (default fora do compare clássico), o
+resultado final ganha painéis extras entre o heatmap e as etapas:
+
+- **Judge-score vs gabarito (0–100):** tabela participante × score — média dos vereditos
+  pointwise (`(resolve + 0,5 × parcial) / total × 100`); marca quem é o **controle**.
+- **Classificação Copeland (duelos):** os `standings` agregados dos duelos — colunas
+  Col. / Participante / Pontos / V–E–D / Win rate (vitória 1, empate 0,5).
+
+E, dentro de cada etapa (corpo expandido):
+
+- **Gabarito e rubrica** do cenário (quando presentes) no bloco do contexto.
+- **Veredito vs gabarito** por participante: selo ternário **✓ resolve / ◐ parcial / ✕ não** +
+  explicação curta e o juiz que o deu.
+- **Duelos:** quadro de *placements* Copeland da etapa (posições fracionárias em empate) + lista
+  expansível de cada confronto com as **duas ordens** (desacordo entre ordens = empate) e o
+  cabeçalho indicando "bracket top K" ou "round-robin completo".
+
+### 6. Etapas (cartões colapsáveis)
 
 Cada etapa é um **StageCard**. O **cabeçalho** (clicável para abrir/fechar) mostra
 *"Etapa N"* + um trecho da pergunta (ou *"gerando…"* / *"falhou (pulada)"*) e um **badge** de
@@ -367,6 +398,54 @@ estado:
 
 ---
 
+## Tela: Treino (`/training/:sessionId`)
+
+Acompanha uma **sessão de treino** (`web/src/pages/TrainingView.tsx`): as iterações rodam em
+sequência (cada uma é uma run de variação com os cenários pinados) e a tela consome o stream de
+eventos da sessão. De cima para baixo:
+
+- **Cabeçalho** com tema, status da sessão e custo acumulado.
+- **Progresso das iterações** — stepper de fases, quadro de medalhas por iteração e, enquanto uma
+  iteração roda, o mesmo **monitor de processo** da Visão da Run. Um **log de promoções** registra
+  ao vivo: *"It. N: <variante> promovida (+X p.p.)"*.
+- **Gate cards** (quando a sessão termina): três cartões informativos, nunca bloqueantes —
+  **convergência** (*"Convergiu na iteração N — vencedor não superou minGain X p.p."*), **gate de
+  holdout** (score controle × campeão nos cenários de holdout, ganho em p.p., selo *"REGRESSOU"*
+  se o campeão foi pior) e **significância** (bootstrap pareado: Δ médio, IC95%, p-value;
+  *"amostra insuficiente"* quando n < 5).
+- **Classificação Copeland** (`CopelandBoard`): standings dos duelos da rodada mais recente
+  (ou do holdout) — Col. / Variante / Pontos / V–E–D / Win rate.
+- **Melhor prompt** (`BestPromptStudio`): seletor de rodada/variante, tabs **Prompt** e **Diff vs.
+  original**, copiar e **"Salvar na biblioteca"** (grava em `/prompts` com origem
+  `treino · iteração N` e mostra link para a biblioteca).
+- **"Baixar pacote (JSON)"**: exporta os cenários da sessão (deduplicados, com gabarito) + o
+  prompt campeão (ou o base) como pacote importável na Nova Run.
+- **Heatmaps**: vereditos por iteração (✓/◐/✕) e progressão das variantes ao longo das iterações
+  (coluna **"H"** para a rodada de holdout).
+
+Eventos da sessão: `iteration.started/finished`, `iteration.promoted`, `session.converged`,
+`session.holdout`, `session.finished/error`. (`iteration.analyzing` não é mais emitido — o
+feedback do treino é determinístico, sem chamada extra de LLM.)
+
+---
+
+## Tela: Prompts (`/prompts`)
+
+A **biblioteca de prompts** (`web/src/pages/PromptsPage.tsx`) — tudo salvo **no navegador**
+(IndexedDB, store `prompts`), sem backend.
+
+- **Lista** dos prompts salvos (mais recentes primeiro) com **busca** por nome/conteúdo; estado
+  vazio: *"Nenhum prompt salvo ainda — salve o campeão de um treino ou variação."*
+- Cada item é um **card expansível**: nome, versão `v{N}`, badge de origem (**treino** /
+  **variação** / **manual**) e data de atualização. Ações: **"Usar como base"** (abre a Nova Run
+  com o texto no prompt base), **Renomear** (inline) e **Excluir** (com confirmação).
+- Expandido: bloco de **origem** (com link *"ver treino"* / *"ver run"*), o prompt atual completo
+  e um **seletor de versão** com **diff linha-a-linha** contra a versão anterior (glifos `+/−`,
+  verde/vermelho). Uma nova versão só é criada quando o **texto** muda (renomear não versiona);
+  o histórico guarda até 50 versões.
+
+---
+
 ## Comportamento em tempo real
 
 A Visão da Run abre um **`EventSource`** para `/runs/:id/events` e aplica cada evento ao estado
@@ -377,10 +456,13 @@ local (sem recarregar). O mapeamento evento → UI:
 | `snapshot` | Carrega/repõe o estado completo da run |
 | `stage.generating` | Cria/abre a etapa; cabeçalho vira *"gerando…"* |
 | `stage.generated` | Preenche **Pergunta** e **Contexto de produto** |
+| `stage.gabarito` | **Agregado** (vem com `stageIndex: -1`): atualiza a linha "Gabaritos: d/t" do monitor — não é uma etapa |
 | `competitor.started` | Abre a etapa; cria o *card* de progresso ao vivo do modelo |
 | `competitor.progress` | Atualiza contadores (`chars`, `ch/s`) e o *preview* ao vivo |
 | `competitor.finished` | Substitui o *card* ao vivo pela **resposta final**; soma custo |
 | `stage.judging` | Etapa passa a *"aguardando juiz"* |
+| `stage.dueled` | Grava os duelos **da etapa** (por índice; chega antes do `stage.judged`) |
+| `duel.progress` | **Agregado** (sem `stageIndex`): atualiza a linha "Duelos: d/t" do monitor |
 | `stage.judged` | Marca a etapa como *"julgado"* no monitor de processo (o **placar/heatmap** só são montados no fim) |
 | `stage.failed` | Marca a etapa como **pulada** (badge *"falhou"*) |
 | `run.finished` / `run.error` | Estado final; revela os resultados; o `EventSource` é fechado |

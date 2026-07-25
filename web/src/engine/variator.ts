@@ -1,14 +1,30 @@
 import { z } from 'zod';
 import { chatCompletion } from './openrouter';
 import { getTechnique } from './techniques';
-import type { Contestant, ManualVariant, PromptTechnique } from './types';
+import type { Contestant, ManualVariant, PromptTechnique, ReasoningLevel } from './types';
 
 const variantSchema = z.object({ systemPrompt: z.string().min(1) });
 
-const SYSTEM_PROMPT = `Voce e um engenheiro de prompts senior. Recebe um PROMPT BASE (ou apenas um TEMA, se nao houver base) e uma TECNICA a aplicar.
-Sua tarefa: produzir um NOVO system prompt aplicando a tecnica, preservando a intencao, o escopo e as restricoes do prompt base.
-NAO responda a tarefa do usuario; apenas reescreva o system prompt.
-Saida ESTRITAMENTE em JSON valido, sem markdown, sem comentarios: {"systemPrompt":"<novo system prompt completo>"}`;
+// Meta-prompt do reescritor (portado do rewriter do prompt-arena): TEXTO PURO
+// in/out, sem JSON — assim o prompt reescrito, cheio de backticks e quebras de
+// linha, nao precisa sobreviver ao escaping de JSON na ida nem na volta.
+const SYSTEM_PROMPT = `Voce e um reescritor cirurgico de system prompts. Recebe um system prompt base (ou apenas um tema, quando nao houver base) e UMA tecnica de engenharia de prompt a aplicar.
+Sua reescrita sera benchmarkada contra o prompt base atual — so uma variante genuinamente melhor vence.
+
+REGRAS DURAS (violar qualquer uma torna a variante inutil — ela simplesmente pontua pior):
+- Responda APENAS com o prompt reescrito. Sem preambulo, sem explicacao, sem comentarios, sem code fences.
+- O texto e um drop-in replacement do prompt base, no mesmo papel.
+- Seja CIRURGICO: mude APENAS o que a tecnica pede e o que as licoes expoem; preserve o SIGNIFICADO de todas as demais regras intacto (reformular por clareza vale; remover ou enfraquecer uma regra, nao). Evite inchar o prompt — mudanca fora do escopo esconde se a tecnica ajudou.
+- NAO adicione exemplos few-shot a menos que a tecnica peca explicitamente.
+- Mantenha o idioma do prompt base.
+- NAO responda a tarefa do usuario; apenas reescreva o system prompt.`;
+
+/** Remove UM par de fences ``` envolvendo a saida inteira (fences internos ficam intactos). */
+function stripFences(text: string): string {
+  const t = text.trim();
+  const m = /^```[a-zA-Z]*\n([\s\S]*?)\n```$/.exec(t);
+  return m ? m[1].trim() : t;
+}
 
 function extractJson(text: string): string {
   const trimmed = text.trim();
@@ -45,6 +61,8 @@ export interface GenerateContestantsParams {
   optimizerModelId: string;
   /** Aprendizados da iteracao anterior (treino) injetados na geracao. */
   analysisHint?: string;
+  /** Nivel de raciocinio do papel "rewriter" (RunConfig.reasoning.rewriter). */
+  reasoningLevel?: ReasoningLevel;
   timeoutMs?: number;
 }
 
@@ -52,19 +70,28 @@ async function generateOneVariant(
   p: GenerateContestantsParams,
   technique: PromptTechnique,
 ): Promise<string | null> {
-  const baseBlock = p.basePrompt?.trim()
-    ? `PROMPT BASE:\n${p.basePrompt.trim()}`
-    : `TEMA (sem prompt base — crie um system prompt do zero para este tema):\n${p.theme}`;
-  const hintBlock = p.analysisHint?.trim()
-    ? `\n\nAPRENDIZADOS DA ITERACAO ANTERIOR (enderece estas fraquezas):\n${p.analysisHint.trim()}`
+  const lessonsBlock = p.analysisHint?.trim()
+    ? `\n<licoes_da_iteracao_anterior>\n${p.analysisHint.trim()}\n</licoes_da_iteracao_anterior>\n`
     : '';
+  const baseText =
+    p.basePrompt?.trim() ??
+    'Não há prompt base — escreva um prompt completo do zero sobre o tema.';
 
-  const userPrompt = `${baseBlock}
+  const userPrompt = `<contexto_da_tarefa>
+${p.theme}
+</contexto_da_tarefa>
 
-TECNICA A APLICAR — ${technique.name}:
-${technique.metaInstruction}${hintBlock}
+<tecnica id="${technique.id}" nome="${technique.name}">
+<quando_ajuda>${technique.good}</quando_ajuda>
+<cuidado>${technique.bad}</cuidado>
+<instrucao>${technique.metaInstruction}</instrucao>
+</tecnica>
+${lessonsBlock}
+<prompt_base>
+${baseText}
+</prompt_base>
 
-Devolva o JSON {"systemPrompt":"..."}.`;
+Reescreva o prompt agora, aplicando a tecnica.`;
 
   try {
     const result = await chatCompletion({
@@ -76,15 +103,19 @@ Devolva o JSON {"systemPrompt":"..."}.`;
       ],
       temperature: 0.4,
       timeoutMs: p.timeoutMs ?? 90_000,
-      responseFormatJson: true,
+      reasoningLevel: p.reasoningLevel,
     });
-    const parsed = variantSchema.safeParse(JSON.parse(extractJson(result.text)));
-    if (!parsed.success) {
-      console.warn(`[variator] tecnica ${technique.id}: JSON invalido`);
+    const text = stripFences(result.text);
+    // Gate de usabilidade: reescrita vazia ou colapsada nao vale um benchmark —
+    // a variante e pulada (sem base, o piso e so o minimo absoluto de 40 chars).
+    const baseLen = p.basePrompt?.trim().length ?? 0;
+    if (!text || text.length < Math.max(40, baseLen * 0.3)) {
+      console.warn(
+        `[variator] tecnica ${technique.id}: reescrita inutilizavel (${text.length} chars vs base ${baseLen})`,
+      );
       return null;
     }
-    const sp = parsed.data.systemPrompt.trim();
-    return sp.length > 0 ? sp : null;
+    return text;
   } catch (err) {
     console.warn(`[variator] tecnica ${technique.id} falhou: ${(err as Error).message}`);
     return null;

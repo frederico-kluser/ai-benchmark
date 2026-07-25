@@ -9,9 +9,29 @@ import { listTechniques } from './techniques.js';
 import { getLgpdData } from './lgpd.js';
 import { listRuns, loadRun, listSessions, loadSession } from './storage.js';
 import { subscribe, subscribeSession } from './events.js';
-import type { CompetitorResponse, RunRecord } from './types.js';
+import { sanitizeLlmVariants, MIN_LLM_VARIANTS, MAX_LLM_VARIANTS } from './llmVariants.js';
+import type { CompareConfig, CompetitorResponse, RunRecord } from './types.js';
 
 const router = Router();
+
+// Nivel de esforco de raciocinio (ReasoningLevel de types.ts / REASONING_LEVELS
+// de reasoning.ts), repetido aqui como literal para o enum do Zod.
+const reasoningLevelSchema = z.enum(['off', 'low', 'medium', 'high', 'max']);
+
+// Schema Zod de StageSpec (types.ts), compartilhado por customStages e
+// scenarioSeed. Em customStages o preprocess preenche maxTokens ausente
+// (herda maxOutputTokens); em scenarioSeed o item ja deve trazer maxTokens.
+const stageSpecSchema = z.object({
+  question: z.string().min(1),
+  productContext: z.string().min(1),
+  rubric: z.string().optional(),
+  // maxTokens omitido pelo usuario e preenchido no preprocess (herda maxOutputTokens).
+  maxTokens: z.number().int().positive().max(16_000),
+  // Gabarito (resposta de referencia ideal) p/ julgamento pointwise + duelos.
+  reference: z.string().max(32_000).optional(),
+  // Proveniencia da etapa: gerada pela IA ou importada de pacote JSON.
+  origin: z.enum(['ai', 'import']).optional(),
+});
 
 const baseFields = {
   theme: z.string().min(1),
@@ -33,19 +53,27 @@ const baseFields = {
     .optional(),
   // Etapas fornecidas pelo usuario (JSON): pulam o datagen. Quando presentes,
   // `stages` e forcado ao tamanho desta lista (ver preprocess do runConfigSchema).
-  customStages: z
-    .array(
-      z.object({
-        question: z.string().min(1),
-        productContext: z.string().min(1),
-        rubric: z.string().optional(),
-        // maxTokens omitido pelo usuario e preenchido no preprocess (herda maxOutputTokens).
-        maxTokens: z.number().int().positive().max(16_000),
-      }),
-    )
-    .min(1)
-    .max(50)
+  customStages: z.array(stageSpecSchema).min(1).max(50).optional(),
+  // Esforco de raciocinio por papel (competitor/judge/rewriter/datagen);
+  // papel ausente = default do pipeline.
+  reasoning: z
+    .object({
+      competitor: reasoningLevelSchema.optional(),
+      judge: reasoningLevelSchema.optional(),
+      rewriter: reasoningLevelSchema.optional(),
+      datagen: reasoningLevelSchema.optional(),
+    })
     .optional(),
+  // Modelo que gera os gabaritos (respostas de referencia). Default = 1o juiz.
+  referenceModelId: z.string().min(1).optional(),
+  // Julgamento por referencia (pointwise vs gabarito + duelos).
+  referenceJudging: z.boolean().optional(),
+  // Descricao detalhada do que testar — guia o datagen na geracao de cenarios.
+  scenarioBrief: z.string().max(4000).optional(),
+  // compare: repeticoes de cada cenario (1-3) como cenarios distintos.
+  repeats: z.number().int().min(1).max(3).optional(),
+  // Cenarios importados de pacote JSON (seed); o datagen complementa ate `stages`.
+  scenarioSeed: z.array(stageSpecSchema).max(50).optional(),
 };
 
 const manualVariantSchema = z.object({
@@ -62,8 +90,23 @@ const singleModelFields = {
 
 const compareObj = z.object({
   mode: z.literal('compare'),
-  // >= 2 competidores, todos distintos
-  competitorModelIds: z.array(z.string().min(1)).min(2),
+  // >= 2 competidores, todos distintos (eixo classico). Opcional porque
+  // competitorConfigs e a alternativa — o superRefine impede ambos/nenhum.
+  competitorModelIds: z.array(z.string().min(1)).min(2).optional(),
+  // compare-llms: variantes de config {modelo, temperatura, reasoning} no eixo
+  // de contestants (identidade = tripla; o mesmo modelo pode competir 2x com
+  // configs diferentes). O superRefine roda sanitizeLlmVariants sobre a lista.
+  competitorConfigs: z
+    .array(
+      z.object({
+        modelId: z.string().min(1),
+        temperature: z.number().min(0).max(2).optional(),
+        reasoningLevel: reasoningLevelSchema.optional(),
+      }),
+    )
+    .min(MIN_LLM_VARIANTS)
+    .max(MAX_LLM_VARIANTS)
+    .optional(),
   ...baseFields,
 });
 const variationObj = z.object({
@@ -75,6 +118,16 @@ const trainingObj = z.object({
   mode: z.literal('training'),
   ...singleModelFields,
   iterations: z.number().int().min(2).max(10),
+  // Margem minima de ganho (pp) sobre o campeao para promover; sem ganho = convergiu.
+  minGain: z.number().min(0).max(100).optional(),
+  // Liga duelos pairwise (Copeland) por etapa apos o pointwise.
+  duels: z.boolean().optional(),
+  // Top-K do bracket de duelos (controle/carry sempre entram; 0 = round-robin completo).
+  duelTopK: z.number().int().min(0).max(32).optional(),
+  // Fracao de cenarios reservada p/ holdout (re-score campeao vs controle).
+  holdoutRatio: z.number().min(0).max(0.5).optional(),
+  // Reflection estilo GEPA: variantes recebem licoes das falhas do campeao.
+  feedbackDriven: z.boolean().optional(),
   ...baseFields,
 });
 
@@ -115,26 +168,52 @@ const runConfigSchema = z
   .superRefine((cfg, ctx) => {
     // Gerador e juiz PODEM repetir o mesmo modelo (repeticao permitida).
     if (cfg.mode === 'compare') {
-      const dup = cfg.competitorModelIds.find(
-        (id, i) => cfg.competitorModelIds.indexOf(id) !== i,
-      );
-      if (dup) {
+      // Eixo de competidores: competitorModelIds (classico) OU competitorConfigs
+      // (compare-llms) — nunca ambos, nunca nenhum (>= 2 competidores efetivos).
+      if (cfg.competitorModelIds && cfg.competitorConfigs) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['competitorConfigs'],
+          message: 'Use competitorConfigs OU competitorModelIds, nao ambos.',
+        });
+      }
+      if (!cfg.competitorModelIds && !cfg.competitorConfigs) {
         ctx.addIssue({
           code: 'custom',
           path: ['competitorModelIds'],
-          message: `Competidor repetido: "${dup}". Cada competidor deve ser unico.`,
+          message: 'Informe ao menos 2 competidores (competitorModelIds ou competitorConfigs).',
         });
       }
-      if (cfg.competitorModelIds.includes(cfg.datagenModelId)) {
+      // Modelos efetivos no eixo: das ids simples e/ou das configs. Em configs o
+      // MESMO modelo pode repetir (identidade = tripla modelo/temperatura/reasoning).
+      const competitorIds = cfg.competitorModelIds ?? [];
+      const configModelIds = (cfg.competitorConfigs ?? []).map((c) => c.modelId);
+      const effectiveModelIds = [...competitorIds, ...configModelIds];
+      if (cfg.competitorModelIds) {
+        const dup = competitorIds.find((id, i) => competitorIds.indexOf(id) !== i);
+        if (dup) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['competitorModelIds'],
+            message: `Competidor repetido: "${dup}". Cada competidor deve ser unico.`,
+          });
+        }
+      }
+      if (cfg.competitorConfigs) {
+        // Dedup pela tripla + limites 2-12 + itens validos (o erro ja vem em PT-BR).
+        const { error } = sanitizeLlmVariants(cfg.competitorConfigs);
+        if (error) {
+          ctx.addIssue({ code: 'custom', path: ['competitorConfigs'], message: error });
+        }
+      }
+      if (effectiveModelIds.includes(cfg.datagenModelId)) {
         ctx.addIssue({
           code: 'custom',
           path: ['datagenModelId'],
           message: 'O gerador de cenarios nao pode ser tambem um competidor.',
         });
       }
-      const judgeAsCompetitor = cfg.judgeModelIds.find((id) =>
-        cfg.competitorModelIds.includes(id),
-      );
+      const judgeAsCompetitor = cfg.judgeModelIds.find((id) => effectiveModelIds.includes(id));
       if (judgeAsCompetitor) {
         ctx.addIssue({
           code: 'custom',
@@ -143,7 +222,8 @@ const runConfigSchema = z
         });
       }
     } else {
-      // variation | training: anti vies de auto-preferencia do juiz
+      // variation | training: anti vies de auto-preferencia do juiz.
+      // (`repeats` > 1 so faz sentido em compare; aqui e simplesmente ignorado, sem erro.)
       if (cfg.judgeModelIds.includes(cfg.contestantModelId)) {
         ctx.addIssue({
           code: 'custom',
@@ -256,6 +336,7 @@ router.post('/runs', requireKey, async (req, res) => {
             manualVariants: cfg.manualVariants,
             promptOptimization,
             optimizerModelId,
+            reasoningLevel: cfg.reasoning?.rewriter,
             timeoutMs: cfg.timeoutMs,
           }),
       });
@@ -263,8 +344,10 @@ router.post('/runs', requireKey, async (req, res) => {
       return;
     }
 
-    // compare
-    const { runId } = startRun(cfg, apiKey);
+    // compare — o superRefine garantiu competitorModelIds OU competitorConfigs
+    // (>= 2 competidores efetivos); esse XOR nao e expressavel no tipo estatico
+    // (CompareConfig exige competitorModelIds), dai o cast pontual.
+    const { runId } = startRun(cfg as CompareConfig, apiKey);
     res.status(202).json({ runId });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });

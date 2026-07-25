@@ -45,6 +45,10 @@ export interface Contestant {
   isOriginal?: boolean;
   /** Lineage de treino: contestant vencedor de onde esta variante derivou. */
   parentContestantId?: string;
+  /** Override de temperatura deste contestant (compare-llms). Default 0. */
+  temperature?: number;
+  /** Nivel de reasoning deste contestant (compare-llms; identidade = tripla modelo/temp/reasoning). */
+  reasoningLevel?: ReasoningLevel;
 }
 
 /** Variacao de prompt fornecida manualmente (toggle de otimizacao desligado). */
@@ -68,6 +72,21 @@ export interface PromptTechnique {
 }
 /** Tecnica sem o meta-prompt — o que `GET /techniques` expoe. */
 export type PublicTechnique = Omit<PromptTechnique, 'metaInstruction'>;
+
+// ----------------------------------------------------------------------------
+// Reasoning (esforco de raciocinio por papel)
+// ----------------------------------------------------------------------------
+
+/** Nivel de esforco de raciocinio: off = desligado; low..max = budgets crescentes. */
+export type ReasoningLevel = 'off' | 'low' | 'medium' | 'high' | 'max';
+
+/** Reasoning por papel da run (secao avancada do assistente); papel ausente = desligado. */
+export interface ReasoningConfig {
+  competitor?: ReasoningLevel;
+  judge?: ReasoningLevel;
+  rewriter?: ReasoningLevel;
+  datagen?: ReasoningLevel;
+}
 
 // ----------------------------------------------------------------------------
 // Config da run (uniao discriminada por `mode`)
@@ -104,6 +123,18 @@ export interface RunConfigBase {
    * pinado (mesmas etapas em todas as iteracoes).
    */
   customStages?: StageSpec[];
+  /** Reasoning (esforco) por papel: competitor/judge/rewriter/datagen. */
+  reasoning?: ReasoningConfig;
+  /** Modelo que gera os gabaritos (respostas de referencia). Default = 1o juiz. */
+  referenceModelId?: string;
+  /** Julgamento por referencia (pointwise vs gabarito + duelos). Default: true em variation/training, false em compare. */
+  referenceJudging?: boolean;
+  /** Descricao detalhada do que testar — guia o datagen na geracao de cenarios. */
+  scenarioBrief?: string;
+  /** Cenarios importados de pacote JSON (seed); o datagen complementa ate `stages`. */
+  scenarioSeed?: StageSpec[];
+  /** compare: repeticoes de cada cenario (1-3) como cenarios distintos. */
+  repeats?: number;
 }
 
 /** Campos comuns aos modos de 1 LLM (variation/training). */
@@ -121,6 +152,8 @@ export interface SingleModelFields {
 export interface CompareConfig extends RunConfigBase {
   mode: 'compare';
   competitorModelIds: string[];
+  /** compare-llms: variantes de config {modelo, temperatura, reasoning} no eixo de contestants (identidade = tripla). */
+  competitorConfigs?: { modelId: string; temperature?: number; reasoningLevel?: ReasoningLevel }[];
 }
 export interface VariationConfig extends RunConfigBase, SingleModelFields {
   mode: 'variation';
@@ -129,6 +162,16 @@ export interface TrainingConfig extends RunConfigBase, SingleModelFields {
   mode: 'training';
   /** Numero fixo de iteracoes. */
   iterations: number;
+  /** Margem minima de ganho (pp) sobre o campeao para promover; sem ganho = convergiu. Default 1.0. */
+  minGain?: number;
+  /** Liga duelos pairwise (Copeland) por etapa apos o pointwise. */
+  duels?: boolean;
+  /** Top-K do bracket de duelos (controle/carry sempre entram; 0 = round-robin completo). Default 5. */
+  duelTopK?: number;
+  /** Fracao de cenarios reservada p/ holdout (clamp [0, 0.5]). Default 0.2. */
+  holdoutRatio?: number;
+  /** Reflection estilo GEPA: variantes recebem licoes das falhas do campeao. */
+  feedbackDriven?: boolean;
 }
 export type RunConfig = CompareConfig | VariationConfig | TrainingConfig;
 
@@ -147,6 +190,10 @@ export interface StageSpec {
    * etapa resolve"; o datagen tambem pode gera-la automaticamente.
    */
   rubric?: string;
+  /** Gabarito: resposta de referencia ideal (juiz pointwise + duelos). */
+  reference?: string;
+  /** Proveniencia da etapa: gerada pela IA ou importada de pacote JSON. */
+  origin?: 'ai' | 'import';
 }
 
 export type CompetitorStatus = 'ok' | 'error';
@@ -221,6 +268,46 @@ export interface JudgeResult {
 }
 
 /**
+ * Julgamento POINTWISE contra o gabarito (`StageSpec.reference`): cada resposta
+ * e classificada isoladamente (resolve/parcial/nao) por aderencia a referencia,
+ * sem comparar contestants entre si. Base do judge-score.
+ */
+export interface ReferenceJudgeResult {
+  /** Veredito ternario por contestant (consenso entre juizes, quando ha mais de um). */
+  verdictByContestant: Record<string, Verdict>;
+  /** Explicacao curta (1 frase) por contestant. */
+  explanationByContestant: Record<string, string>;
+  judgeModelId: string;
+  inconclusive?: boolean;
+}
+
+/** Resultado de UM duelo pairwise (2 ordens; desacordo entre ordens = empate). */
+export interface DuelOutcome {
+  a: string;
+  b: string;
+  order1: { winner: 'a' | 'b' | 'tie'; explanation: string };
+  order2: { winner: 'a' | 'b' | 'tie'; explanation: string };
+  /** Resultado combinado das 2 ordens. */
+  outcome: 'a' | 'b' | 'tie';
+}
+
+/**
+ * Duelos round-robin da etapa (bracket top-K): placar Copeland (vitoria 1,
+ * empate 0.5) com placements fracionarios quando ha empate de pontos.
+ */
+export interface StageDuels {
+  /** Placement final por contestant (1 = melhor; fracionario em empate). */
+  placementByContestant: Record<string, number>;
+  /** ContestantIds ordenados do melhor ao pior placement. */
+  order: string[];
+  /** Pontos Copeland por contestant. */
+  points: Record<string, number>;
+  duels: DuelOutcome[];
+  /** Tamanho do bracket usado (0 = round-robin completo). */
+  topK: number;
+}
+
+/**
  * @deprecated O avaliador foi fundido no juiz (ver JudgeResult). Tipo mantido
  * apenas para LER records antigos que tinham um estagio de avaliacao separado.
  */
@@ -263,6 +350,10 @@ export interface StageRecord {
   /** Estado ao vivo dos competidores nesta etapa (por contestantId); limpo apos stage.judged. */
   live?: Record<string, CompetitorLiveState>;
   judge?: JudgeResult;
+  /** Julgamento pointwise contra o gabarito (quando a etapa tem `reference`). */
+  referenceJudge?: ReferenceJudgeResult;
+  /** Duelos pairwise (Copeland) da etapa (quando duelos ligados). */
+  duels?: StageDuels;
   /** @deprecated Avaliador fundido no juiz. Presente so em records antigos. */
   evaluation?: StageEvaluation;
   /** Preenchido quando a etapa falhou (ex.: datagen) e foi pulada sem matar a run. */
@@ -283,6 +374,19 @@ export interface RunRecord {
   scoreboard: Record<string, number>; // contestantId -> wins points (N-1 for first, ...)
   /** Custo acumulado por contestant (opcional, p/ painel de variantes). */
   costByContestant?: Record<string, number>;
+  /** Judge-score agregado por contestant: (resolve + 0.5*parcial) / total * 100. */
+  judgeScoreByContestant?: Record<string, number>;
+  /** Classificacao final agregada (Copeland dos duelos / pontos do placar). */
+  standings?: {
+    id: string;
+    label: string;
+    isControl: boolean;
+    points: number;
+    wins: number;
+    ties: number;
+    losses: number;
+    winRate: number;
+  }[];
   totalCostUsd: number;
   startedAt: string;
   finishedAt?: string;
@@ -322,6 +426,57 @@ export interface SessionRecord {
   startedAt: string;
   finishedAt?: string;
   error?: string;
+  /** Gate de holdout: re-score campeao vs controle nos cenarios reservados. */
+  holdout?: {
+    n: number;
+    controlScore: number;
+    championScore: number;
+    gain: number;
+    regressed: boolean;
+  };
+  /** Significancia estatistica (bootstrap pareado). null = amostra insuficiente. */
+  significance?: {
+    n: number;
+    meanDiffPp: number;
+    ci95Pp: [number, number];
+    pValue: number;
+  } | null;
+  /** Iteracao em que o treino convergiu (ganho < minGain), quando parou antes do fim. */
+  convergedAtIteration?: number;
+}
+
+// ----------------------------------------------------------------------------
+// Biblioteca de prompts (IndexedDB, client-only) e pacote JSON de cenarios
+// ----------------------------------------------------------------------------
+
+/** Prompt versionado da biblioteca local (nova versao a cada evolucao promovida). */
+export interface SavedPrompt {
+  id: string;
+  name: string;
+  text: string;
+  version: number;
+  /** Versoes anteriores (a versao corrente esta em `text`/`version`). */
+  history: { version: number; text: string; savedAt: string; note?: string }[];
+  /** Proveniencia do prompt. */
+  origin?: {
+    kind: 'training' | 'variation' | 'manual';
+    sessionId?: string;
+    runId?: string;
+    techniqueId?: string;
+    iteration?: number;
+  };
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Pacote JSON de cenarios+gabaritos exportado ao fim da run (importavel como seed). */
+export interface ScenarioPack {
+  format: 'ai-benchmark-pack@1';
+  theme: string;
+  exportedAt: string;
+  /** Prompt escolhido na exportacao (campeao ou base). */
+  prompt: { text: string; source: 'champion' | 'base'; label?: string };
+  scenarios: (StageSpec & { id: string })[];
 }
 
 // ----------------------------------------------------------------------------
@@ -356,6 +511,9 @@ export type RunEvent =
       scoreboard: Record<string, number>;
       totalCostUsd: number;
     }
+  | { type: 'stage.gabarito'; runId: string; stageIndex: number; done: number; total: number }
+  | { type: 'stage.dueled'; runId: string; stageIndex: number; duels: StageDuels }
+  | { type: 'duel.progress'; runId: string; done: number; total: number }
   | { type: 'run.finished'; runId: string; record: RunRecord }
   | { type: 'run.error'; runId: string; error: string };
 
@@ -370,5 +528,8 @@ export type SessionEvent =
       runId: string;
       winnerContestantId: string;
     }
+  | { type: 'iteration.promoted'; sessionId: string; iteration: number; championId: string; gain: number }
+  | { type: 'session.holdout'; sessionId: string; holdout: SessionRecord['holdout'] }
+  | { type: 'session.converged'; sessionId: string; iteration: number }
   | { type: 'session.finished'; sessionId: string; record: SessionRecord }
   | { type: 'session.error'; sessionId: string; error: string };

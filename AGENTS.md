@@ -13,11 +13,14 @@ Monorepo TypeScript: backend Express (`src/`) + frontend React/Vite (`web/`). UI
 ## Regras (só o não-óbvio)
 - Backend é **ESM NodeNext**: imports relativos terminam em **`.js`** mesmo para arquivos `.ts`.
 - `tsc` não copia `.json` para `dist/` → leia dados estáticos por `path.resolve(process.cwd(), 'src/data/...')` (padrão de `storage.ts`/`lgpd.ts`), nunca por import estático.
-- Tipos de domínio são **duplicados** em `src/types.ts` e `web/src/api.ts` — mantenha sincronizados.
+- Tipos de domínio são **duplicados** em `src/types.ts`, `web/src/engine/types.ts` e `web/src/api.ts` — mantenha sincronizados.
 - Em SSE, feche o `EventSource` em eventos terminais (senão o browser reconecta infinitamente).
 - OpenRouter: `/models` e `/endpoints/zdr` são **públicos**; valide a key por `/key`.
 - Toda chamada de LLM passa por `chatCompletion`/`chatCompletionStream` (`openrouter.ts`), que têm um **limitador global adaptativo** (semáforo + backoff em 429). Não chame o OpenRouter por fora nem ponha cap de concorrência local — confie no limitador. Teto via `OPENROUTER_MAX_CONCURRENCY`.
 - O pipeline roda **todas as etapas em paralelo** (`orchestrator.ts`); o placar é aditivo (ordem-independente) e o `saveRun` é throttled.
+- Julgamento default é **por referência**: gabarito temp-0 por cenário (`gabarito.ts`) + juiz pointwise (`refJudge.ts`, vereditos resolve/parcial/nao) + **duelos Copeland** top-K (`duels.ts`) → `JudgeResult` sintetizado. O listwise de `judge.ts` é **fallback** (compare clássico/etapa sem gabarito). Ver `knowledge-prompt-evolution`.
+- No **training**, promoção exige margem `minGain` sobre a campeã (`rank.ts`); `analyzeIteration` **não existe mais** (feedback = lições GEPA determinísticas) e o evento `iteration.analyzing` não é mais emitido. Holdout (piso 5) + significância bootstrap fecham a sessão.
+- IndexedDB do cliente é **v2** (store `prompts` — biblioteca `/prompts` via `web/src/engine/promptStore.ts`, client-only). Eventos agregados `stage.gabarito` (`stageIndex: -1`) e `duel.progress` (sem índice) **não** entram no reducer de etapas.
 - Há um **modo client-side** (`web/src/engine/`) que **duplica** o pipeline de `src/` para rodar no navegador (SPA estática/Vercel). Ao mudar a lógica do pipeline, **sincronize os dois lados**. Ver `knowledge-architecture`.
 - **Não rode o backend `src/` em serverless (Vercel):** ele grava runs no filesystem (`storage.ts`), efêmero/isolado no serverless → `GET /v1/benchmark/runs/:id` vira `Run nao encontrada`. Produção = **SPA estática** (`npm run web:build`); o backend é só dev/self-host. Deploy errado se denuncia quando `/health` responde JSON em vez do `index.html`. Ver `knowledge-architecture`.
 
