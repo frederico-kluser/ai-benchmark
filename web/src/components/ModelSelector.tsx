@@ -1,6 +1,13 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
+import { Plus, Search, SlidersHorizontal, X } from 'lucide-react';
 import type { ModelCaps, OpenRouterModel, ReasoningLevel } from '../api';
 import { EFFORT_LABEL, effortOptions, fetchModels, modelCaps } from '../api';
+import { useMotionUITransition, useMotionUITheme } from '@/components/motion-ui/ui-theme';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Modal } from './Modal';
+import { cn } from '@/lib/utils';
 
 /** Ajuste fino de UM modelo escolhido. temperature como TEXTO: '' = padrão do modelo. */
 export interface ModelTuning {
@@ -15,7 +22,7 @@ interface Props {
   title: string;
   hint?: string;
   excludeIds?: string[];
-  /** Optional shared catalog (avoids each selector refetching). Self-fetches when omitted. */
+  /** Catálogo compartilhado (evita cada seletor refazer o fetch). Sem ele, busca sozinho. */
   models?: OpenRouterModel[];
   loading?: boolean;
   /** Compacto: sem card próprio, para embutir numa linha de outro bloco. Default true. */
@@ -26,7 +33,6 @@ interface Props {
   /** Quais ajustes oferecer; a capacidade REAL ainda vem do supported_parameters. */
   tuningFields?: ('effort' | 'temperature')[];
 }
-
 
 const ALL_TUNING_FIELDS: ('effort' | 'temperature')[] = ['effort', 'temperature'];
 
@@ -60,75 +66,8 @@ function tuneSummary(t?: ModelTuning): string {
   return partes.join(' · ');
 }
 
-/**
- * Linhas de ajuste do modelo aberto — SOMENTE os controles que ele aceita
- * (capacidade real do `supported_parameters`, cruzada com `tuningFields`).
- */
-function ModelTune(p: {
-  panelId: string;
-  modelId: string;
-  caps: ModelCaps;
-  fields: ('effort' | 'temperature')[];
-  value: ModelTuning;
-  onChange: (patch: Partial<ModelTuning>) => void;
-}) {
-  const temEsforco = p.caps.reasoning && p.fields.includes('effort');
-  const temTemperatura = p.caps.temperature && p.fields.includes('temperature');
-  return (
-    <div className="picker-tune" id={p.panelId} role="group" aria-label={`Ajustes de ${p.modelId}`}>
-      <div className="ios-row-sub">{p.modelId}</div>
-
-      {temEsforco && (
-        <div className="ios-row">
-          <div className="ios-row-main">
-            <span className="ios-row-label">Esforço</span>
-            <span className="ios-row-sub">
-              Quanto o modelo pensa antes de responder. Mais esforço custa mais tokens.
-            </span>
-          </div>
-          <div className="ios-row-ctl">
-            <select
-              className="input"
-              aria-label={`Esforço de ${p.modelId}`}
-              value={p.value.effort ?? ''}
-              onChange={(e) => p.onChange({ effort: e.target.value as '' | ReasoningLevel })}
-            >
-              {effortOptions(p.caps).map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-      )}
-
-      {temTemperatura && (
-        <div className="ios-row">
-          <div className="ios-row-main">
-            <span className="ios-row-label">Temperatura</span>
-            <span className="ios-row-sub">
-              0 = sempre a resposta mais provável. Acima disso, mais variação entre execuções.
-            </span>
-          </div>
-          <div className="ios-row-ctl">
-            <input
-              type="number" className="input nr-num" min={0} max={2} step={0.1} placeholder="padrão"
-              aria-label={`Temperatura de ${p.modelId}`}
-              value={p.value.temperature ?? ''}
-              onChange={(e) => p.onChange({ temperature: e.target.value })}
-            />
-          </div>
-        </div>
-      )}
-
-      {!temEsforco && !temTemperatura && (
-        <div className="ios-row-sub">Este modelo não aceita ajuste de esforço nem de temperatura.</div>
-      )}
-    </div>
-  );
-}
-
 // -------- fuzzy search --------
-// Score baseado em: subsequence match, prefixos, palavras-chave, e bonus de proximidade.
+// Score baseado em: subsequence match, prefixos, palavras-chave e proximidade.
 function fuzzyScore(haystack: string, needle: string): number {
   if (!needle) return 0;
   const h = haystack.toLowerCase();
@@ -156,7 +95,7 @@ function fuzzyScore(haystack: string, needle: string): number {
     if (found === -1) return 0;
 
     const before = found > 0 ? h[found - 1] : '';
-    const isBoundary = found === 0 || /[\/\-_.: ]/.test(before);
+    const isBoundary = found === 0 || /[/\-_.: ]/.test(before);
     if (isBoundary) score += 8;
 
     if (prevChar && h[found - 1] === prevChar && found > 0) {
@@ -187,6 +126,90 @@ function multiTokenScore(haystack: string, query: string): number {
   return total;
 }
 
+/**
+ * Ajustes do modelo aberto — SOMENTE os controles que ele aceita (capacidade
+ * real do `supported_parameters`, cruzada com `tuningFields`).
+ */
+function ModelTune(p: {
+  panelId: string;
+  modelId: string;
+  caps: ModelCaps;
+  fields: ('effort' | 'temperature')[];
+  value: ModelTuning;
+  onChange: (patch: Partial<ModelTuning>) => void;
+}) {
+  const temEsforco = p.caps.reasoning && p.fields.includes('effort');
+  const temTemperatura = p.caps.temperature && p.fields.includes('temperature');
+  const ui = useMotionUITransition('ui');
+  const { motionMode } = useMotionUITheme();
+
+  return (
+    <motion.div
+      id={p.panelId}
+      role="group"
+      aria-label={`Ajustes de ${p.modelId}`}
+      layout={motionMode === 'full'}
+      initial={motionMode === 'off' ? false : { opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={ui}
+      className="mt-2 rounded-lg border border-border bg-muted/40 p-3"
+    >
+      <div className="mb-2 font-mono text-[11px] text-muted-foreground">{p.modelId}</div>
+
+      {temEsforco && (
+        <label className="mb-2 flex flex-wrap items-center justify-between gap-2 last:mb-0">
+          <span className="text-[13px]">
+            Esforço
+            <span className="block text-[12px] text-muted-foreground">
+              Quanto o modelo pensa antes de responder. Mais esforço custa mais tokens.
+            </span>
+          </span>
+          <select
+            className="h-8 rounded-lg border border-input bg-background px-2 text-[13px] outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+            aria-label={`Esforço de ${p.modelId}`}
+            value={p.value.effort ?? ''}
+            onChange={(e) => p.onChange({ effort: e.target.value as '' | ReasoningLevel })}
+          >
+            {effortOptions(p.caps).map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+
+      {temTemperatura && (
+        <label className="flex flex-wrap items-center justify-between gap-2">
+          <span className="text-[13px]">
+            Temperatura
+            <span className="block text-[12px] text-muted-foreground">
+              0 = sempre a resposta mais provável. Acima disso, mais variação entre execuções.
+            </span>
+          </span>
+          <Input
+            type="number"
+            className="h-8 w-24"
+            min={0}
+            max={2}
+            step={0.1}
+            placeholder="padrão"
+            aria-label={`Temperatura de ${p.modelId}`}
+            value={p.value.temperature ?? ''}
+            onChange={(e) => p.onChange({ temperature: e.target.value })}
+          />
+        </label>
+      )}
+
+      {!temEsforco && !temTemperatura && (
+        <p className="text-[12px] text-muted-foreground">
+          Este modelo não aceita ajuste de esforço nem de temperatura.
+        </p>
+      )}
+    </motion.div>
+  );
+}
+
 export function ModelSelector({
   multi = true,
   value,
@@ -209,11 +232,8 @@ export function ModelSelector({
   const [open, setOpen] = useState(false);
   // Id do modelo com o painel de ajuste aberto (um por vez). null = fechado.
   const [tuneOpen, setTuneOpen] = useState<string | null>(null);
-  // O painel de ajuste não é irmão do botão que o abre — precisa de aria-controls.
-  const uid = useId();
-  const tunePanelId = `${uid}-tune`;
-  const wrapperRef = useRef<HTMLDivElement | null>(null);
-  const inputRef = useRef<HTMLInputElement | null>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const tunePanelId = `tune-${title.replace(/\s+/g, '-').toLowerCase()}`;
 
   const models = sharedModels ?? selfModels;
   const loading = selfManaged ? selfLoading : !!sharedLoading;
@@ -230,38 +250,13 @@ export function ModelSelector({
     };
   }, [selfManaged]);
 
-  // Fechar ao clicar/tocar fora ou pressionar Escape
+  // Ao fechar, limpa a busca — reabrir sempre começa do catálogo inteiro.
   useEffect(() => {
-    if (!open) return;
-    function handlePointer(e: MouseEvent | TouchEvent) {
-      const target = e.target as Node | null;
-      if (wrapperRef.current && target && !wrapperRef.current.contains(target)) {
-        setOpen(false);
-      }
-    }
-    function handleKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') {
-        setOpen(false);
-        inputRef.current?.blur();
-      }
-    }
-    document.addEventListener('mousedown', handlePointer);
-    document.addEventListener('touchstart', handlePointer);
-    document.addEventListener('keydown', handleKey);
-    return () => {
-      document.removeEventListener('mousedown', handlePointer);
-      document.removeEventListener('touchstart', handlePointer);
-      document.removeEventListener('keydown', handleKey);
-    };
+    if (!open) setQuery('');
   }, [open]);
 
-  // Ao abrir, o foco vai direto para a busca.
-  useEffect(() => {
-    if (open) inputRef.current?.focus();
-  }, [open]);
-
-  // Mantém TODOS os ids selecionados, mesmo os que ainda nao estao no catalogo
-  // carregado (ex.: defaults pre-preenchidos) — senao o chip some da tela.
+  // Mantém TODOS os ids selecionados, mesmo os que ainda não estão no catálogo
+  // carregado (ex.: defaults pré-preenchidos) — senão o chip some da tela.
   const selected = useMemo(
     () => value.map((id) => ({ id, model: models.find((m) => m.id === id) })),
     [value, models],
@@ -272,37 +267,36 @@ export function ModelSelector({
     const available = models.filter((m) => !excluded.has(m.id));
 
     const q = query.trim();
-    if (!q) return available.slice(0, 50);
+    if (!q) return available.slice(0, 60);
 
     return available
       .map((m) => {
         const idScore = multiTokenScore(m.id, q);
         const nameScore = multiTokenScore(m.name, q);
-        const score = idScore * 1.5 + nameScore;
-        return { m, score };
+        return { m, score: idScore * 1.5 + nameScore };
       })
       .filter((x) => x.score > 0)
       .sort((a, b) => b.score - a.score)
-      .slice(0, 50)
+      .slice(0, 60)
       .map((x) => x.m);
   }, [query, models, excludeIds, value]);
 
   function select(id: string) {
     if (multi) {
       if (!value.includes(id)) onChange([...value, id]);
+      setQuery('');
+      searchRef.current?.focus();
     } else {
       onChange([id]);
       setOpen(false);
-      inputRef.current?.blur();
     }
-    setQuery('');
   }
 
   function remove(id: string) {
     onChange(value.filter((v) => v !== id));
   }
 
-  const addLabel = loading ? 'carregando…' : !multi && value.length > 0 ? 'trocar' : '+ adicionar';
+  const addLabel = loading ? 'carregando…' : !multi && value.length > 0 ? 'trocar' : 'adicionar';
 
   // Sem as duas props de ajuste, o seletor é o de sempre: chips + adicionar.
   const tunable = !!(tuning && onTuningChange);
@@ -310,91 +304,68 @@ export function ModelSelector({
   const tuneModelId = tunable && tuneOpen && value.includes(tuneOpen) ? tuneOpen : null;
 
   return (
-    <div className={inline ? 'picker' : 'picker card'} ref={wrapperRef}>
-      <span className="picker-label" title={hint}>
-        {title}
-      </span>
+    <div className={cn('w-full', !inline && 'rounded-xl bg-card p-4 ring-1 ring-foreground/10')}>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <span className="text-sm font-medium text-foreground" title={hint}>
+          {title}
+        </span>
 
-      <div className="picker-chips">
-        {selected.map(({ id, model }) => {
-          const resumo = tunable ? tuneSummary(tuning?.[id]) : '';
-          const base = model ? `${id} — ${priceLabel(model)}` : loading ? `${id} — carregando…` : `${id} — fora do catálogo`;
-          return (
-            <span
-              key={id}
-              className={resumo ? 'picker-chip tuned' : 'picker-chip'}
-              title={resumo ? `${base} · ${resumo}` : base}
-            >
-              {shortName(id)}
-              {tunable && (
-                <button
-                  type="button"
-                  className="picker-chip-tune"
-                  aria-label={`Ajustar ${id}`}
-                  aria-expanded={tuneOpen === id}
-                  aria-controls={tunePanelId}
-                  onClick={() => setTuneOpen((v) => (v === id ? null : id))}
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+          <AnimatePresence initial={false} mode="popLayout">
+            {selected.map(({ id, model }) => {
+              const resumo = tunable ? tuneSummary(tuning?.[id]) : '';
+              const base = model
+                ? `${id} — ${priceLabel(model)}`
+                : loading
+                  ? `${id} — carregando…`
+                  : `${id} — fora do catálogo`;
+              return (
+                <motion.span
+                  key={id}
+                  layout
+                  initial={{ opacity: 0, transform: 'scale(0.9)' }}
+                  animate={{ opacity: 1, transform: 'scale(1)' }}
+                  exit={{ opacity: 0, transform: 'scale(0.9)' }}
+                  transition={{ type: 'spring', stiffness: 700, damping: 45 }}
+                  title={resumo ? `${base} · ${resumo}` : base}
+                  className={cn(
+                    'inline-flex items-center gap-1 rounded-full border py-0.5 pr-1 pl-2.5 text-[12px] font-medium',
+                    resumo
+                      ? 'border-primary/40 bg-primary/10 text-foreground'
+                      : 'border-border bg-muted text-foreground',
+                  )}
                 >
-                  ⌥
-                </button>
-              )}
-              <button type="button" className="picker-chip-x" aria-label={`Remover ${id}`} onClick={() => remove(id)}>
-                ×
-              </button>
-            </span>
-          );
-        })}
-      </div>
-
-      <div className="picker-wrap">
-        <button
-          type="button"
-          className="picker-add"
-          disabled={loading}
-          aria-expanded={open}
-          aria-haspopup="listbox"
-          onClick={() => setOpen((v) => !v)}
-        >
-          {addLabel}
-        </button>
-
-        {open && (
-          <div className="picker-pop">
-            <input
-              ref={inputRef}
-              type="text"
-              className="picker-search"
-              placeholder="Buscar modelo…"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && filtered.length > 0) {
-                  e.preventDefault();
-                  select(filtered[0].id);
-                }
-              }}
-            />
-            <ul className="picker-list" role="listbox">
-              {error && <li className="picker-empty">{error}</li>}
-              {!error && filtered.length === 0 && <li className="picker-empty">Nenhum modelo encontrado</li>}
-              {filtered.map((m) => (
-                <li key={m.id}>
+                  {shortName(id)}
+                  {tunable && (
+                    <button
+                      type="button"
+                      className="grid size-5 place-items-center rounded-full text-muted-foreground hover:bg-background hover:text-foreground"
+                      aria-label={`Ajustar ${id}`}
+                      aria-expanded={tuneOpen === id}
+                      aria-controls={tunePanelId}
+                      onClick={() => setTuneOpen((v) => (v === id ? null : id))}
+                    >
+                      <SlidersHorizontal className="size-3" aria-hidden="true" />
+                    </button>
+                  )}
                   <button
                     type="button"
-                    className="picker-opt"
-                    // mousedown so para nao perder o foco da busca antes do click
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => select(m.id)}
+                    className="grid size-5 place-items-center rounded-full text-muted-foreground hover:bg-background hover:text-foreground"
+                    aria-label={`Remover ${id}`}
+                    onClick={() => remove(id)}
                   >
-                    <span className="picker-opt-id">{m.id}</span>
-                    <span className="picker-opt-name">{m.name}</span>
-                    <span className="picker-opt-price">{priceLabel(m)}</span>
+                    <X className="size-3" aria-hidden="true" />
                   </button>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
+                </motion.span>
+              );
+            })}
+          </AnimatePresence>
+
+          <Button type="button" variant="outline" size="xs" disabled={loading} onClick={() => setOpen(true)}>
+            <Plus aria-hidden="true" />
+            {addLabel}
+          </Button>
+        </div>
       </div>
 
       {tuneModelId && (
@@ -407,6 +378,68 @@ export function ModelSelector({
           onChange={(patch) => onTuningChange?.(tuneModelId, patch)}
         />
       )}
+
+      <Modal
+        open={open}
+        onClose={() => setOpen(false)}
+        label={`Escolher modelo — ${title}`}
+        initialFocus={searchRef}
+        className="max-w-xl"
+      >
+        <div className="flex items-center gap-2.5 border-b border-border px-4 py-3">
+          <Search className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          <input
+            ref={searchRef}
+            type="text"
+            className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+            placeholder="Buscar modelo…"
+            aria-label="Buscar modelo"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && filtered.length > 0) {
+                e.preventDefault();
+                select(filtered[0].id);
+              }
+            }}
+          />
+          <span className="mr-8 shrink-0 text-[11px] text-muted-foreground tabular">
+            {filtered.length}
+          </span>
+        </div>
+
+        <ul className="scroll-slim max-h-[52vh] overflow-y-auto p-1.5" role="listbox" aria-label={title}>
+          {error && <li className="px-3 py-6 text-center text-sm text-destructive">{error}</li>}
+          {!error && filtered.length === 0 && (
+            <li className="px-3 py-6 text-center text-sm text-muted-foreground">Nenhum modelo encontrado</li>
+          )}
+          {filtered.map((m) => (
+            <li key={m.id}>
+              <button
+                type="button"
+                role="option"
+                aria-selected={false}
+                className="flex w-full items-baseline gap-3 rounded-lg px-2.5 py-2 text-left hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
+                onClick={() => select(m.id)}
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-mono text-[12.5px] text-foreground">{m.id}</span>
+                  <span className="block truncate text-[12px] text-muted-foreground">{m.name}</span>
+                </span>
+                <span className="shrink-0 font-mono text-[11px] text-muted-foreground tabular">
+                  {priceLabel(m)}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+
+        {multi && (
+          <div className="border-t border-border px-4 py-2.5 text-[12px] text-muted-foreground">
+            {value.length} escolhido{value.length === 1 ? '' : 's'} · a lista continua aberta para somar mais
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

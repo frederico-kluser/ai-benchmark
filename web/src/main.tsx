@@ -1,119 +1,37 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { createPortal } from 'react-dom';
+import React from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter, Routes, Route, NavLink, useNavigate, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { MotionUIThemeProvider } from '@/components/motion-ui/ui-theme';
+// Fica na raiz do web/ porque é lá que o CLI da Motion o gerencia (e o único
+// comando que o sobrescreve é `add @motion/motion-theme` — não rode de novo).
+import motionTheme from '../motion.theme';
+import { AppShell } from './components/AppShell';
+import { KeyGate } from './components/KeySetup';
 import { NewRun } from './pages/NewRun';
 import { RunView } from './pages/RunView';
 import { RunsList } from './pages/RunsList';
 import { TrainingView } from './pages/TrainingView';
-import { KeyGate } from './components/KeySetup';
 import { SettingsPage } from './pages/Settings';
 import { PromptsPage } from './pages/PromptsPage';
-import { HelpModal } from './components/HelpModal';
-import { ThemeContext, type Theme, persistTheme, applyTheme } from './theme';
-import { HelpContext, markFirstOpen, type HelpTutorial } from './help';
-import './styles.css';
-
-function MenuIcon({ open }: { open: boolean }) {
-  return (
-    <svg width="18" height="14" viewBox="0 0 18 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <line x1="1" y1={open ? '12' : '1'} x2="17" y2={open ? '2' : '1'} />
-      <line x1="1" y1="7" x2="17" y2="7" />
-      <line x1="1" y1={open ? '2' : '13'} x2="17" y2={open ? '12' : '13'} />
-    </svg>
-  );
-}
-
-function Layout({ children }: { children: React.ReactNode }) {
-  const navigate = useNavigate();
-  const theme: Theme = 'dark';
-  const [help, setHelp] = useState<HelpTutorial | null>(null);
-  const [menuOpen, setMenuOpen] = useState(false);
-
-  useEffect(() => {
-    applyTheme(theme);
-    persistTheme(theme);
-  }, [theme]);
-
-  useEffect(() => {
-    markFirstOpen();
-  }, []);
-
-  const helpApi = useMemo(() => ({ open: (t: HelpTutorial) => setHelp(t) }), []);
-
-  return (
-    <ThemeContext.Provider value={theme}>
-      <HelpContext.Provider value={helpApi}>
-        <div className="app">
-          <nav className="nav">
-            <div className="nav-inner">
-              <div className="brand" onClick={() => navigate('/new')}>
-                <span className="brand-badge">P</span>
-                Prompt Builder
-              </div>
-              <div className="nav-actions">
-                <div className="nav-menu">
-                  <button
-                    type="button"
-                    className="icon-btn nav-menu-btn"
-                    onClick={() => setMenuOpen((v) => !v)}
-                    aria-label={menuOpen ? 'Fechar menu' : 'Abrir menu'}
-                    aria-expanded={menuOpen}
-                  >
-                    <MenuIcon open={menuOpen} />
-                  </button>
-                  {menuOpen &&
-                    createPortal(
-                      <>
-                        <div className="nav-menu-overlay" onClick={() => setMenuOpen(false)} aria-hidden />
-                        <div className="nav-menu-pop">
-                          <NavLink to="/new" className="nav-link" onClick={() => setMenuOpen(false)}>Nova Run</NavLink>
-                          <NavLink to="/runs" className="nav-link" onClick={() => setMenuOpen(false)}>Histórico</NavLink>
-                          <NavLink to="/prompts" className="nav-link" onClick={() => setMenuOpen(false)}>Prompts</NavLink>
-                          <NavLink to="/settings" className="nav-link" onClick={() => setMenuOpen(false)}>Configurações</NavLink>
-                        </div>
-                      </>,
-                      document.body,
-                    )}
-                </div>
-                <NavLink to="/new" className="nav-link nav-link-desktop">Nova Run</NavLink>
-                <NavLink to="/runs" className="nav-link nav-link-desktop">Histórico</NavLink>
-                <NavLink to="/prompts" className="nav-link nav-link-desktop">Prompts</NavLink>
-                <NavLink to="/settings" className="nav-link nav-link-desktop">Configurações</NavLink>
-                <span className="nav-divider nav-link-desktop" />
-                <button
-                  className="icon-btn"
-                  onClick={() => setHelp('compare')}
-                  title="Como funciona"
-                  aria-label="Como funciona"
-                >
-                  ?
-                </button>
-              </div>
-            </div>
-          </nav>
-          <main className="main">{children}</main>
-          {help && <HelpModal tutorial={help} onClose={() => setHelp(null)} />}
-        </div>
-      </HelpContext.Provider>
-    </ThemeContext.Provider>
-  );
-}
+import './index.css';
 
 createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <BrowserRouter>
-      <Layout>
-        <Routes>
-          <Route path="/" element={<Navigate to="/new" replace />} />
-          <Route path="/settings" element={<SettingsPage />} />
-          <Route path="/new" element={<KeyGate><NewRun /></KeyGate>} />
-          <Route path="/runs" element={<RunsList />} />
-          <Route path="/runs/:id" element={<RunView />} />
-          <Route path="/training/:sessionId" element={<TrainingView />} />
-          <Route path="/prompts" element={<PromptsPage />} />
-        </Routes>
-      </Layout>
+      {/* Uma vez só, na raiz: sem isto toda peça do Motion UI cai nos defaults. */}
+      <MotionUIThemeProvider theme={motionTheme}>
+        <AppShell>
+          <Routes>
+            <Route path="/" element={<Navigate to="/new" replace />} />
+            <Route path="/new" element={<KeyGate><NewRun /></KeyGate>} />
+            <Route path="/runs" element={<RunsList />} />
+            <Route path="/runs/:id" element={<RunView />} />
+            <Route path="/training/:sessionId" element={<TrainingView />} />
+            <Route path="/prompts" element={<PromptsPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+          </Routes>
+        </AppShell>
+      </MotionUIThemeProvider>
     </BrowserRouter>
   </React.StrictMode>,
 );

@@ -1,44 +1,49 @@
 ---
 name: task-edit-newrun-form
-description: Procedimento para alterar o formulário de Nova Run (web/src/pages/NewRun.tsx), que é uma PÁGINA ÚNICA de blocos — adicionar/remover um campo ou bloco, mexer na validação, nos seletores de modelo, no bloco Avançado ou no import de JSON. Use sempre que a tarefa tocar a tela de criação de run/sessão ou a montagem do RunConfig enviado.
+description: Procedimento para alterar o formulário de Nova Run (web/src/pages/NewRun.tsx), que é um FLUXO EM ABAS animadas — adicionar/remover um campo ou aba, mexer na validação, nos seletores de modelo, na aba Avançado ou no import de JSON. Use sempre que a tarefa tocar a tela de criação de run/sessão ou a montagem do RunConfig enviado.
 metadata:
-  version: 0.2.0
+  version: 0.3.0
   type: task
 ---
 # Tarefa: alterar o formulário de Nova Run
 
 Pré-requisitos: `knowledge-frontend`. O formulário vive em `web/src/pages/NewRun.tsx`.
-**Não é mais um assistente em passos** (o array `STEPS`, `validateStep`, `StepIntro`, `Pipeline` e o
-passo `review` foram removidos em 2026-07-25). É um `<form className="screen nr">` único, lido de
-cima a baixo, com um único botão `Iniciar →` no rodapé.
+**Não é assistente em passos nem página única de blocos**: desde 2026-07-26 é um `<form>` com um
+`<SegmentedToggle>` de MODO e um `<SmoothTabs>` de 4 etapas, mais um rodapé **fixo** com a pendência,
+a estimativa de custo e o `<MultiStateButton type="submit">`.
 
 ## Anatomia
-Ordem fixa: título + `[Importar JSON]` → segmentado de modo (`.seg`) → avisos de import →
-**blocos** → `<details className="nr-adv">` Avançado → `.nr-foot`.
+Ordem fixa: `<PageHeader>` (título + `[Importar JSON]`) → segmentado de modo → avisos de import →
+`<SmoothTabs>` → rodapé fixo.
 
-- Um bloco é `<section className="nr-block">` com `.nr-block-head` (`.nr-block-title` +
-  `.nr-block-status`, o resumo numérico à direita) e `.nr-block-body` (coluna, `gap: 14px`).
-- Blocos atuais: **Cenários** (sempre) · **Modelos** (`mode === 'compare'`) · **Prompts**
-  (`isSingle`, i.e. variation/training) · **Juízes** (sempre).
-- Dentro do corpo use os campos locais já prontos, não escreva `<label>` cru:
-  `NumField` (número), `TxtNumField` (número como texto — vazio = default/sem limite),
-  `AreaField` (textarea), `EffortField` (select de reasoning), `Chip`, `ImportedLine`,
-  `<ModelSelector inline>`, `.nr-inline` para pôr vários lado a lado.
-- **Progressive disclosure**: o que é opcional começa escondido atrás de um
-  `<button className="link-toggle">` (ex.: `briefOpen`, `genOpen`). O que já veio pronto de um
-  arquivo **colapsa** para uma linha `✓ … [remover/editar]` (`ImportedLine`) e some da seleção.
+- As abas têm **ids estáveis**: `cenarios | sujeitos | juizes | avancado`. Só o rótulo de
+  `sujeitos` muda por modo (`Modelos` no compare, `Prompts` em variation/training). **Não crie uma
+  aba condicional** — a aba ativa sumiria ao trocar de modo.
+- Cada painel é um `<SettingGroup status={…}>` de `<SettingRow>`s (rótulo + explicação à esquerda,
+  controle à direita; `wide` desce o controle para baixo). Ambos vêm de `components/primitives.tsx`.
+- Dentro use os campos locais já prontos, não escreva `<label>` cru:
+  `NumRow`/`TxtNumRow` (número; a versão Txt aceita vazio = default/sem limite), `AreaRow`
+  (textarea), `SwitchRow`, `EffortField` (select de reasoning), `TxtNumField`, `Chip`,
+  `LinkButton`, `ImportedLine`, `<ModelSelector>`.
+- **Progressive disclosure**: o que é opcional começa escondido atrás de um `LinkButton`
+  (ex.: `briefOpen`, `genOpen`). O que já veio pronto de um arquivo **colapsa** para uma linha
+  `✓ … [remover/editar]` (`ImportedLine`) e some da seleção.
 
 ### Onde pôr um campo novo
-Regra: **se 9 em 10 runs não mexem nele, vai no `<details>` Avançado**; só sobe para um bloco o que
-muda o resultado da run com frequência. O Avançado já concentra finalistas, tokens/timeout/
+Regra: **se 9 em 10 runs não mexem nele, vai na aba Avançado**; só sobe para uma aba de conteúdo o
+que muda o resultado da run com frequência. O Avançado já concentra finalistas, tokens/timeout/
 concorrência, juiz em 2 ordens, modelos de referência e reescritor, esforço por papel, o eixo
 compare-llms, os gates de training, LGPD e o filtro de preço.
 
-## Validação — `problems(): string[]`
-Uma função só, sem estado, que devolve **uma frase por problema**. `const pendencias = problems()`
-alimenta o rodapé (mostra `pendencias[0]`) e o `disabled` do botão; `submit()` a chama de novo.
+## Validação — `problems(): { tab, text }[]`
+Uma função só, sem estado, que devolve **uma frase por problema, com a aba que a resolve**.
+`const pendencias = problems()` alimenta o rodapé (mostra `pendencias[0]`, clicável — leva à aba) e
+o ponto de pendência no rótulo da aba; `submit()` a chama de novo, troca de aba e mostra o erro.
+O botão **não** fica `disabled` por pendência (só enquanto `submitting`).
 
-- **Só exija um campo que a UI está mostrando.** Exigir campo escondido trava o `Iniciar →` sem o
+- **Ao adicionar uma pendência, escolha a `tab` certa** — mandar o usuário para a aba errada é pior
+  que não navegar.
+- **Só exija um campo que a UI está mostrando.** Exigir campo escondido trava o `Iniciar` sem o
   usuário ver o porquê — foi o caso do gerador quando os cenários já vieram do arquivo (hoje o
   check é `if (precisaGerar && datagen.length !== 1)`).
 - Ao adicionar um filtro que pode invalidar seleções (LGPD, preço), **pode** as seleções órfãs no
@@ -79,9 +84,10 @@ existe no backend, feche o ciclo em `RunConfig` (`web/src/api.ts` **e** `src/typ
 `src/routes.ts` (ver `task-add-endpoint`). **Grep pelo nome do campo antes de fechar.**
 
 ## Estilos
-Reúse as classes que já existem (`.nr-block`, `.nr-field`, `.nr-inline`, `.nr-num`, `.tech-chip`,
-`.picker-*`, `.link-toggle`, `.field-hint`) — ver `knowledge-code-style`. Atenção: `.nr-field` é um
-**grid `132px | 1fr`**, então filho solto cai na coluna do rótulo (precisa de `grid-column: 2`).
+Tailwind com classe semântica; **não** existe mais `.nr-*`/`.picker-*`/`.link-toggle` — ver
+`knowledge-code-style`. Componha de `components/primitives.tsx` antes de repetir cadeia de classe.
+O rodapé é `fixed bottom-0`, e é o `pb-32` do `<Screen>` que impede o último campo de ficar embaixo
+dele: se aumentar a altura do rodapé, aumente o padding também.
 
 ## <evolution>
 Ao concluir:

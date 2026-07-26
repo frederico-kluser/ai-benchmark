@@ -1,14 +1,38 @@
 ---
 name: knowledge-frontend
-description: Padrões do frontend React/Vite do ai-benchmark — camada api.ts, cache IndexedDB (v2, com a biblioteca de prompts), o ModelSelector compacto (picker), a tela Nova Run em página única, o import unificado de JSON, o heatmap/painel de finais de runShared.tsx, SSE e design tokens CSS. Use ao adicionar/alterar qualquer coisa em web/src/ (telas, componentes, chamadas de API, estilos).
+description: Padrões do frontend React/Vite do ai-benchmark — stack Tailwind v4 + shadcn + Motion UI, o AppShell (header que condensa, paleta ⌘K, transição de rota, toasts), camada api.ts, cache IndexedDB (v2, com a biblioteca de prompts), o ModelSelector em modal, a Nova Run em abas animadas, o import unificado de JSON, o heatmap/painel de finais de runShared.tsx e SSE. Use ao adicionar/alterar qualquer coisa em web/src/ (telas, componentes, chamadas de API, estilos).
 metadata:
-  version: 0.6.0
+  version: 0.7.0
   type: knowledge
 ---
 # Frontend — ai-benchmark
 
-React 18 + Vite + TypeScript. Roteamento com `react-router-dom`. Sem testes, sem lib de UI.
+React **19** + Vite + TypeScript. Roteamento com `react-router-dom` v6. Sem testes.
 Dev em `:5173` com proxy de `/v1` e `/health` → `:3001` (`vite.config.ts`).
+
+## Stack de UI (reescrita de 2026-07-26)
+- **Tailwind v4 + shadcn + Motion UI.** `web/src/styles.css` **não existe mais**; `web/src/index.css`
+  carrega o Tailwind e declara os tokens (`--background`, `--primary`, … + `--resolve`/`--parcial`/
+  `--nao` e seus `-soft`). Tema claro/escuro pela classe `dark` no `<html>` (`theme.ts`, com `system`).
+- Duas pastas são **propriedade do CLI** — edite em wrapper, nunca no source:
+  `components/ui/*` (`npx shadcn@latest add <nome>`) e `components/motion-ui/*`
+  (`npx shadcn@latest add @motion/<nome>`, registry token-gated; o token vive em `$MOTION_TOKEN`,
+  no repo só existe o placeholder em `components.json`/`.npmrc`).
+- **Antes de escrever JSX novo de UI, consulte o catálogo do Motion UI** (skill `motion-plus-ui`):
+  acordeão, tabs, segmentado, paleta ⌘K, sheet, overlay, toast, skeleton, progress, sparkline,
+  copy-button, hold-to-confirm, split/stagger-reveal e shrink-header **já estão instalados**.
+- `motion.theme.ts` fica na **raiz do `web/`** (não em `src/`) porque é lá que o CLI o gerencia —
+  importado por caminho relativo em `main.tsx`. **Nunca rode `add @motion/motion-theme` de novo.**
+- ⚠️ Os componentes do Motion UI são tipados para **React 19**; foi por isso que o projeto subiu de
+  18 → 19. Não volte o React sem quebrar `smooth-tabs`/`copy-button`/`sheet` no `tsc -b`.
+
+## Shell (`components/AppShell.tsx`)
+- Monta `MotionUIThemeProvider` (em `main.tsx`), `ThemeContext`, `HelpContext` e o `ToastLayer`.
+- `ShrinkHeader` fixo (84px → 56px ao rolar); marca, nav, **paleta ⌘K** (a navegação primária),
+  botão de ajuda, alternador de tema e o CTA "Nova run" (escondido quando já se está em `/new`).
+- `useToasts().notify(texto, 'ok'|'error')` é o feedback efêmero — usado no salvar/excluir prompt.
+- Transição de rota é `AnimatePresence` + opacity/translateY no token `ui`. **Não** use `page-curtain`
+  nem `mask-wipe`: os dois atravessam o nome da página na tela (coreografia de landing page).
 
 ## Engine client-side (`web/src/engine/`)
 - O pipeline roda **no navegador** (port de `src/`): `api.ts` delega ao engine — `createRun`/
@@ -69,22 +93,27 @@ Dev em `:5173` com proxy de `/v1` e `/health` → `:3001` (`vite.config.ts`).
   o selo `final`. `stage.dueled` chega **depois** de todas as etapas julgadas, por índice.
 - Exports de `runShared.tsx`: `VERDICT_META`, `verdictOf`, `trunc`, `denseStages`, `rankColor`,
   `applyEvent`, `HeatRow`, `heatRows()`, `<ScoreHeatmap>`, `<FinalsPanel>`. **Não existem mais**
-  `ProcessMonitor`, `computeStandings`/`Standing`, `stageStatus`, `medalStandings`/`MedalStanding`.
+  `ProcessMonitor`, `computeStandings`/`Standing`, `stageStatus`, `medalStandings`/`MedalStanding`,
+  nem o `SectionHead` com tile colorido (o de hoje vem de `components/primitives.tsx`).
 - **`<ScoreHeatmap record ranked?>` é a ÚNICA visualização** de progresso e de resultado: linhas =
   variantes em **ordem estável** (`record.contestants`; só ordena por score quando `ranked`, i.e. no
   fim), colunas = cenários, célula = ✓ resolve / ◐ parcial / ✕ não resolve / **· pendente**, mais
   uma coluna de score 0–100 `(resolve + 0,5·parcial)/julgados` com a contagem `n✓ n◐ n✕`.
-  Classes `.hm-*`.
+  Grade em Tailwind com `gridTemplateColumns` derivado do nº de cenários (é dado, não layout à mão —
+  o catálogo do Motion UI não tem matriz; `sparkline` é o único gráfico dele). Cores = tokens
+  `resolve`/`parcial`/`nao` + `-soft`, **medidos** em AA nos dois temas.
 - **`<FinalsPanel record progress?>`**: pódio dos finalistas (Copeland de `record.standings` com
-  pts e V–E–D; enquanto os duelos rodam, pódio provisório por `judgeScoreByContestant`) + accordion
-  "Confrontos" agregando cada par nos dois sentidos. Classes `.finals-*`.
+  pts e V–E–D; enquanto os duelos rodam, pódio provisório por `judgeScoreByContestant` e uma
+  `<ProgressBar>` — cujo `value` é fração em **[0,1]**, não 0–100) + `<Accordion>` "Confrontos"
+  agregando cada par nos dois sentidos.
 
 ## Telas de resultado
-- **`RunView`** (`pages/RunView.tsx`): header (`.rv-head`/`.rv-stat`, export JSON/CSV/Pacote) →
-  `Resultados` (heatmap) → `Final` (FinalsPanel, só com finalistas/duelos) → `Cenários`
-  (`<details className="stage-list">`, **fechado enquanto a run roda** — ao vivo a tela é só o
-  heatmap) → `Variantes` (`<details>`). Não há mais abas Resumo/Etapas, tabelas de classificação
-  por pontos/judge-score/Copeland nem `DuelsPanel` por etapa.
+- **`RunView`** (`pages/RunView.tsx`): header (id, status, tema, cenários/custo, export JSON/CSV/
+  Pacote) → `Resultados` (heatmap) → `Final` (FinalsPanel, só com finalistas/duelos) → `Cenários`
+  (`<Accordion>`, **recolhido enquanto a run roda** — ao vivo a tela é só o heatmap) → `Variantes`.
+  O `value` de cada `AccordionItem` é `stage-{index}` e **É o id do elemento no DOM** (âncora de
+  deep-link do componente) — é por ele que o clique no heatmap abre e rola até o cenário.
+  `AccordionItem` **não aceita prop `id`** (o tipo a omite de propósito).
 - **`TrainingView`**: header → 1 banner de gates (convergência/holdout/significância, nunca
   bloqueante) → rodada corrente (heatmap) → `Final da rodada` → `Evolução` (heatmap local variante ×
   rodada, célula = judge-score) → `Melhor prompt` (`BestPromptStudio`: tabs Prompt/Diff + "Salvar na
@@ -93,34 +122,37 @@ Dev em `:5173` com proxy de `/v1` e `/health` → `:3001` (`vite.config.ts`).
 
 ## ModelSelector (`components/ModelSelector.tsx`)
 - **Compacto:** render é UMA linha — rótulo + chips do que já foi escolhido + botão
-  `[+ adicionar]`/`[trocar]` que abre um popup com busca fuzzy (id×1.5 + nome). Classes `.picker-*`
-  (as antigas `.selector-*`/`.model-chip*` não existem mais). Props novas: `inline` (default **true**;
-  `false` = card próprio) e `hint` (vira `title` do rótulo).
+  `[+ adicionar]`/`[trocar]`. O botão abre um **`<Modal>`** (`components/Modal.tsx`, sobre os
+  primitivos de `@motion/overlay`: focus trap + scroll lock + scrim) com busca fuzzy (id×1.5 + nome).
+  Virou modal porque o popup absoluto era cortado por qualquer ancestral com `overflow` — não existe
+  mais o `PICKER_SAFE` que o NewRun espalhava. Props: `inline` (default **true**; `false` = card
+  próprio) e `hint` (vira `title` do rótulo).
 - Recebe um catálogo **compartilhado** `models` (evita refetch por seletor) + `excludeIds` (esconde modelos já usados em outro papel). Para filtrar o catálogo (ex.: LGPD), passe um array `models` já filtrado.
 - **Filtros por papel (NewRun):** participantes recebem `participantModels` (LGPD + preço input/output); **gerador, juiz e referência recebem `models` completo** (não filtrados) e **podem repetir o mesmo modelo** (sem `excludeIds` entre eles).
 - Chips de ids fora do catálogo carregado continuam visíveis (defaults pré-preenchidos).
 
 ## Nova Run (`pages/NewRun.tsx`)
-- **Página única**, não é mais assistente: não existem `STEPS`, `StepProgress`, `StepIntro`,
-  `Pipeline`, `Stepper`, `MODE_META`, presets de tema, gerador de prompt de coleta nem textarea de
-  etapas manuais. Ver `task-edit-newrun-form` para o procedimento de mexer nela.
-- Layout: título + `[Importar JSON]` → segmentado de modo (`.seg`/`.seg-btn`) → blocos verticais
-  `.nr-block` que só aparecem quando fazem sentido (`Cenários` → `Modelos` no compare /
-  `Prompts` em variation·training → `Juízes`) → `<details className="nr-adv">` **Avançado** →
-  `.nr-foot` com erro, estimativa de custo e `Iniciar →`.
-- Validação = função **`problems(): string[]`** (não há mais `validateStep`): o rodapé mostra a 1ª
-  pendência e o botão fica `disabled` enquanto houver alguma. **Só exija campo que a UI mostra** —
-  ex.: o gerador só é obrigatório quando `precisaGerar`.
-- Técnicas de prompt viraram chips inline (`.tech-chip` + botão "Todas", `title` com bom/cuidado);
-  `components/TechniqueSelector.tsx` foi **deletado**.
-- Reasoning por papel são 4 `EffortField` dentro do Avançado (`EffortCard`/`ReasoningSelect` sumiram).
+- **Fluxo em abas**, não é assistente nem página única: `<SegmentedToggle>` escolhe o MODO e
+  `<SmoothTabs>` divide a configuração em 4 etapas. Não existem `STEPS`, `StepProgress`, `Pipeline`,
+  `Stepper`, `MODE_META`, presets de tema nem textarea de etapas manuais. Ver `task-edit-newrun-form`.
+- As abas têm **ids estáveis** `cenarios | sujeitos | juizes | avancado`. Só o RÓTULO de `sujeitos`
+  muda (`Modelos` no compare, `Prompts` nos outros) — é isso que impede a aba ativa de sumir quando
+  o usuário troca de modo.
+- Validação = **`problems(): { tab, text }[]`** (não é mais `string[]`): cada pendência sabe a aba
+  que a resolve. O rodapé mostra a primeira e **leva até lá** ao clique; a aba com pendência ganha um
+  ponto no rótulo. O botão NÃO fica disabled — `submit()` valida, troca de aba e mostra o erro.
+  **Só exija campo que a UI mostra** — ex.: o gerador só é obrigatório quando `precisaGerar`.
+- Rodapé é **fixo** (`fixed bottom-0`): pendência/erro + estimativa de custo + `<MultiStateButton
+  type="submit">`. O `Screen` compensa com `pb-32`.
+- Técnicas de prompt são chips inline (componente `Chip` local + botão "Todas", `title` com
+  bom/cuidado); `components/TechniqueSelector.tsx` foi **deletado**.
+- Reasoning por papel são `EffortField` dentro do Avançado (`EffortCard`/`ReasoningSelect` sumiram).
   Config de finais é `finalists` (0 = sem finais); **`duelTopK` não existe mais**.
 - **Max tokens por resposta é input numérico LIVRE** (sem teto na UI; estado string; vazio/inválido
   → `DEFAULT_MAX_OUTPUT_TOKENS`). O Zod do backend aceita até 1 000 000.
 
-## Estilos
-- Tudo em `web/src/styles.css` com tokens `var(--…)` e tema claro/escuro. Reaproveite classes/tokens existentes (ver `knowledge-code-style`).
-- Famílias vivas: `.seg`, `.nr-*` (Nova Run), `.picker-*` (ModelSelector), `.tech-chip`, `.hm-*`
-  (heatmap), `.finals-*`, `.rv-*`, `.stage-list`. As famílias `.process-*`, `.fanout-*`, `.medal-*`,
-  `.wizard-*`, `.mode-card*`, `.pipeline*`, `.selector-*`, `.stepper*`, `.review-*`, `.technique-*`,
-  `.live-card*`, `.run-ring*` foram **removidas** — não as ressuscite.
+## Primitivos do app (`components/primitives.tsx`)
+- A gramática do produto, escrita uma vez sobre os tokens: `Screen` (coluna central; `wide` para
+  telas com heatmap), `PageHeader` (usa `StaggerReveal` do Motion UI), `SectionHead`, `Banner`,
+  `ImportedLine`, `EmptyState`, `StatusPill`, `Tag`, `Kbd`, `SettingRow`/`SettingGroup`, `Pre`,
+  `MiniLabel`, `DiffView`. **Prefira compor daqui** a repetir cadeias de classe Tailwind.

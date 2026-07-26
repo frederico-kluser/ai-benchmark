@@ -1,0 +1,210 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
+
+@custom-variant dark (&:is(.dark *));
+
+/* =========================================================================
+   Prompt Builder — camada de tokens
+   Neutro frio + um accent azul. Os tons de veredito (resolve/parcial/nao)
+   são DADO, não decoração: existem como token próprio porque o heatmap e as
+   pílulas os leem, e precisam de contraste nos dois modos.
+   ========================================================================= */
+
+@theme inline {
+    --font-heading: var(--font-sans);
+    --font-sans: 'Geist Variable', system-ui, sans-serif;
+    --font-mono: 'Geist Mono Variable', ui-monospace, monospace;
+
+    --color-background: var(--background);
+    --color-foreground: var(--foreground);
+    --color-card: var(--card);
+    --color-card-foreground: var(--card-foreground);
+    --color-popover: var(--popover);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-primary: var(--primary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-secondary: var(--secondary);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-muted: var(--muted);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-accent: var(--accent);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-destructive: var(--destructive);
+    --color-border: var(--border);
+    --color-input: var(--input);
+    --color-ring: var(--ring);
+
+    /* vereditos do juiz */
+    --color-resolve: var(--resolve);
+    --color-resolve-soft: var(--resolve-soft);
+    --color-parcial: var(--parcial);
+    --color-parcial-soft: var(--parcial-soft);
+    --color-nao: var(--nao);
+    --color-nao-soft: var(--nao-soft);
+
+    --color-chart-1: var(--chart-1);
+    --color-chart-2: var(--chart-2);
+    --color-chart-3: var(--chart-3);
+    --color-chart-4: var(--chart-4);
+    --color-chart-5: var(--chart-5);
+
+    --color-sidebar: var(--sidebar);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar-primary: var(--sidebar-primary);
+    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-ring: var(--sidebar-ring);
+
+    --radius-sm: calc(var(--radius) * 0.6);
+    --radius-md: calc(var(--radius) * 0.8);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) * 1.4);
+    --radius-2xl: calc(var(--radius) * 1.8);
+    --radius-3xl: calc(var(--radius) * 2.2);
+    --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+    --background: oklch(0.985 0.002 265);
+    --foreground: oklch(0.21 0.012 265);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.21 0.012 265);
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(0.21 0.012 265);
+    --primary: oklch(0.505 0.19 258);
+    --primary-foreground: oklch(0.99 0.002 258);
+    --secondary: oklch(0.962 0.004 265);
+    --secondary-foreground: oklch(0.28 0.014 265);
+    --muted: oklch(0.965 0.004 265);
+    --muted-foreground: oklch(0.505 0.014 265);
+    --accent: oklch(0.955 0.012 258);
+    --accent-foreground: oklch(0.30 0.05 258);
+    --destructive: oklch(0.55 0.21 27);
+    --border: oklch(0.905 0.005 265);
+    --input: oklch(0.905 0.005 265);
+    --ring: oklch(0.505 0.19 258);
+
+    /* Vereditos no claro: a tinta é DESENHADA sobre o `-soft` correspondente
+       dentro da célula do heatmap, então cada par precisa fechar 4,5:1 em
+       13px — daí os tons escuros (medido em scratchpad/contrast.mjs). */
+    --resolve: oklch(0.465 0.13 152);
+    --resolve-soft: oklch(0.945 0.045 152);
+    --parcial: oklch(0.495 0.115 72);
+    --parcial-soft: oklch(0.955 0.05 82);
+    --nao: oklch(0.495 0.19 27);
+    --nao-soft: oklch(0.947 0.04 27);
+
+    --chart-1: oklch(0.505 0.19 258);
+    --chart-2: oklch(0.66 0.14 218);
+    --chart-3: oklch(0.70 0.12 185);
+    --chart-4: oklch(0.62 0.16 292);
+    --chart-5: oklch(0.60 0.09 265);
+
+    --radius: 0.7rem;
+
+    --sidebar: oklch(0.975 0.003 265);
+    --sidebar-foreground: oklch(0.21 0.012 265);
+    --sidebar-primary: oklch(0.505 0.19 258);
+    --sidebar-primary-foreground: oklch(0.99 0.002 258);
+    --sidebar-accent: oklch(0.955 0.012 258);
+    --sidebar-accent-foreground: oklch(0.30 0.05 258);
+    --sidebar-border: oklch(0.905 0.005 265);
+    --sidebar-ring: oklch(0.505 0.19 258);
+}
+
+.dark {
+    --background: oklch(0.158 0.008 265);
+    --foreground: oklch(0.962 0.003 265);
+    --card: oklch(0.204 0.009 265);
+    --card-foreground: oklch(0.962 0.003 265);
+    --popover: oklch(0.228 0.010 265);
+    --popover-foreground: oklch(0.962 0.003 265);
+    --primary: oklch(0.685 0.165 258);
+    --primary-foreground: oklch(0.17 0.03 258);
+    --secondary: oklch(0.272 0.010 265);
+    --secondary-foreground: oklch(0.962 0.003 265);
+    --muted: oklch(0.262 0.010 265);
+    --muted-foreground: oklch(0.712 0.013 265);
+    --accent: oklch(0.295 0.022 258);
+    --accent-foreground: oklch(0.95 0.02 258);
+    --destructive: oklch(0.685 0.185 25);
+    --border: oklch(1 0 0 / 11%);
+    --input: oklch(1 0 0 / 14%);
+    --ring: oklch(0.62 0.16 258);
+
+    --resolve: oklch(0.745 0.165 152);
+    --resolve-soft: oklch(0.315 0.065 152);
+    --parcial: oklch(0.805 0.145 80);
+    --parcial-soft: oklch(0.33 0.065 80);
+    --nao: oklch(0.685 0.185 25);
+    --nao-soft: oklch(0.275 0.075 25);
+
+    --chart-1: oklch(0.685 0.165 258);
+    --chart-2: oklch(0.735 0.125 218);
+    --chart-3: oklch(0.785 0.105 185);
+    --chart-4: oklch(0.715 0.145 292);
+    --chart-5: oklch(0.66 0.075 265);
+
+    --sidebar: oklch(0.185 0.008 265);
+    --sidebar-foreground: oklch(0.962 0.003 265);
+    --sidebar-primary: oklch(0.685 0.165 258);
+    --sidebar-primary-foreground: oklch(0.17 0.03 258);
+    --sidebar-accent: oklch(0.295 0.022 258);
+    --sidebar-accent-foreground: oklch(0.95 0.02 258);
+    --sidebar-border: oklch(1 0 0 / 11%);
+    --sidebar-ring: oklch(0.62 0.16 258);
+}
+
+@layer base {
+    * {
+        @apply border-border outline-ring/50;
+    }
+
+    html {
+        @apply font-sans;
+        color-scheme: light;
+    }
+
+    html.dark {
+        color-scheme: dark;
+    }
+
+    body {
+        @apply bg-background text-foreground antialiased;
+    }
+
+    /* Números de tabela/heatmap nunca devem "dançar" ao atualizar. */
+    .tabular {
+        font-variant-numeric: tabular-nums;
+    }
+}
+
+@layer utilities {
+    /* O app tem várias faixas roláveis (heatmap, listas de cenário). A barra
+       padrão do Chrome é grossa demais para caber dentro de um card. */
+    .scroll-slim {
+        scrollbar-width: thin;
+        scrollbar-color: color-mix(in srgb, var(--foreground) 22%, transparent) transparent;
+    }
+
+    .scroll-slim::-webkit-scrollbar {
+        width: 9px;
+        height: 9px;
+    }
+
+    .scroll-slim::-webkit-scrollbar-thumb {
+        background: color-mix(in srgb, var(--foreground) 22%, transparent);
+        border: 2px solid transparent;
+        background-clip: content-box;
+        border-radius: 999px;
+    }
+
+    .scroll-slim::-webkit-scrollbar-track {
+        background: transparent;
+    }
+}

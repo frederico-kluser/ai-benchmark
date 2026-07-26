@@ -1,5 +1,17 @@
 import { useEffect, useState } from 'react';
-import type { HelpTutorial } from '../help';
+import { AnimatePresence, motion } from 'motion/react';
+import {
+  SmoothTabs,
+  SmoothTabsList,
+  SmoothTabsTab,
+  SmoothTabsPanels,
+  SmoothTabsPanel,
+} from '@/components/motion-ui/smooth-tabs';
+import { useMotionUITransition, useMotionUITheme } from '@/components/motion-ui/ui-theme';
+import { Button } from '@/components/ui/button';
+import { Modal } from './Modal';
+import { markTutorialSeen, type HelpTutorial } from '../help';
+import { cn } from '@/lib/utils';
 
 interface Step {
   kicker: string;
@@ -70,9 +82,14 @@ const TUTORIALS: Record<HelpTutorial, Step[]> = {
   ],
 };
 
+const ORDER: HelpTutorial[] = ['compare', 'variation', 'training'];
+
 export function HelpModal({ tutorial, onClose }: { tutorial: HelpTutorial; onClose: () => void }) {
   const [active, setActive] = useState<HelpTutorial>(tutorial);
   const [step, setStep] = useState(0);
+  const ui = useMotionUITransition('ui');
+  const { motionMode } = useMotionUITheme();
+  const still = motionMode === 'off';
 
   useEffect(() => {
     setActive(tutorial);
@@ -80,74 +97,88 @@ export function HelpModal({ tutorial, onClose }: { tutorial: HelpTutorial; onClo
   }, [tutorial]);
 
   useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose();
-    }
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
+    markTutorialSeen(active);
+  }, [active]);
 
   const steps = TUTORIALS[active];
   const s = steps[step];
   const isLast = step >= steps.length - 1;
 
-  function switchTab(t: HelpTutorial) {
-    setActive(t);
-    setStep(0);
-  }
-  function next() {
-    if (isLast) onClose();
-    else setStep((i) => i + 1);
-  }
-
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <button className="modal-close" aria-label="Fechar" onClick={onClose}>
-          ×
-        </button>
+    <Modal open onClose={onClose} label="Como funciona" className="max-w-xl">
+      <div className="p-6 pt-5">
+        <SmoothTabs
+          value={active}
+          onValueChange={(v) => {
+            setActive(v as HelpTutorial);
+            setStep(0);
+          }}
+          className="flex flex-col gap-5"
+        >
+          <SmoothTabsList ariaLabel="Modos de benchmark" className="mr-10 w-fit">
+            {ORDER.map((t) => (
+              <SmoothTabsTab key={t} value={t} className="px-3 py-1.5 text-[13px]">
+                {TAB_LABEL[t]}
+              </SmoothTabsTab>
+            ))}
+          </SmoothTabsList>
+          {/* Os painéis do SmoothTabs são o conteúdo por aba; o passo dentro da
+              aba tem a própria transição (abaixo), porque muda sem trocar aba. */}
+          {/* min-h fixo pelo passo mais alto: sem ele o diálogo pula de altura
+              a cada "Próximo". */}
+          <SmoothTabsPanels className="min-h-[152px]">
+            {ORDER.map((t) => (
+              <SmoothTabsPanel key={t} value={t}>
+                <AnimatePresence mode="wait" initial={false}>
+                  <motion.div
+                    key={step}
+                    initial={still ? false : { opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: still ? 0 : ui.duration * 0.6 }}
+                  >
+                    <div className="text-[11px] font-semibold tracking-[0.07em] text-primary uppercase">
+                      {s.kicker}
+                    </div>
+                    <h2 className="mt-2 font-heading text-xl font-medium tracking-tight text-balance">
+                      {s.title}
+                    </h2>
+                    <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{s.body}</p>
+                  </motion.div>
+                </AnimatePresence>
+              </SmoothTabsPanel>
+            ))}
+          </SmoothTabsPanels>
+        </SmoothTabs>
 
-        <div className="tabs" style={{ marginBottom: 18 }}>
-          {(Object.keys(TAB_LABEL) as HelpTutorial[]).map((t) => (
-            <button
-              key={t}
-              type="button"
-              className={`tab ${active === t ? 'active' : ''}`}
-              onClick={() => switchTab(t)}
-            >
-              {TAB_LABEL[t]}
-            </button>
-          ))}
-        </div>
-
-        <span className="modal-num">{step + 1}</span>
-        <div className="modal-kicker">{s.kicker}</div>
-        <h2 className="modal-title">{s.title}</h2>
-        <p className="modal-body">{s.body}</p>
-
-        <div className="modal-foot">
-          <div className="modal-dots">
+        <div className="mt-6 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-1.5">
             {steps.map((_, j) => (
               <button
                 key={j}
-                className={`modal-dot ${j === step ? 'active' : ''}`}
+                type="button"
                 aria-label={`Passo ${j + 1}`}
+                aria-current={j === step ? 'step' : undefined}
                 onClick={() => setStep(j)}
+                className={cn(
+                  'h-1.5 rounded-full transition-all',
+                  j === step ? 'w-5 bg-primary' : 'w-1.5 bg-border hover:bg-muted-foreground',
+                )}
               />
             ))}
           </div>
-          <div className="modal-nav">
+          <div className="flex items-center gap-2">
             {step > 0 && (
-              <button className="modal-prev" onClick={() => setStep((i) => i - 1)}>
+              <Button variant="ghost" size="sm" onClick={() => setStep((i) => i - 1)}>
                 Anterior
-              </button>
+              </Button>
             )}
-            <button className="modal-next" onClick={next}>
+            <Button size="sm" onClick={() => (isLast ? onClose() : setStep((i) => i + 1))}>
               {isLast ? 'Fechar' : 'Próximo'}
-            </button>
+            </Button>
           </div>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
