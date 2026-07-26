@@ -19,7 +19,7 @@ export function ManualVariantsEditor({ value, onChange }: Props) {
   return (
     <div className="card field-card">
       <div className="field-label" style={{ marginBottom: 4 }}>Variantes manuais</div>
-      <div className="selector-hint">Forneça 2 ou mais system prompts — rodam como estão, sem reescrita por LLM.</div>
+      <p className="field-hint">2 ou mais system prompts — rodam como estão, sem reescrita por LLM.</p>
       {value.map((v, i) => (
         <div key={i} className="manual-variant">
           <div className="manual-variant-head">

@@ -69,8 +69,8 @@ export function KeySetup({ onSaved }: { onSaved?: () => void }) {
     <div className="card settings-card">
       <div className="settings-title">OpenRouter API Key</div>
       <div className="settings-desc">
-        Cole sua key do OpenRouter. Ela fica salva no <code>localStorage</code> do seu navegador e é
-        enviada ao backend apenas nas requisições que precisam dela.{' '}
+        Cole sua key do OpenRouter. Ela fica salva só no <code>localStorage</code> deste navegador e
+        vai direto do navegador para o OpenRouter — nenhum outro servidor a recebe.{' '}
         <a href="https://openrouter.ai/keys" target="_blank" rel="noreferrer">
           openrouter.ai/keys&nbsp;↗
         </a>

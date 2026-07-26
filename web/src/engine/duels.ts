@@ -3,9 +3,10 @@
 // nas DUAS ordens (desacordo => empate — cancela viés de posição), e o placar
 // Copeland (vitória 1, empate 0.5) vira o placement da etapa. O round-robin é
 // QUADRÁTICO (C(n,2) pares × 2 ordens, no modelo mais caro do pipeline), então
-// só duelam um BRACKET: o controle (sempre — é a régua que toda variante tem de
-// bater) + os K−1 melhores no pointwise. Toda falha degrada para empate/ausência
-// de duelos — NUNCA derruba a run.
+// só duelam um BRACKET: normalmente os FINALISTAS globais da run (`duelists`,
+// escolhidos por `pickFinalists` depois de todas as etapas); sem eles, o bracket
+// por etapa do `selectDuelists` (controle + K−1 melhores no pointwise). Toda
+// falha degrada para empate/ausência de duelos — NUNCA derruba a run.
 
 import { chatCompletion } from './openrouter';
 import type {
@@ -44,7 +45,7 @@ export function mulberry32(seed: number): () => number {
 export const VERDICT_SCORE: Record<Verdict, number> = { resolve: 2, parcial: 1, nao: 0 };
 
 /** Rank cego e determinístico por id: chave aleatória semeada, nunca ordem de entrada. */
-function blindRankMap(ids: string[], seed: number): Map<string, number> {
+export function blindRankMap(ids: string[], seed: number): Map<string, number> {
   const rng = mulberry32(seed);
   const arr = ids.map((id) => ({ id, k: rng() })).sort((a, b) => a.k - b.k);
   return new Map(arr.map((x, i) => [x.id, i]));
@@ -77,6 +78,31 @@ export function selectDuelists(
   return control
     ? [control.id, ...rest.slice(0, topK - 1).map((e) => e.id)]
     : rest.slice(0, topK).map((e) => e.id);
+}
+
+/**
+ * Escolhe os N FINALISTAS globais: maiores `score` (judge-score médio da run).
+ * Empate é desempatado pelo shuffle cego semeado (nunca pela ordem de entrada).
+ * `count <= 0` ou `>= entries.length` => todos, **mas ainda ordenados por score**:
+ * a lista sai como ranking (é ela que vira `record.finalists`, o evento
+ * `finals.started` e o pódio provisório da UI enquanto os duelos rodam). Devolver
+ * a ordem de entrada aqui numerava 1º/2º/3º por ordem de cadastro.
+ * Diferente de `selectDuelists`, NÃO privilegia o controle — a final é só dos melhores.
+ */
+export function pickFinalists(
+  entries: { id: string; score: number }[],
+  count: number,
+  seed: number,
+): string[] {
+  const list = entries ?? [];
+  const rank = blindRankMap(
+    list.map((e) => e.id),
+    seed,
+  );
+  const ordenados = [...list]
+    .sort((a, b) => b.score - a.score || (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0))
+    .map((e) => e.id);
+  return count <= 0 || count >= list.length ? ordenados : ordenados.slice(0, count);
 }
 
 /**
@@ -195,6 +221,8 @@ export interface RunStageDuelsOptions {
   controlId?: string;
   /** Tamanho do bracket (controle + K−1 melhores). 0 = round-robin completo. */
   topK: number;
+  /** Duelistas já escolhidos (finalistas globais). Quando presente, IGNORA topK/controlId. */
+  duelists?: string[];
   apiKey: string;
   reasoningLevel?: ReasoningLevel;
   timeoutMs?: number;
@@ -222,12 +250,18 @@ export async function runStageDuels(opts: RunStageDuelsOptions): Promise<StageDu
     judgeModelId,
     controlId,
     topK,
+    duelists,
     apiKey,
     reasoningLevel,
     timeoutMs,
     verdictByContestant,
     onPair,
   } = opts;
+
+  // Finalistas globais mandam: quando vêm de fora, o bracket é fixo para TODAS
+  // as etapas (mesmos duelistas em todo lugar) e o `topK` gravado só documenta
+  // o tamanho da final.
+  const topKGravado = duelists?.length ? duelists.length : topK;
 
   // Só respostas ok duelam; dedup defensivo (a 1ª ocorrência do id vence).
   const textById = new Map<string, string>();
@@ -244,7 +278,7 @@ export async function runStageDuels(opts: RunStageDuelsOptions): Promise<StageDu
     order: [...okIds],
     points: Object.fromEntries(okIds.map((id) => [id, 0])),
     duels: [],
-    topK,
+    topK: topKGravado,
   });
 
   // Sem gabarito não há duelo possível — degrada, nunca quebra a run.
@@ -257,12 +291,14 @@ export async function runStageDuels(opts: RunStageDuelsOptions): Promise<StageDu
     const v = verdictByContestant?.[id];
     return v ? VERDICT_SCORE[v] : -1;
   };
-  const bracket = selectDuelists(
-    okIds.map((id) => ({ id, score: scoreOf(id) })),
-    control,
-    topK,
-    seed,
-  );
+  const bracket = duelists?.length
+    ? duelists.filter((id) => textById.has(id))
+    : selectDuelists(
+        okIds.map((id) => ({ id, score: scoreOf(id) })),
+        control,
+        topK,
+        seed,
+      );
   // Bracket com menos de 2 não forma par — placement 1 para quem duelaria.
   if (bracket.length < 2) return semDuelos(1);
 
@@ -352,6 +388,6 @@ export async function runStageDuels(opts: RunStageDuelsOptions): Promise<StageDu
     order: [...order, ...outsiders],
     points: allPoints,
     duels,
-    topK,
+    topK: topKGravado,
   };
 }

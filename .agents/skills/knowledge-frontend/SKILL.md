@@ -1,8 +1,8 @@
 ---
 name: knowledge-frontend
-description: Padrões do frontend React/Vite do ai-benchmark — camada api.ts, cache IndexedDB (v2, com a biblioteca de prompts), o componente ModelSelector, o assistente Nova Run em passos (com compare-llms, pacote de cenários e toggles de evolução), SSE ao vivo (incl. eventos de gabarito/duelos) e design tokens CSS. Use ao adicionar/alterar qualquer coisa em web/src/ (telas, componentes, chamadas de API, estilos).
+description: Padrões do frontend React/Vite do ai-benchmark — camada api.ts, cache IndexedDB (v2, com a biblioteca de prompts), o ModelSelector compacto (picker), a tela Nova Run em página única, o import unificado de JSON, o heatmap/painel de finais de runShared.tsx, SSE e design tokens CSS. Use ao adicionar/alterar qualquer coisa em web/src/ (telas, componentes, chamadas de API, estilos).
 metadata:
-  version: 0.5.0
+  version: 0.6.0
   type: knowledge
 ---
 # Frontend — ai-benchmark
@@ -20,6 +20,8 @@ Dev em `:5173` com proxy de `/v1` e `/health` → `:3001` (`vite.config.ts`).
 - Porta única do app. No modo client-side delega ao engine; a key (`localStorage`) vai direto ao OpenRouter.
 - Tipos do domínio (`OpenRouterModel`, `RunConfig`, `RunRecord`…) são **espelhados** dos tipos do backend — ao mudar um, mude nos dois lados.
 - Padrão de novo endpoint: uma função `fetchX()` que faz `fetch('/v1/benchmark/...')`, checa `res.ok` com mensagem PT-BR e retorna `json.data` (ver `fetchTechniques`/`fetchLgpd`).
+- `export { x } from './engine/…'` **não** cria binding local — o que a própria `api.ts` usa
+  (`parseArenaConfig`, `ARENA_CONFIG_FORMAT`) tem de ser importado no topo **além** de reexportado.
 
 ## Cache local (`web/src/idb.ts`)
 - IndexedDB `benchmark-arena` (**DB_VERSION = 2**), stores `runs`/`sessions`/`runSummaries`/
@@ -36,57 +38,89 @@ Dev em `:5173` com proxy de `/v1` e `/health` → `:3001` (`vite.config.ts`).
   versiona; `HISTORY_LIMIT = 50`. Tipo `SavedPrompt` (com `origin`) espelhado em `api.ts`.
 - **Handoff "usar como base":** PromptsPage grava `localStorage 'arena:prompt-draft'` e navega a
   `/new`; o NewRun lê **uma vez** no mount (e remove a chave), preenche o `basePrompt` e mostra um
-  banner dispensável. Quem salva hoje é o `BestPromptStudio` da TrainingView ("Salvar na biblioteca").
+  aviso dispensável. Quem salva hoje é o `BestPromptStudio` da TrainingView ("Salvar na biblioteca").
 
-## Pacote de cenários JSON
-- Export: botão "Baixar pacote (JSON)" na **RunView** (só variation terminada, com ≥1 gabarito —
-  campeão = maior judge-score) e na **TrainingView** (cenários de todas as runs da sessão).
-  Via `buildScenarioPack` + `downloadScenarioPack` (`api.ts`).
-- Import: passo **Tema** do NewRun ("Importar pacote .json" → `readScenarioPackFile`, nunca lança);
-  pré-preenche tema e basePrompt, vira `scenarioSeed` (perde o `id`) e eleva `stages` a
-  `max(stages, seedCount)`; o gerador completa o restante (`mergeScenarios`, ROUGE-L < 0.7).
+## Import/export de JSON
+- **Import unificado:** UM botão `[Importar JSON]` no topo do NewRun → `readImportFile` (`api.ts`),
+  que detecta o formato sozinho pelo campo `format` e devolve
+  `{ kind: 'config' | 'pack' | 'stages' }` — `arena-config@1`, `ai-benchmark-pack@1` ou **array cru
+  de cenários** (também aceita `{ stages: [...] }`; teto de 200). **Nunca lança** — erro vira
+  `{ ok:false, error }` em PT-BR. `readArenaConfigFile`/`readScenarioPackFile` continuam exportados
+  mas a UI não os usa mais.
+- `config` → `applyArenaConfig` + banner `arenaConfigSummary`; `pack` → seed do datagen (estado
+  `pack`); `stages` → substitui o gerador por completo (estado `customStages` → `config.customStages`).
+  Formato documentado para IA geradora em **`ARENA-CONFIG.md`** (raiz).
+- **Export:** botão `Pacote` na **RunView** (só variation terminada, com ≥1 gabarito; prompt = o do
+  campeão por judge-score) e na **TrainingView** (cenários de todas as runs da sessão) — botão
+  direto, sem diálogo. Via `buildScenarioPack` + `downloadScenarioPack`.
 
-## SSE ao vivo
+## SSE e visualização ao vivo (`pages/runShared.tsx`)
 - `openRunStream(id, onEvent)` abre `EventSource` em `/runs/:id/events`. **Feche** o `EventSource` em eventos terminais — sem isso o browser reconecta infinitamente (há comentário explicando isso em `api.ts`).
-- `RunView` (`pages/RunView.tsx`): o reducer `applyEvent` é **agnóstico à ordem das etapas** (atualiza `stages[stageIndex]` isolado; cada etapa tem seu `live`). Enquanto `status === 'running'`, mostra o **ProcessMonitor** (lista de etapas em paralelo + previews ao vivo, classes `.process-*` reusando `.live-*`/`.stage-badge`); placar/heatmap/etapas detalhadas só quando a run **termina**. Use `stageStatus()` para o badge por etapa.
-- **Etapas chegam fora de ordem** (execução paralela): o reducer coloca etapas **por índice** (`stages[i] = …`, NUNCA `push` — push desalinha → array **esparso** → `record.stages.map(s => s.index)` quebra; foi o bug do heatmap/resumo). A UI de resultados deriva uma lista **densa e ordenada** (`denseStages`) e renderiza só dela. As etapas abrem **uma por vez** (carrossel: estado `openStage` + botões anterior/próxima), não todas expandidas.
-- **Eventos do sistema de evolução:** `stage.dueled` entra no reducer **por índice** (`stages[i].duels = …`, chega antes do `stage.judged`). Já `stage.gabarito` (vem com **`stageIndex: -1`**) e `duel.progress` (**sem** stageIndex) são **agregados de lote** — a RunView os **intercepta antes do `applyEvent`** e guarda em estado local (`gabaritoProgress`/`duelProgress`); no reducer retornam `prev` (defesa). O ProcessMonitor ganhou linhas "Gabaritos: d/t" e "Duelos: d/t" (props `gabarito`/`duelos`, só na RunView). Detalhes do pipeline em `knowledge-prompt-evolution`.
-- **Painéis novos na RunView** (run terminada): **judge-score vs gabarito** (0–100, de `judgeScoreByContestant`), **classificação Copeland** (de `standings`), **vereditos vs gabarito** por etapa (selo ✓/◐/✕ de `stage.referenceJudge`), **DuelsPanel** por etapa (placements + as 2 ordens de cada duelo) e o gabarito/rubrica no bloco do cenário.
-- **TrainingView:** componentes internos `CopelandBoard` (standings Copeland da rodada/holdout) e
-  `GateCards` (convergência / gate de holdout / significância — nunca bloqueantes), log de
-  promoções via `iteration.promoted`, `session.converged`/`session.holdout` tratados no stream,
-  `ScenarioPackExport` e o `BestPromptStudio` (tabs Prompt/Diff vs. original + "Salvar na
-  biblioteca"). Eventos agregados das runs de iteração caem no `applyEvent` e são ignorados.
+- **Não há mais streaming token-a-token:** `competitor.started`/`competitor.progress` sumiram do
+  `RunEvent` e `StageRecord.live`/`CompetitorLiveState` só existem para **ler records antigos**
+  (`@deprecated`). Nada de live cards, `ProcessMonitor`, anel de progresso ou carrossel de etapas.
+- `applyEvent` (reducer) é **agnóstico à ordem das etapas**: coloca **por índice**
+  (`stages[i] = …`, NUNCA `push` — push desalinha → array esparso → `stages.map(s => s.index)`
+  quebra). A UI deriva uma lista **densa e ordenada** (`denseStages`) e só renderiza dela.
+- **Eventos agregados** (`stage.gabarito`, com `stageIndex: -1`, e `duel.progress`, **sem** índice)
+  não entram no reducer: RunView/TrainingView **interceptam antes** do `applyEvent` (o de duelos
+  vira estado local que alimenta o `FinalsPanel`); no reducer retornam `prev` como defesa.
+- **`finals.started`** (novo, fase de finais) grava `record.finalists` — o heatmap marca a linha com
+  o selo `final`. `stage.dueled` chega **depois** de todas as etapas julgadas, por índice.
+- Exports de `runShared.tsx`: `VERDICT_META`, `verdictOf`, `trunc`, `denseStages`, `rankColor`,
+  `applyEvent`, `HeatRow`, `heatRows()`, `<ScoreHeatmap>`, `<FinalsPanel>`. **Não existem mais**
+  `ProcessMonitor`, `computeStandings`/`Standing`, `stageStatus`, `medalStandings`/`MedalStanding`.
+- **`<ScoreHeatmap record ranked?>` é a ÚNICA visualização** de progresso e de resultado: linhas =
+  variantes em **ordem estável** (`record.contestants`; só ordena por score quando `ranked`, i.e. no
+  fim), colunas = cenários, célula = ✓ resolve / ◐ parcial / ✕ não resolve / **· pendente**, mais
+  uma coluna de score 0–100 `(resolve + 0,5·parcial)/julgados` com a contagem `n✓ n◐ n✕`.
+  Classes `.hm-*`.
+- **`<FinalsPanel record progress?>`**: pódio dos finalistas (Copeland de `record.standings` com
+  pts e V–E–D; enquanto os duelos rodam, pódio provisório por `judgeScoreByContestant`) + accordion
+  "Confrontos" agregando cada par nos dois sentidos. Classes `.finals-*`.
+
+## Telas de resultado
+- **`RunView`** (`pages/RunView.tsx`): header (`.rv-head`/`.rv-stat`, export JSON/CSV/Pacote) →
+  `Resultados` (heatmap) → `Final` (FinalsPanel, só com finalistas/duelos) → `Cenários`
+  (`<details className="stage-list">`, **fechado enquanto a run roda** — ao vivo a tela é só o
+  heatmap) → `Variantes` (`<details>`). Não há mais abas Resumo/Etapas, tabelas de classificação
+  por pontos/judge-score/Copeland nem `DuelsPanel` por etapa.
+- **`TrainingView`**: header → 1 banner de gates (convergência/holdout/significância, nunca
+  bloqueante) → rodada corrente (heatmap) → `Final da rodada` → `Evolução` (heatmap local variante ×
+  rodada, célula = judge-score) → `Melhor prompt` (`BestPromptStudio`: tabs Prompt/Diff + "Salvar na
+  biblioteca"). Sumiram `PhaseStepper`, `FanOutBar`, `MedalBoard`, `CopelandBoard`, `GateCards`,
+  log de promoções e a lista de rodadas. `iteration.analyzing` não é mais emitido.
 
 ## ModelSelector (`components/ModelSelector.tsx`)
-- Recebe um catálogo **compartilhado** `models` (evita refetch por seletor) + `excludeIds` (esconde modelos já usados em outro papel). Busca fuzzy por id/nome. Para filtrar o catálogo (ex.: LGPD), passe um array `models` já filtrado.
-- **Filtros por papel (NewRun):** participantes recebem `participantModels` (LGPD + preço input/output); **gerador e juiz recebem `models` completo** (não filtrados) e **podem repetir o mesmo modelo** (sem `excludeIds` entre eles).
+- **Compacto:** render é UMA linha — rótulo + chips do que já foi escolhido + botão
+  `[+ adicionar]`/`[trocar]` que abre um popup com busca fuzzy (id×1.5 + nome). Classes `.picker-*`
+  (as antigas `.selector-*`/`.model-chip*` não existem mais). Props novas: `inline` (default **true**;
+  `false` = card próprio) e `hint` (vira `title` do rótulo).
+- Recebe um catálogo **compartilhado** `models` (evita refetch por seletor) + `excludeIds` (esconde modelos já usados em outro papel). Para filtrar o catálogo (ex.: LGPD), passe um array `models` já filtrado.
+- **Filtros por papel (NewRun):** participantes recebem `participantModels` (LGPD + preço input/output); **gerador, juiz e referência recebem `models` completo** (não filtrados) e **podem repetir o mesmo modelo** (sem `excludeIds` entre eles).
+- Chips de ids fora do catálogo carregado continuam visíveis (defaults pré-preenchidos).
 
-## Assistente Nova Run (`pages/NewRun.tsx`)
-- Ver `task-add-wizard-step` para o passo a passo. Resumo: um array `STEPS` dirige o fluxo; um `models` compartilhado alimenta todos os seletores; estimativa de custo via `priceById` (já inclui gabaritos/duelos; escala por etapas × iterações — não há mais `repeats`).
-- **Controles novos do sistema de evolução:** passo Tema — `scenarioBrief` (textarea que guia o
-  datagen) + **import de pacote de cenários** (ver seção acima). Passo Participantes (compare) —
-  toggle do **eixo compare-llms** ("Mesmo modelo, configs diferentes"): editor de 2–12 linhas
-  `{modelId, temperature, reasoningLevel}` (identidade = a tripla; aviso de duplicada). **Não há
-  mais stepper de repetições/rodadas** — cada cenário roda 1× nos três modos (removido 2026-07-25).
-  Passo Avaliação — toggle **`referenceJudging`** (todos os modos; default ON em
-  variation/training/compare-llms, OFF no compare clássico; vai sempre explícito no config; o
-  seletor de **modelo de referência** fica dentro deste card, visível só quando ligado) e bloco
-  **"Treino evolutivo"** (só training: `duels`, `duelTopK` 0–32, `minGain` 0–100, `holdoutRatio`
-  0–0.5 exibido em %, `feedbackDriven`).
-- **Effort (reasoning) por papel fica JUNTO de cada seletor de modelo** (componente local
-  `EffortCard`): competidor (players), reescritor (players, com ModelSelector próprio opcional →
-  `optimizerModelId`), gerador e juízes (eval). O effort da referência é o do juiz. Não há mais
-  seção "Avançado" de reasoning (restou só a de concorrência/timeout).
+## Nova Run (`pages/NewRun.tsx`)
+- **Página única**, não é mais assistente: não existem `STEPS`, `StepProgress`, `StepIntro`,
+  `Pipeline`, `Stepper`, `MODE_META`, presets de tema, gerador de prompt de coleta nem textarea de
+  etapas manuais. Ver `task-edit-newrun-form` para o procedimento de mexer nela.
+- Layout: título + `[Importar JSON]` → segmentado de modo (`.seg`/`.seg-btn`) → blocos verticais
+  `.nr-block` que só aparecem quando fazem sentido (`Cenários` → `Modelos` no compare /
+  `Prompts` em variation·training → `Juízes`) → `<details className="nr-adv">` **Avançado** →
+  `.nr-foot` com erro, estimativa de custo e `Iniciar →`.
+- Validação = função **`problems(): string[]`** (não há mais `validateStep`): o rodapé mostra a 1ª
+  pendência e o botão fica `disabled` enquanto houver alguma. **Só exija campo que a UI mostra** —
+  ex.: o gerador só é obrigatório quando `precisaGerar`.
+- Técnicas de prompt viraram chips inline (`.tech-chip` + botão "Todas", `title` com bom/cuidado);
+  `components/TechniqueSelector.tsx` foi **deletado**.
+- Reasoning por papel são 4 `EffortField` dentro do Avançado (`EffortCard`/`ReasoningSelect` sumiram).
+  Config de finais é `finalists` (0 = sem finais); **`duelTopK` não existe mais**.
 - **Max tokens por resposta é input numérico LIVRE** (sem teto na UI; estado string; vazio/inválido
   → `DEFAULT_MAX_OUTPUT_TOKENS`). O Zod do backend aceita até 1 000 000.
-- **Importar config (JSON)** — botão no `wizard-foot` (todos os passos): lê `arena-config@1`
-  (`readArenaConfigFile`/`parseArenaConfig` de `api.ts` → `engine/configFile.ts`), aplica só os
-  campos presentes (`applyArenaConfig`) e mostra banner com `arenaConfigSummary`. Formato
-  documentado para IA geradora em **`ARENA-CONFIG.md`** (raiz). Cenários do arquivo viram o mesmo
-  estado `pack` do pacote de cenários (`origin: 'import'`).
-- **Treino:** o passo Tema tem o card "Como funciona o treino" (4 bullets do loop + stepper de
-  iterações dentro dele) — iterações não ficam mais no grid genérico.
 
 ## Estilos
 - Tudo em `web/src/styles.css` com tokens `var(--…)` e tema claro/escuro. Reaproveite classes/tokens existentes (ver `knowledge-code-style`).
+- Famílias vivas: `.seg`, `.nr-*` (Nova Run), `.picker-*` (ModelSelector), `.tech-chip`, `.hm-*`
+  (heatmap), `.finals-*`, `.rv-*`, `.stage-list`. As famílias `.process-*`, `.fanout-*`, `.medal-*`,
+  `.wizard-*`, `.mode-card*`, `.pipeline*`, `.selector-*`, `.stepper*`, `.review-*`, `.technique-*`,
+  `.live-card*`, `.run-ring*` foram **removidas** — não as ressuscite.

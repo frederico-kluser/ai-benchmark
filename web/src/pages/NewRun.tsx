@@ -1,21 +1,18 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { ModelSelector } from '../components/ModelSelector';
 import { Toggle } from '../components/Toggle';
-import { TechniqueSelector } from '../components/TechniqueSelector';
 import { ManualVariantsEditor } from '../components/ManualVariantsEditor';
-import { useHelp } from '../help';
-import { useProcessing } from '../processing';
 import {
   arenaConfigSummary,
   createRun,
   createSession,
   fetchLgpd,
   fetchModels,
+  fetchTechniques,
   generateBasePrompt,
   getStoredKey,
-  readArenaConfigFile,
-  readScenarioPackFile,
+  readImportFile,
   type ArenaConfigFile,
   type ManualVariant,
   type OpenRouterModel,
@@ -25,51 +22,42 @@ import {
   type RunMode,
   type ScenarioPack,
   type StageSpec,
+  type Technique,
 } from '../api';
-import { AREA_LIVRE, creatorPrefix, familiaFor, filterModels, isAllowed, type LgpdData } from '../lgpd';
+import { AREA_LIVRE, creatorPrefix, familiaFor, filterModels, type LgpdData } from '../lgpd';
 
 // Defaults da run (ajustáveis na própria tela antes de iniciar).
-const DEFAULT_COMPETITORS = [
-  'openai/gpt-5-mini',
-  'openai/gpt-5-nano',
-  'openai/gpt-5.4-mini',
-  'openai/gpt-5.4-nano',
-];
+const DEFAULT_COMPETITORS = ['openai/gpt-5-mini', 'openai/gpt-5-nano', 'openai/gpt-5.4-mini', 'openai/gpt-5.4-nano'];
 const DEFAULT_CONTESTANT = 'openai/gpt-5-mini';
 const DEFAULT_DATAGEN = 'deepseek/deepseek-v4-pro';
 const DEFAULT_JUDGE = 'moonshotai/kimi-k2.6';
 const DEFAULT_TECHNIQUES = ['persona', 'cot', 'constraints', 'format'];
 const DEFAULT_THEME =
-  'Assistente virtual de uma clínica de diagnósticos que orienta os pacientes no preparo para exames médicos e laboratoriais. ' +
-  'Responde a dúvidas específicas conforme cada tipo de exame — por exemplo: tempo de jejum necessário (ex.: 8 horas para glicemia em jejum), ' +
-  'se deve suspender ou manter medicamentos de uso contínuo, ingestão de água permitida, restrições alimentares e de bebidas, preparo intestinal, ' +
-  'coleta e armazenamento de amostras, documentos e pedido médico necessários, horários de coleta e como reagendar. ' +
-  'As respostas devem ser claras, objetivas e seguras, sempre baseadas nas instruções do exame solicitado, ' +
-  'orientando o paciente a confirmar com a clínica ou com seu médico quando a dúvida envolver decisão clínica individual.';
+  'Assistente virtual de uma clínica de diagnósticos que orienta os pacientes no preparo para exames médicos e ' +
+  'laboratoriais: tempo de jejum, suspensão de medicamentos, ingestão de água, restrições alimentares, preparo ' +
+  'intestinal, documentos necessários, horários de coleta e reagendamento. As respostas devem ser claras, objetivas ' +
+  'e seguras, orientando a confirmar com a clínica ou com o médico quando a dúvida envolver decisão clínica.';
 const DEFAULT_MAX_OUTPUT_TOKENS = 500;
+/** Nº de finalistas que disputam os duelos no fim (0 = sem finais). */
+const DEFAULT_FINALISTS = 3;
 
-const PRESETS: { label: string; theme: string }[] = [
-  {
-    label: 'E-commerce',
-    theme:
-      'Suporte de um e-commerce de eletrônicos: política de trocas, devoluções e garantia, com base no CDC e nas regras da loja.',
-  },
-  {
-    label: 'Tutor',
-    theme:
-      'Tutor de matemática do ensino médio: explica o raciocínio passo a passo, sem entregar só a resposta final.',
-  },
-  {
-    label: 'Triagem SaaS',
-    theme:
-      'Triagem automática de tickets de suporte de um SaaS: classifica a prioridade (P0–P3) e roteia para a fila certa.',
-  },
+const MODES: { id: RunMode; label: string }[] = [
+  { id: 'compare', label: 'Comparar modelos' },
+  { id: 'variation', label: 'Testar prompts' },
+  { id: 'training', label: 'Treinar prompt' },
 ];
+
+// 1 linha por modo, exibida sob o segmentado (o rótulo sozinho não diz o que roda).
+const MODE_DESCRIPTIONS: Record<RunMode, string> = {
+  compare: 'Vários modelos respondem aos mesmos cenários; os juízes decidem quem foi melhor.',
+  variation: 'Um modelo, vários system prompts — descubra qual prompt funciona melhor.',
+  training: 'O prompt evolui a cada rodada até convergir no melhor.',
+};
 
 // Opções de reasoning (esforço). '' = "padrão": não envia nada — cada modelo
 // usa o seu próprio default. 'off' = sem raciocínio.
 const REASONING_OPTIONS: { value: '' | ReasoningLevel; label: string }[] = [
-  { value: '', label: 'Padrão do modelo' },
+  { value: '', label: 'Padrão' },
   { value: 'off', label: 'Sem raciocínio' },
   { value: 'low', label: 'Baixo' },
   { value: 'medium', label: 'Médio' },
@@ -78,350 +66,128 @@ const REASONING_OPTIONS: { value: '' | ReasoningLevel; label: string }[] = [
 ];
 
 // Linha do editor de configs do compare-llms. A identidade do concorrente é a
-// TRIPLA modelo+temperatura+reasoning. temperature como texto: '' = padrão (não enviado).
+// TRIPLA modelo+temperatura+reasoning. temperature como texto: '' = padrão.
 interface ConfigRow {
   modelId: string;
   temperature: string;
   reasoningLevel: '' | ReasoningLevel;
 }
 
-function ReasoningSelect({
-  value,
-  onChange,
-}: {
-  value: '' | ReasoningLevel;
-  onChange: (v: '' | ReasoningLevel) => void;
-}) {
-  return (
-    <select className="input" value={value} onChange={(e) => onChange(e.target.value as '' | ReasoningLevel)}>
-      {REASONING_OPTIONS.map((o) => (
-        <option key={o.value} value={o.value}>
-          {o.label}
-        </option>
-      ))}
-    </select>
-  );
-}
-
-// Card de "Esforço" (nível de raciocínio) que acompanha um seletor de modelo:
-// fica logo abaixo do ModelSelector do papel, em vez de escondido num Avançado.
-function EffortCard({
-  hint,
-  value,
-  onChange,
-}: {
-  hint: string;
-  value: '' | ReasoningLevel;
-  onChange: (v: '' | ReasoningLevel) => void;
-}) {
-  return (
-    <div className="card field-card">
-      <div className="price-filter-row" style={{ marginTop: 0 }}>
-        <label className="price-field">
-          <span title="Nível de raciocínio">Esforço</span>
-          <ReasoningSelect value={value} onChange={onChange} />
-        </label>
-      </div>
-      <p className="field-hint">{hint}</p>
-    </div>
-  );
-}
-
-// Exemplo de etapas manuais (JSON) — mostrado no editor para o usuário partir dele.
-const CUSTOM_STAGES_EXAMPLE = JSON.stringify(
-  [
-    {
-      question: 'Preciso fazer jejum para o exame de glicemia em jejum? Por quanto tempo?',
-      productContext:
-        'Você é o assistente da Clínica X. Glicemia em jejum exige 8h de jejum; água pura é permitida; medicamentos de uso contínuo devem ser mantidos, salvo orientação médica.',
-      rubric:
-        'Deve indicar 8 horas de jejum, permitir água pura e orientar manter medicamentos contínuos. Inaceitável inventar outro tempo de jejum ou proibir água.',
-      maxTokens: 300,
-    },
-    {
-      question: 'Posso tomar meu remédio de pressão antes da coleta de sangue?',
-      productContext:
-        'Você é o assistente da Clínica X. Anti-hipertensivos de uso contínuo devem ser mantidos, salvo orientação médica. Em dúvida clínica, orientar confirmar com o médico.',
-      rubric:
-        'Deve orientar manter o anti-hipertensivo e sugerir confirmar com o médico em caso de dúvida. Inaceitável recomendar suspender por conta própria.',
-      maxTokens: 300,
-    },
-  ],
-  null,
-  2,
-);
-
-interface ParsedCustomStages {
-  stages: StageSpec[] | null;
-  error: string | null;
-}
-
-// Valida o JSON de etapas manuais. Aceita um array OU um objeto { stages: [...] }.
-// maxTokens ausente herda o teto global (maxFallback). Cada etapa exige question
-// e productContext; rubric é opcional (a "explicação do que resolve" p/ o juiz).
-function parseCustomStages(text: string, maxFallback: number): ParsedCustomStages {
-  const t = text.trim();
-  if (!t) return { stages: null, error: null };
-  let data: unknown;
-  try {
-    data = JSON.parse(t);
-  } catch (e) {
-    return { stages: null, error: `JSON inválido: ${(e as Error).message}` };
-  }
-  const arr = Array.isArray(data)
-    ? data
-    : Array.isArray((data as { stages?: unknown })?.stages)
-      ? ((data as { stages: unknown[] }).stages as unknown[])
-      : null;
-  if (!arr) return { stages: null, error: 'Esperado um array de etapas (ou objeto com a chave "stages").' };
-  if (arr.length === 0) return { stages: null, error: 'Forneça ao menos 1 etapa.' };
-  if (arr.length > 50) return { stages: null, error: 'Máximo de 50 etapas.' };
-  const out: StageSpec[] = [];
-  for (let i = 0; i < arr.length; i++) {
-    const s = arr[i] as Record<string, unknown>;
-    if (!s || typeof s !== 'object') return { stages: null, error: `Etapa ${i + 1}: deve ser um objeto.` };
-    if (typeof s.question !== 'string' || !s.question.trim())
-      return { stages: null, error: `Etapa ${i + 1}: "question" obrigatória.` };
-    if (typeof s.productContext !== 'string' || !s.productContext.trim())
-      return { stages: null, error: `Etapa ${i + 1}: "productContext" obrigatório.` };
-    if (s.rubric !== undefined && typeof s.rubric !== 'string')
-      return { stages: null, error: `Etapa ${i + 1}: "rubric" deve ser texto.` };
-    if (s.maxTokens !== undefined && (typeof s.maxTokens !== 'number' || s.maxTokens <= 0))
-      return { stages: null, error: `Etapa ${i + 1}: "maxTokens" deve ser número positivo.` };
-    out.push({
-      question: s.question.trim(),
-      productContext: s.productContext.trim(),
-      rubric: typeof s.rubric === 'string' && s.rubric.trim() ? s.rubric.trim() : undefined,
-      maxTokens: typeof s.maxTokens === 'number' && s.maxTokens > 0 ? Math.round(s.maxTokens) : maxFallback,
-    });
-  }
-  return { stages: out, error: null };
-}
-
-// Monta um prompt (em XML, editável) que o usuário leva ao LLM dele para gerar
-// as etapas JÁ no nosso formato JSON. As partes entre {{...}} ele pode substituir.
-function buildCollectionPrompt(domain: string, count: number, maxTokens: number): string {
-  const dom = domain.trim() || '{{DESCREVA_SEU_SISTEMA_AQUI}}';
-  return `<tarefa>
-Você é um gerador de cenários de benchmark para avaliar assistentes de IA.
-Gere EXATAMENTE ${count} cenários de teste sobre o domínio descrito em <dominio>.
-</tarefa>
-
-<dominio>
-${dom}
-</dominio>
-
-<instrucoes>
-- Cada cenário é uma pergunta real que um usuário faria ao sistema de IA.
-- Varie o tipo de tarefa entre os cenários (extração, raciocínio, comparação, recusa, criatividade controlada, etc.).
-- "productContext" é o contexto/políticas que o sistema tem para responder — vira o system prompt dos modelos testados. Inclua dados, regras, FAQs e restrições relevantes.
-- "rubric" é o CRITÉRIO DE CORREÇÃO: o que uma resposta correta PRECISA conter/fazer e o que a tornaria inaceitável. Os juízes usam isso para avaliar às cegas. Seja objetivo (1 a 3 frases).
-- "maxTokens" é o teto razoável de tokens da resposta (inteiro).
-- Idioma: português, salvo se o domínio exigir outro.
-</instrucoes>
-
-<formato_saida>
-Responda APENAS com um array JSON válido (sem markdown, sem comentários, sem texto fora do array):
-[
-  {
-    "question": "pergunta do usuário",
-    "productContext": "contexto/políticas que o sistema tem para responder",
-    "rubric": "o que a resposta correta deve conter; o que a torna inaceitável",
-    "maxTokens": ${maxTokens}
-  }
-]
-</formato_saida>`;
-}
-
-// Os 3 objetivos, agora apresentados como cartões escolhíveis no passo 1.
-const MODE_META: { id: RunMode; icon: string; label: string; tagline: string; detail: string }[] = [
-  {
-    id: 'compare',
-    icon: '⚖️',
-    label: 'Comparar modelos',
-    tagline: 'Vários modelos, o mesmo desafio',
-    detail: 'Descubra qual LLM responde melhor ao seu caso. Todos respondem às mesmas perguntas e o juiz monta o ranking.',
-  },
-  {
-    id: 'variation',
-    icon: '🧬',
-    label: 'Testar prompts',
-    tagline: 'Um modelo, vários system prompts',
-    detail: 'Mantém o modelo fixo e compara várias versões do prompt para achar a que funciona melhor.',
-  },
-  {
-    id: 'training',
-    icon: '📈',
-    label: 'Treinar prompt',
-    tagline: 'Auto-melhoria iterativa',
-    detail: 'A cada rodada a melhor versão do prompt evolui sozinha, convergindo para o melhor prompt possível.',
-  },
-];
-
-// Os 5 passos do assistente (mesma sequência para todos os modos).
-const STEPS = [
-  { id: 'mode', label: 'Objetivo' },
-  { id: 'theme', label: 'Tema' },
-  { id: 'players', label: 'Participantes' },
-  { id: 'eval', label: 'Avaliação' },
-  { id: 'review', label: 'Revisar' },
-] as const;
-type StepId = (typeof STEPS)[number]['id'];
-
-function pipelineFor(mode: RunMode) {
-  if (mode === 'compare') {
-    return [
-      { num: '1', title: 'Gerador', desc: 'cria os cenários' },
-      { num: '2', title: 'Competidores', desc: 'respondem em paralelo' },
-      { num: '3', title: 'Juiz', desc: 'ranqueia às cegas' },
-    ];
-  }
-  return [
-    { num: '1', title: 'Gerador', desc: 'cria as perguntas' },
-    {
-      num: '2',
-      title: 'Variações',
-      desc: mode === 'training' ? '1 modelo, evoluídas por iteração' : '1 modelo, vários prompts',
-    },
-    { num: '3', title: 'Juiz', desc: 'ranqueia às cegas' },
-  ];
-}
-
-const RANGES = {
-  stages: [1, 50, 1],
-  concurrency: [1, 32, 1],
-  timeoutMs: [1000, 300000, 1000],
-  iterations: [2, 10, 1],
-} as const;
-
 function fmtUsd(x: number): string {
   if (!x) return '$0.0000';
-  if (x < 0.0001) return `$${x.toExponential(2)}`;
+  // Decimal sempre (nada de "$4.00e-4" no rodapé de custo estimado).
+  if (x < 0.0001) return '<$0.0001';
   return `$${x.toFixed(4)}`;
 }
 
-function scrollToTop() {
-  if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
+// --- campos compactos reusados nos blocos e no Avançado ---
+
+/** Campo numérico com valor NUMBER. Sem clamp na digitação — o clamp é no envio. */
+function NumField(p: { label: string; value: number; onChange: (v: number) => void; min: number; max: number; step?: number }) {
+  return (
+    <label className="nr-field">
+      <span className="nr-field-label">{p.label}</span>
+      <input
+        type="number" className="input nr-num" min={p.min} max={p.max} step={p.step ?? 1} value={p.value}
+        onChange={(e) => {
+          const v = e.target.valueAsNumber;
+          if (!Number.isNaN(v)) p.onChange(v);
+        }}
+      />
+    </label>
+  );
 }
 
-function Stepper({
-  label,
-  value,
-  onStep,
-}: {
-  label: string;
-  value: number;
-  onStep: (dir: 1 | -1) => void;
+/** Campo numérico com valor TEXTO (vazio = default/sem limite). */
+function TxtNumField(p: {
+  label: string; value: string; onChange: (v: string) => void;
+  min?: number; max?: number; step?: number; placeholder?: string;
 }) {
   return (
-    <div className="stepper-field">
-      <label>{label}</label>
-      <div className="stepper">
-        <button type="button" className="stepper-btn" aria-label={`Diminuir ${label}`} onClick={() => onStep(-1)}>
-          −
-        </button>
-        <span className="stepper-val tnum">{value}</span>
-        <button type="button" className="stepper-btn" aria-label={`Aumentar ${label}`} onClick={() => onStep(1)}>
-          +
-        </button>
-      </div>
-    </div>
+    <label className="nr-field">
+      <span className="nr-field-label">{p.label}</span>
+      <input
+        type="number" className="input nr-num" min={p.min} max={p.max} step={p.step}
+        placeholder={p.placeholder} value={p.value} onChange={(e) => p.onChange(e.target.value)}
+      />
+    </label>
   );
 }
 
-// Diagrama do fluxo Gerador → (Competidores/Variações) → Juiz para o modo atual.
-function Pipeline({ mode, iterations }: { mode: RunMode; iterations: number }) {
-  const pipeline = pipelineFor(mode);
+function AreaField(p: { label: string; value: string; onChange: (v: string) => void; rows?: number; placeholder?: string }) {
   return (
-    <div className="pipeline">
-      {pipeline.map((p, i) => (
-        <Fragment key={p.num}>
-          <div className="pipeline-step">
-            <span className="pipeline-num">{p.num}</span>
-            <span className="pipeline-text">
-              <span className="pipeline-title">{p.title}</span>
-              <span className="pipeline-desc">{p.desc}</span>
-            </span>
-          </div>
-          {i < pipeline.length - 1 && <span className="pipeline-arrow">→</span>}
-        </Fragment>
-      ))}
-      {mode === 'training' && <span className="pipeline-arrow">↻ {iterations}×</span>}
-    </div>
+    <label className="nr-field">
+      <span className="nr-field-label">{p.label}</span>
+      <textarea
+        className="textarea" rows={p.rows ?? 3} value={p.value} placeholder={p.placeholder}
+        onChange={(e) => p.onChange(e.target.value)}
+      />
+    </label>
   );
 }
 
-// Trilha de progresso clicável no topo do assistente.
-function StepProgress({
-  current,
-  firstInvalid,
-  onJump,
-}: {
-  current: number;
-  firstInvalid: number;
-  onJump: (i: number) => void;
-}) {
+function EffortField(p: { label: string; value: '' | ReasoningLevel; onChange: (v: '' | ReasoningLevel) => void }) {
   return (
-    <ol className="wizard-steps">
-      {STEPS.map((s, i) => {
-        const state = i === current ? 'current' : i < current ? 'done' : 'todo';
-        const reachable = i <= current || i <= firstInvalid;
-        return (
-          <Fragment key={s.id}>
-            <li className={`wizard-step ${state}`}>
-              <button type="button" className="wizard-step-btn" disabled={!reachable} onClick={() => onJump(i)}>
-                <span className="wizard-step-num">{i < current ? '✓' : i + 1}</span>
-                <span className="wizard-step-label">{s.label}</span>
-              </button>
-            </li>
-            {i < STEPS.length - 1 && <span className="wizard-step-line" aria-hidden />}
-          </Fragment>
-        );
-      })}
-    </ol>
+    <label className="nr-field">
+      <span className="nr-field-label">{p.label}</span>
+      <select className="input" value={p.value} onChange={(e) => p.onChange(e.target.value as '' | ReasoningLevel)}>
+        {REASONING_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+    </label>
   );
 }
 
-// Cabeçalho padrão de cada passo: rótulo "Passo N de 5", título e texto explicativo.
-function StepIntro({ step, title, children }: { step: number; title: string; children: ReactNode }) {
+function Chip(p: { on: boolean; label: string; title?: string; onClick: () => void }) {
   return (
-    <div className="wizard-intro">
-      <div className="wizard-kicker">Passo {step} de {STEPS.length}</div>
-      <h2 className="wizard-title">{title}</h2>
-      <p className="wizard-lead">{children}</p>
+    <button type="button" className={`tech-chip ${p.on ? 'selected' : ''}`} title={p.title} onClick={p.onClick}>
+      {p.label}
+    </button>
+  );
+}
+
+/** Linha "✓ algo que veio pronto do arquivo [ação]". */
+function ImportedLine(p: { text: string; action: string; onAction: () => void }) {
+  return (
+    <div className="nr-imported">
+      <span>✓ {p.text}</span>
+      <button type="button" className="link-toggle" onClick={p.onAction}>{p.action}</button>
     </div>
   );
 }
 
 export function NewRun() {
   const navigate = useNavigate();
-  const help = useHelp();
   const [mode, setMode] = useState<RunMode>('compare');
-  const [stepIdx, setStepIdx] = useState(0);
   const [theme, setTheme] = useState(DEFAULT_THEME);
+  const [scenarioBrief, setScenarioBrief] = useState('');
+  const [briefOpen, setBriefOpen] = useState(false);
   const [stages, setStages] = useState(5);
   const [concurrency, setConcurrency] = useState(8);
   const [timeoutMs, setTimeoutMs] = useState(60000);
-  // Máx. tokens por resposta: campo numérico LIVRE (texto). ''/inválido cai no
-  // default no envio (ver maxTokensNum) — o teto real é o do modelo.
+  // Máx. tokens por resposta: campo LIVRE (texto). ''/inválido cai no default
+  // no envio (ver maxTokensNum) — o teto real é o do modelo.
   const [maxOutputTokens, setMaxOutputTokens] = useState(String(DEFAULT_MAX_OUTPUT_TOKENS));
-  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [datagen, setDatagen] = useState<string[]>([DEFAULT_DATAGEN]);
   const [judge, setJudge] = useState<string[]>([DEFAULT_JUDGE]);
 
   // compare
   const [competitors, setCompetitors] = useState<string[]>(DEFAULT_COMPETITORS);
+  const [compareAxis, setCompareAxis] = useState<'models' | 'configs'>('models');
+  const [competitorConfigs, setCompetitorConfigs] = useState<ConfigRow[]>([
+    { modelId: '', temperature: '', reasoningLevel: '' },
+    { modelId: '', temperature: '', reasoningLevel: '' },
+  ]);
 
   // variation / training
   const [contestantModel, setContestantModel] = useState<string[]>([DEFAULT_CONTESTANT]);
   const [basePrompt, setBasePrompt] = useState('');
-  // Descrever tarefa -> gerar prompt base (opcional). O gerado preenche o campo
-  // do prompt base, que roda como controle/original.
   const [taskDescription, setTaskDescription] = useState('');
+  const [genOpen, setGenOpen] = useState(false);
   const [genBaseLoading, setGenBaseLoading] = useState(false);
   const [genBaseError, setGenBaseError] = useState<string | null>(null);
   const [optimize, setOptimize] = useState(true);
   const [techniques, setTechniques] = useState<string[]>(DEFAULT_TECHNIQUES);
+  const [techs, setTechs] = useState<Technique[]>([]);
   const [manualVariants, setManualVariants] = useState<ManualVariant[]>([
     { label: 'Variante 1', systemPrompt: '' },
     { label: 'Variante 2', systemPrompt: '' },
@@ -429,40 +195,28 @@ export function NewRun() {
   const [iterations, setIterations] = useState(3);
   const [twoPassJudge, setTwoPassJudge] = useState(false);
 
-  // Evolução de prompts: descrição detalhada p/ guiar o datagen + pacote de
-  // cenários importado (seed), exportado ao fim de uma run anterior.
-  const [scenarioBrief, setScenarioBrief] = useState('');
+  // Cenários prontos: pacote importado (seed do datagen) OU etapas cruas (array
+  // JSON), que substituem o gerador por completo.
   const [pack, setPack] = useState<ScenarioPack | null>(null);
-  const [packError, setPackError] = useState<string | null>(null);
-  // Handoff da biblioteca de prompts (/prompts): aviso discreto ao pré-preencher.
+  const [customStages, setCustomStages] = useState<StageSpec[] | null>(null);
+  // Import: resumo da arena-config aplicada + flag do prompt que já veio pronto.
+  const [configSummary, setConfigSummary] = useState<string | null>(null);
+  const [promptImported, setPromptImported] = useState(false);
   const [draftNotice, setDraftNotice] = useState<string | null>(null);
-  // Import de configuração (JSON arena-config@1): banner dispensável no topo,
-  // some ao trocar de passo (ver goTo) ou no X.
-  const [configNotice, setConfigNotice] = useState<string | null>(null);
-  const configFileRef = useRef<HTMLInputElement>(null);
+  const importRef = useRef<HTMLInputElement>(null);
 
-  // compare: eixo 'models' (modelos distintos) × 'configs' (mesmo modelo,
-  // configs diferentes — compare-llms).
-  const [compareAxis, setCompareAxis] = useState<'models' | 'configs'>('models');
-  const [competitorConfigs, setCompetitorConfigs] = useState<ConfigRow[]>([
-    { modelId: '', temperature: '', reasoningLevel: '' },
-    { modelId: '', temperature: '', reasoningLevel: '' },
-  ]);
-
-  // Julgamento por referência (gabarito). null = segue o default do modo/eixo
-  // (on p/ variation/training e compare-llms; off p/ compare clássico) — a 1ª
-  // escolha manual do usuário passa a valer e não é mais pisada.
+  // Julgamento por referência (gabarito). null = default do modo/eixo; só um
+  // arquivo importado (judging.reference) muda isso explicitamente.
   const [refJudgingChoice, setRefJudgingChoice] = useState<boolean | null>(null);
-  // training: duelos Copeland + gates de promoção/holdout.
-  const [duels, setDuels] = useState(false);
-  const [duelTopK, setDuelTopK] = useState(5);
+  const [finalists, setFinalists] = useState(DEFAULT_FINALISTS);
+  const [duelsOn, setDuelsOn] = useState(true);
   const [minGain, setMinGain] = useState(1);
   const [holdoutRatio, setHoldoutRatio] = useState(0.2);
   const [feedbackDriven, setFeedbackDriven] = useState(true);
-  // Reasoning (esforço) por papel ('' = padrão, não envia): cada select fica
-  // junto do seletor de modelo do papel. `referenceModel` escreve os gabaritos
-  // (vazio = 1º juiz) e usa o esforço do juiz; `rewriterModel` reescreve os
-  // prompts por técnica (vazio = mesmo do gerador) → optimizerModelId.
+
+  // Reasoning (esforço) por papel ('' = padrão, não envia). `referenceModel`
+  // escreve os gabaritos (vazio = 1º juiz); `rewriterModel` reescreve os prompts
+  // por técnica (vazio = mesmo do gerador) → optimizerModelId.
   const [reasoningCompetitor, setReasoningCompetitor] = useState<'' | ReasoningLevel>('');
   const [reasoningJudge, setReasoningJudge] = useState<'' | ReasoningLevel>('');
   const [reasoningRewriter, setReasoningRewriter] = useState<'' | ReasoningLevel>('');
@@ -470,44 +224,29 @@ export function NewRun() {
   const [referenceModel, setReferenceModel] = useState<string[]>([]);
   const [rewriterModel, setRewriterModel] = useState<string[]>([]);
 
-  // Etapas manuais (JSON): substituem o datagen e trazem a rubrica que ancora o juiz.
-  const [useCustomStages, setUseCustomStages] = useState(false);
-  const [customStagesText, setCustomStagesText] = useState('');
-  // Gerador de prompt de coleta: monta o prompt (XML) que o usuário leva ao LLM dele.
-  const [collectorOpen, setCollectorOpen] = useState(false);
-  const [collectorCount, setCollectorCount] = useState(5);
-  const [collectorPrompt, setCollectorPrompt] = useState('');
-  const [collectorCopied, setCollectorCopied] = useState(false);
-
-  // Conformidade LGPD (passo Tema). 'livre' = sem filtro (default, não quebra os
-  // modelos pré-selecionados). Consultivo: filtra o catálogo, não força roteamento.
+  // Conformidade LGPD (consultivo): filtra o catálogo dos participantes.
   const [complianceArea, setComplianceArea] = useState<string>(AREA_LIVRE);
   const [includeRessalvas, setIncludeRessalvas] = useState(true);
   const [lgpd, setLgpd] = useState<LgpdData | null>(null);
   const [prunedNotice, setPrunedNotice] = useState<string | null>(null);
 
   // Filtro de preço dos PARTICIPANTES (USD por 1M tokens; '' = sem limite).
-  // Não afeta gerador nem juiz.
   const [maxInputPrice, setMaxInputPrice] = useState('');
   const [maxOutputPrice, setMaxOutputPrice] = useState('');
 
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const { setIsProcessing } = useProcessing();
-
-  useEffect(() => {
-    setIsProcessing(submitting || genBaseLoading);
-  }, [submitting, genBaseLoading, setIsProcessing]);
-
-  const isSingle = mode === 'variation' || mode === 'training';
-  const modeMeta = MODE_META.find((m) => m.id === mode)!;
-  // Default do julgamento por referência muda com o modo/eixo — sem pisar em
-  // escolha manual posterior (refJudgingChoice !== null).
-  const referenceJudging = refJudgingChoice ?? (mode !== 'compare' || compareAxis === 'configs');
-
-  // Catálogo compartilhado entre os seletores + estimativa de custo.
   const [models, setModels] = useState<OpenRouterModel[]>([]);
   const [modelsLoading, setModelsLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // Só depois de o usuário TENTAR iniciar a pendência vira erro (vermelho) —
+  // validação prematura em vermelho é anti-padrão.
+  const [tried, setTried] = useState(false);
+
+  const isSingle = mode === 'variation' || mode === 'training';
+  const isLivre = complianceArea === AREA_LIVRE;
+  // Default do julgamento por referência muda com o modo/eixo — sem pisar em
+  // escolha vinda de arquivo (refJudgingChoice !== null).
+  const referenceJudging = refJudgingChoice ?? (mode !== 'compare' || compareAxis === 'configs');
 
   useEffect(() => {
     let active = true;
@@ -515,6 +254,8 @@ export function NewRun() {
       .then((data) => active && setModels(data))
       .catch(() => undefined)
       .finally(() => active && setModelsLoading(false));
+    fetchLgpd().then((d) => active && setLgpd(d)).catch(() => undefined);
+    fetchTechniques().then((t) => active && setTechs(t)).catch(() => undefined);
     return () => {
       active = false;
     };
@@ -531,7 +272,7 @@ export function NewRun() {
       if (typeof data.text === 'string' && data.text.trim()) {
         setBasePrompt(data.text);
         const name = typeof data.name === 'string' && data.name.trim() ? data.name : 'sem nome';
-        setDraftNotice(`Prompt '${name}' carregado da biblioteca como base.`);
+        setDraftNotice(`Prompt '${name}' carregado da biblioteca.`);
       }
     } catch {
       // JSON inválido: ignora (a chave já foi removida acima).
@@ -544,26 +285,14 @@ export function NewRun() {
     return map;
   }, [models]);
 
-  // Carrega a base de conhecimento LGPD (servida por GET /v1/benchmark/lgpd).
-  useEffect(() => {
-    let active = true;
-    fetchLgpd()
-      .then((d) => active && setLgpd(d))
-      .catch(() => undefined);
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  // Catálogo filtrado pelo propósito/área (passo Tema). Em 'livre' (ou enquanto a
-  // base não carregou) devolve o catálogo inteiro. Usado em todos os seletores.
+  // Catálogo filtrado pela área/LGPD. Em 'livre' devolve o catálogo inteiro.
   const filteredModels = useMemo(() => {
-    if (!lgpd || complianceArea === AREA_LIVRE) return models;
+    if (!lgpd || isLivre) return models;
     return filterModels(models, complianceArea, includeRessalvas, lgpd).allowed;
-  }, [models, lgpd, complianceArea, includeRessalvas]);
+  }, [models, lgpd, complianceArea, includeRessalvas, isLivre]);
 
-  // Catálogo dos PARTICIPANTES: LGPD (filteredModels) + filtro de preço.
-  // Gerador e juiz NÃO usam este — eles veem o catálogo completo (`models`).
+  // Catálogo dos PARTICIPANTES: LGPD + filtro de preço. Gerador e juiz NÃO
+  // usam este — eles veem o catálogo completo (`models`).
   const participantModels = useMemo(() => {
     const maxIn = parseFloat(maxInputPrice);
     const maxOut = parseFloat(maxOutputPrice);
@@ -571,22 +300,19 @@ export function NewRun() {
     const hasOut = Number.isFinite(maxOut);
     if (!hasIn && !hasOut) return filteredModels;
     return filteredModels.filter((m) => {
-      const inPerM = m.pricing.prompt * 1_000_000;
-      const outPerM = m.pricing.completion * 1_000_000;
-      if (hasIn && inPerM > maxIn) return false;
-      if (hasOut && outPerM > maxOut) return false;
+      if (hasIn && m.pricing.prompt * 1_000_000 > maxIn) return false;
+      if (hasOut && m.pricing.completion * 1_000_000 > maxOut) return false;
       return true;
     });
   }, [filteredModels, maxInputPrice, maxOutputPrice]);
 
   // Espelho das seleções p/ a poda ler o estado mais recente sem re-rodar a cada
-  // clique de seleção (só quando área/rigor/base mudam).
-  const selRef = useRef({ competitors, contestantModel, datagen, judge, competitorConfigs });
-  selRef.current = { competitors, contestantModel, datagen, judge, competitorConfigs };
+  // clique de seleção (só quando área/rigor/preço mudam).
+  const selRef = useRef({ competitors, contestantModel, competitorConfigs });
+  selRef.current = { competitors, contestantModel, competitorConfigs };
 
-  // Ao mudar os filtros (LGPD/área/rigor/preço), remove dos PARTICIPANTES os
-  // modelos que saíram do catálogo permitido e avisa. Gerador e juiz NÃO são
-  // afetados pelos filtros (usam o catálogo completo).
+  // Ao mudar os filtros, remove dos PARTICIPANTES os modelos que saíram do
+  // catálogo permitido e avisa. Gerador e juiz não são afetados.
   useEffect(() => {
     const priceActive = maxInputPrice.trim() !== '' || maxOutputPrice.trim() !== '';
     const lgpdActive = !!lgpd && complianceArea !== AREA_LIVRE;
@@ -605,8 +331,8 @@ export function NewRun() {
     const { competitors: c, contestantModel: cm, competitorConfigs: cf } = selRef.current;
     const nc = keep(c);
     const ncm = keep(cm);
-    // Eixo configs (compare-llms): limpa só o modelo da linha (não remove a
-    // linha) p/ não perder temperatura/reasoning já escolhidos.
+    // Eixo configs: limpa só o modelo da linha (não remove a linha) p/ não
+    // perder temperatura/reasoning já escolhidos.
     const ncf = cf.map((r) => {
       if (!r.modelId || allowed.has(r.modelId)) return r;
       removed.add(r.modelId);
@@ -615,11 +341,7 @@ export function NewRun() {
     if (nc.length !== c.length) setCompetitors(nc);
     if (ncm.length !== cm.length) setContestantModel(ncm);
     if (ncf.some((r, i) => r !== cf[i])) setCompetitorConfigs(ncf);
-    setPrunedNotice(
-      removed.size
-        ? `Removidos dos participantes pelo filtro (área/preço): ${[...removed].join(', ')}.`
-        : null,
-    );
+    setPrunedNotice(removed.size ? `Removidos pelo filtro: ${[...removed].join(', ')}.` : null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [participantModels]);
 
@@ -632,66 +354,45 @@ export function NewRun() {
   // nº de variantes (modos de 1 LLM) ou de competidores (compare).
   const variantCount = useMemo(() => {
     if (!isSingle) {
-      return compareAxis === 'configs'
-        ? competitorConfigs.filter((r) => r.modelId).length
-        : competitors.length;
+      return compareAxis === 'configs' ? competitorConfigs.filter((r) => r.modelId).length : competitors.length;
     }
     const base = basePrompt.trim() ? 1 : 0;
     if (optimize) return techniques.length + base;
     return manualVariants.filter((v) => v.systemPrompt.trim()).length + base;
   }, [isSingle, compareAxis, competitorConfigs, competitors, basePrompt, optimize, techniques, manualVariants]);
 
-  // Máx. tokens efetivo: parse do campo livre; vazio/inválido (< min) cai no default.
+  // Máx. tokens efetivo: parse do campo livre; vazio/inválido cai no default.
   const maxTokensNum = useMemo(() => {
     const v = parseFloat(maxOutputTokens);
     return Number.isFinite(v) && v >= 50 ? Math.round(v) : DEFAULT_MAX_OUTPUT_TOKENS;
   }, [maxOutputTokens]);
 
-  // Parse das etapas manuais (memoizado); maxTokens ausente herda o teto global.
-  const parsedCustomStages = useMemo(
-    () => parseCustomStages(customStagesText, maxTokensNum),
-    [customStagesText, maxTokensNum],
-  );
-  // Etapas efetivas: nº de etapas manuais válidas (quando ligado) ou o stepper.
-  const effectiveStages = useCustomStages && parsedCustomStages.stages
-    ? parsedCustomStages.stages.length
-    : stages;
-  // Cenários do pacote importado (seed). Com etapas manuais o JSON manda — o
-  // pacote é ignorado (aviso no card do pacote).
-  const seedCount = !useCustomStages && pack ? pack.scenarios.length : 0;
-  // O orchestrator só gera o que falta p/ `stages`; garante etapas >= qtd. do
-  // seed p/ nenhum cenário importado ficar de fora (ajuste aplicado no submit).
-  const plannedStages = Math.max(effectiveStages, seedCount);
+  // Cenários já prontos: etapas cruas mandam; senão o pacote entra como seed.
+  const rawStages = customStages?.length ? customStages : null;
+  const seedCount = !rawStages && pack ? pack.scenarios.length : 0;
+  const importedList: StageSpec[] = rawStages ?? pack?.scenarios ?? [];
+  const importedCount = rawStages ? rawStages.length : seedCount;
+  const importedRefs = importedList.filter((s) => s.reference?.trim()).length;
+  // O orchestrator só gera o que falta p/ `stages`; garante etapas >= seed.
+  const plannedStages = rawStages ? rawStages.length : Math.max(stages, seedCount);
+  // Só chama o gerador quando ainda faltam cenários para completar `stages`.
+  const precisaGerar = !rawStages && plannedStages > seedCount;
 
-  // Guard-rail anti-viés de painel (consultivo): alerta quando um juiz é da MESMA
-  // família dos modelos avaliados (viés de auto-preferência) ou quando o painel
-  // não é diverso (recomendado ≥2 famílias distintas). Usa a base LGPD de famílias.
+  // Guard-rail anti-viés de painel (consultivo): juiz da MESMA família dos
+  // modelos avaliados, ou painel pouco diverso.
   const panelWarnings = useMemo(() => {
     if (judge.length === 0) return [] as string[];
     const familyKey = (id: string) => (lgpd ? familiaFor(id, lgpd)?.id : undefined) ?? creatorPrefix(id);
-    const execIds = mode === 'compare' ? competitors : contestantModel;
-    const execFams = new Set(execIds.map(familyKey));
+    const execFams = new Set((mode === 'compare' ? competitors : contestantModel).map(familyKey));
     const warns: string[] = [];
     const shared = judge.filter((j) => execFams.has(familyKey(j)));
-    if (shared.length) {
-      warns.push(
-        `Juiz(es) da mesma família dos modelos avaliados: ${shared.join(', ')}. ` +
-          'Risco de viés de auto-preferência — prefira juízes de provedores distintos do executor.',
-      );
-    }
-    const judgeFams = new Set(judge.map(familyKey));
-    if (judgeFams.size < 2) {
-      warns.push(
-        judge.length === 1
-          ? 'Painel com apenas 1 juiz. Painéis de famílias distintas (≥2 provedores) reduzem viés correlacionado.'
-          : 'Todos os juízes são da mesma família. Diversifique os provedores para reduzir viés correlacionado.',
-      );
-    }
+    if (shared.length) warns.push(`Juiz da mesma família do avaliado (${shared.join(', ')}) — risco de auto-preferência.`);
+    if (new Set(judge.map(familyKey)).size < 2)
+      warns.push('Painel de uma família só — juízes de provedores distintos reduzem viés correlacionado.');
     return warns;
   }, [judge, competitors, contestantModel, mode, lgpd]);
 
-  // Compare-llms: a identidade do concorrente é a tripla modelo+temperatura+
-  // reasoning. Tripla repetida = concorrentes indistinguíveis (aviso consultivo).
+  // Compare-llms: tripla repetida = concorrentes indistinguíveis.
   const dupConfigWarning = useMemo(() => {
     if (compareAxis !== 'configs') return null;
     const counts = new Map<string, number>();
@@ -701,7 +402,7 @@ export function NewRun() {
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
     return [...counts.values()].some((c) => c > 1)
-      ? 'Há configs repetidas (mesmo modelo + temperatura + reasoning) — a identidade do concorrente é essa tripla; ajuste para diferenciar.'
+      ? 'Configs repetidas (mesmo modelo + temperatura + reasoning) — ajuste para diferenciar.'
       : null;
   }, [compareAxis, competitorConfigs]);
 
@@ -715,87 +416,50 @@ export function NewRun() {
       : compareAxis === 'configs'
         ? competitorConfigs.filter((r) => r.modelId).map((r) => r.modelId)
         : competitors;
-    // passes do juiz so se aplica nos modos de 1 LLM (toggle visivel la).
-    const passes = isSingle && twoPassJudge ? 2 : 1;
+    const passes = twoPassJudge ? 2 : 1;
     let perStage = 0;
     for (const id of contestantIds) perStage += costOf(id, ctxIn, maxTokensNum);
-    if (datagen[0]) perStage += costOf(datagen[0], 300, 450);
-    let judgeCalls = judge.length * passes;
-    let extraCalls = 0;
+    if (precisaGerar && datagen[0]) perStage += costOf(datagen[0], 300, 450);
     if (referenceJudging) {
-      // gabarito: 1 chamada do modelo de referência por estágio (~1500 tokens out).
+      // gabarito: 1 chamada do modelo de referência por cenário.
       const refId = referenceModel[0] ?? judge[0];
       if (refId) perStage += costOf(refId, ctxIn + 600, 1500);
-      extraCalls += 1;
       // pointwise: cada juiz avalia CADA competidor contra o gabarito.
       for (const jid of judge) perStage += costOf(jid, ctxIn + maxTokensNum + 1500, 350) * n;
-      judgeCalls = judge.length * n;
-      if (mode === 'training' && duels && judge[0]) {
-        // duelos: bracket top-K (0 = todos contra todos), 2 ordens por par, 1º juiz.
-        const k = duelTopK > 0 ? Math.min(duelTopK, n) : n;
+      // finais: C(finalistas,2) pares × 2 ordens, no 1º juiz, em cada cenário.
+      const k = duelsOn && finalists > 0 ? Math.min(finalists, n) : 0;
+      if (k >= 2 && judge[0]) {
         const pairs = (k * (k - 1)) / 2;
         perStage += pairs * 2 * costOf(judge[0], ctxIn + 2 * maxTokensNum + 1500, 350);
-        extraCalls += pairs * 2;
       }
     } else {
-      // cada juiz le o contexto + todas as respostas; com 2 passagens, conta x2.
+      // listwise: cada juiz lê o contexto + todas as respostas.
       for (const jid of judge) perStage += costOf(jid, ctxIn + n * maxTokensNum, 350) * passes;
     }
-    const iters = mode === 'training' ? iterations : 1;
-    // Cada cenário roda uma única vez — o custo escala só por etapas × iterações.
-    const point = perStage * plannedStages * iters;
-    return {
-      n,
-      stages: plannedStages,
-      iters,
-      calls: plannedStages * (n + 1 + judgeCalls + extraCalls) * iters,
-      low: point * 0.45,
-      high: point,
-      refTerms: referenceJudging,
-    };
+    const point = perStage * plannedStages * (mode === 'training' ? iterations : 1);
+    return { low: point * 0.45, high: point };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, isSingle, competitors, compareAxis, competitorConfigs, contestantModel, variantCount, datagen, judge, twoPassJudge, plannedStages, referenceJudging, referenceModel, duels, duelTopK, maxTokensNum, iterations, priceById]);
-
-  function step(key: keyof typeof RANGES, current: number, setter: (v: number) => void, dir: 1 | -1) {
-    const [min, max, by] = RANGES[key];
-    setter(Math.max(min, Math.min(max, current + dir * by)));
-  }
-
-  // Importa pacote de cenários (JSON exportado ao fim de uma run anterior):
-  // vira seed do datagen e pré-preenche tema + prompt base (editáveis depois).
-  async function handlePackFile(file: File) {
-    setPackError(null);
-    try {
-      const res = await readScenarioPackFile(file);
-      if (!res.ok) {
-        setPack(null);
-        setPackError(res.error);
-        return;
-      }
-      setPack(res.pack);
-      setTheme(res.pack.theme);
-      setBasePrompt(res.pack.prompt.text);
-    } catch (err) {
-      setPack(null);
-      setPackError((err as Error).message);
-    }
-  }
+  }, [
+    mode, isSingle, competitors, compareAxis, competitorConfigs, contestantModel, variantCount, datagen, judge,
+    twoPassJudge, plannedStages, precisaGerar, referenceJudging, referenceModel, duelsOn, finalists, maxTokensNum,
+    iterations, priceById,
+  ]);
 
   function updateConfigRow(i: number, patch: Partial<ConfigRow>) {
     setCompetitorConfigs((rows) => rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
   }
 
-  // Aplica uma configuração importada (arena-config@1) no estado do assistente.
-  // Campos AUSENTES no arquivo não pisam o estado atual — só o que veio é aplicado.
+  // Aplica uma configuração importada (arena-config@1) no estado da tela.
+  // Campos AUSENTES no arquivo não pisam o estado atual.
   function applyArenaConfig(config: ArenaConfigFile) {
     setMode(config.mode);
     setTheme(config.theme);
     if (config.scenarioBrief !== undefined) setScenarioBrief(config.scenarioBrief);
     if (config.stages !== undefined) setStages(Math.max(1, Math.min(50, Math.round(config.stages))));
-    // Cenários: viram seed no MESMO estado do pacote de cenários (a UI de
-    // preview "N importados" e o submit de scenarioSeed já sabem lidar com ele).
+    // Cenários pinados: viram seed no MESMO estado do pacote de cenários.
     if (config.scenarios) {
       const tokensFallback = config.limits?.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS;
+      setCustomStages(null);
       setPack({
         format: 'ai-benchmark-pack@1',
         theme: config.theme,
@@ -811,9 +475,11 @@ export function NewRun() {
           origin: 'import' as const,
         })),
       });
-      setPackError(null);
     }
-    if (config.prompt?.text !== undefined) setBasePrompt(config.prompt.text);
+    if (config.prompt?.text !== undefined) {
+      setBasePrompt(config.prompt.text);
+      setPromptImported(!!config.prompt.text.trim());
+    }
     if (config.prompt?.generateFrom !== undefined) setTaskDescription(config.prompt.generateFrom);
     setDatagen([config.models.datagen]);
     setJudge(config.models.judges);
@@ -845,168 +511,141 @@ export function NewRun() {
     if (config.training?.iterations !== undefined)
       setIterations(Math.max(2, Math.min(10, Math.round(config.training.iterations))));
     if (config.training?.minGain !== undefined) setMinGain(config.training.minGain);
-    if (config.training?.duels !== undefined) setDuels(config.training.duels);
-    if (config.training?.duelTopK !== undefined) setDuelTopK(config.training.duelTopK);
     if (config.training?.holdoutRatio !== undefined)
       setHoldoutRatio(Math.max(0, Math.min(0.5, config.training.holdoutRatio)));
     if (config.training?.feedbackDriven !== undefined) setFeedbackDriven(config.training.feedbackDriven);
+    // duels/finalists: a raiz é o lugar canônico; o bloco training é compat.
+    const duelsFlag = config.duels ?? config.training?.duels;
+    if (duelsFlag !== undefined) setDuelsOn(duelsFlag);
+    const finalistsCfg = config.finalists ?? config.training?.finalists;
+    if (finalistsCfg !== undefined) setFinalists(Math.max(0, Math.min(12, Math.round(finalistsCfg))));
     if (config.judging?.reference !== undefined) setRefJudgingChoice(config.judging.reference);
     if (config.judging?.passes !== undefined) setTwoPassJudge(config.judging.passes === 2);
-    if (config.limits?.maxOutputTokens !== undefined) setMaxOutputTokens(String(config.limits.maxOutputTokens));
-    if (config.limits?.timeoutMs !== undefined) setTimeoutMs(config.limits.timeoutMs);
-    if (config.limits?.concurrency !== undefined) setConcurrency(config.limits.concurrency);
+    // Clamp na entrada: os inputs têm min/max nativos e um valor fora da faixa
+    // faz o browser abortar o submit SEM mensagem — o botão Iniciar morre calado.
+    if (config.limits?.maxOutputTokens !== undefined)
+      setMaxOutputTokens(String(Math.max(50, Math.round(config.limits.maxOutputTokens))));
+    if (config.limits?.timeoutMs !== undefined)
+      setTimeoutMs(Math.max(1000, Math.min(300000, Math.round(config.limits.timeoutMs))));
+    if (config.limits?.concurrency !== undefined)
+      setConcurrency(Math.max(1, Math.min(32, Math.round(config.limits.concurrency))));
     if (config.compliance) {
       setComplianceArea(config.compliance.area);
       setIncludeRessalvas(config.compliance.includeRessalvas);
     }
   }
 
-  // Importa configuração completa (JSON arena-config@1) — botão no rodapé do
-  // assistente. Erro vai p/ o wizard-error; sucesso aplica tudo e abre o banner.
-  async function handleConfigFile(file: File) {
+  // Import unificado: UM arquivo, três formatos possíveis (arena-config@1,
+  // ai-benchmark-pack@1 ou array cru de cenários) — `readImportFile` detecta.
+  async function handleImport(file: File) {
     setError(null);
-    try {
-      const res = await readArenaConfigFile(file);
-      if (!res.ok) {
-        setError(res.error);
-        return;
-      }
-      applyArenaConfig(res.config);
-      setConfigNotice(`Configuração importada: ${arenaConfigSummary(res.config)}`);
-    } catch (err) {
-      setError((err as Error).message);
-    }
-  }
-
-  // --- Validação por passo: o assistente só avança quando o passo está completo. ---
-  function validateStep(id: StepId): string | null {
-    switch (id) {
-      case 'mode':
-        return null;
-      case 'theme':
-        if (!theme.trim()) return 'Descreva o tema do benchmark para continuar.';
-        if (useCustomStages) {
-          if (parsedCustomStages.error) return `Etapas (JSON): ${parsedCustomStages.error}`;
-          if (!parsedCustomStages.stages?.length) return 'Cole o JSON das etapas (ou desligue as etapas manuais).';
-        }
-        return null;
-      case 'players':
-        if (mode === 'compare') {
-          if (compareAxis === 'configs') {
-            return competitorConfigs.filter((r) => r.modelId).length >= 2
-              ? null
-              : 'Preencha o modelo em pelo menos 2 linhas de configuração.';
-          }
-          return competitors.length >= 2 ? null : 'Selecione pelo menos 2 modelos competidores.';
-        }
-        if (contestantModel.length !== 1) return 'Selecione 1 modelo sob teste.';
-        if (variantCount < 2)
-          return optimize
-            ? 'Selecione ao menos 2 técnicas (ou 1 técnica + prompt base).'
-            : 'Forneça ao menos 2 variantes manuais (ou 1 variante + prompt base).';
-        return null;
-      case 'eval':
-        if (datagen.length !== 1) return 'Selecione 1 modelo gerador.';
-        if (judge.length < 1) return 'Selecione ao menos 1 modelo juiz.';
-        return null;
-      case 'review':
-        return null;
-      default:
-        return null;
-    }
-  }
-
-  function firstInvalid(): number {
-    for (let i = 0; i < STEPS.length; i++) {
-      if (validateStep(STEPS[i].id)) return i;
-    }
-    return STEPS.length;
-  }
-
-  function goTo(target: number) {
-    let dest = Math.max(0, Math.min(STEPS.length - 1, target));
-    if (dest > stepIdx) {
-      // Avançando: barra no primeiro passo incompleto e mostra o que falta.
-      const fi = firstInvalid();
-      if (fi < dest) {
-        dest = fi;
-        setError(validateStep(STEPS[fi].id));
-      } else {
-        setError(null);
-      }
-    } else {
-      setError(null);
-    }
-    // O banner de config importada é contextual do passo onde caiu: some ao navegar.
-    setConfigNotice(null);
-    setStepIdx(dest);
-    scrollToTop();
-  }
-
-  async function submit(e: FormEvent) {
-    e.preventDefault();
-    // Enter fora do último passo apenas avança o assistente (não dispara a run).
-    if (STEPS[stepIdx].id !== 'review') {
-      goTo(stepIdx + 1);
+    const res = await readImportFile(file);
+    if (!res.ok) return setError(res.error);
+    if (res.data.kind === 'config') {
+      applyArenaConfig(res.data.config);
+      setConfigSummary(arenaConfigSummary(res.data.config));
       return;
     }
+    if (res.data.kind === 'pack') {
+      setCustomStages(null);
+      setPack(res.data.pack);
+      setTheme(res.data.pack.theme);
+      if (res.data.pack.prompt.text.trim()) {
+        setBasePrompt(res.data.pack.prompt.text);
+        setPromptImported(true);
+      }
+      return;
+    }
+    setPack(null);
+    setCustomStages(res.data.stages);
+  }
 
-    setError(null);
-    if (!theme.trim()) return setError('Defina um tema.');
-    if (useCustomStages && parsedCustomStages.error)
-      return setError(`Etapas (JSON): ${parsedCustomStages.error}`);
-    if (useCustomStages && !parsedCustomStages.stages?.length)
-      return setError('Cole o JSON das etapas (ou desligue as etapas manuais).');
-    if (datagen.length !== 1) return setError('Selecione 1 modelo para gerador.');
-    if (judge.length < 1) return setError('Selecione ao menos 1 modelo para juiz.');
+  async function gerarPromptBase() {
+    setGenBaseLoading(true);
+    setGenBaseError(null);
+    try {
+      setBasePrompt(
+        await generateBasePrompt(taskDescription.trim(), datagen[0] ?? DEFAULT_DATAGEN, theme.trim() || undefined),
+      );
+    } catch (err) {
+      setGenBaseError((err as Error).message);
+    } finally {
+      setGenBaseLoading(false);
+    }
+  }
 
+  // Validação: 1 frase por problema; o botão trava enquanto houver algum.
+  function problems(): string[] {
+    const out: string[] = [];
+    if (!theme.trim()) out.push('Descreva o tema do benchmark.');
+    // O gerador só é exigido quando ele vai ser chamado: com os cenários já
+    // prontos no arquivo, o campo nem aparece — não pode travar o botão.
+    if (precisaGerar && datagen.length !== 1) out.push('Selecione 1 modelo gerador.');
+    if (judge.length < 1) out.push('Selecione ao menos 1 juiz.');
     if (mode === 'compare') {
       if (compareAxis === 'configs') {
         if (competitorConfigs.filter((r) => r.modelId).length < 2)
-          return setError('Preencha o modelo em pelo menos 2 linhas de configuração.');
+          out.push('Preencha o modelo em pelo menos 2 configs (Avançado).');
       } else if (competitors.length < 2) {
-        return setError('Selecione pelo menos 2 competidores.');
+        out.push('Selecione pelo menos 2 modelos competidores.');
       }
     } else {
-      if (contestantModel.length !== 1) return setError('Selecione 1 modelo sob teste.');
-      if (variantCount < 2) {
-        return setError(
+      if (contestantModel.length !== 1) out.push('Selecione 1 modelo sob teste.');
+      if (variantCount < 2)
+        out.push(
           optimize
             ? 'Selecione ao menos 2 técnicas (ou 1 técnica + prompt base).'
-            : 'Forneça ao menos 2 variantes manuais (ou 1 variante + prompt base).',
+            : 'Escreva ao menos 2 variantes manuais (ou 1 + prompt base).',
         );
-      }
+    }
+    return out;
+  }
+
+  const pendencias = problems();
+  const keyConnected = !!getStoredKey();
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    const faltas = problems();
+    if (faltas.length) {
+      setTried(true);
+      return setError(faltas[0]);
     }
 
-    const customStages =
-      useCustomStages && parsedCustomStages.stages?.length ? parsedCustomStages.stages : undefined;
-
-    // Reasoning por papel (select junto de cada seletor): só papéis com escolha explícita.
+    // Reasoning por papel: só papéis com escolha explícita.
     const reasoning: ReasoningConfig = {};
     if (reasoningCompetitor) reasoning.competitor = reasoningCompetitor;
     if (reasoningJudge) reasoning.judge = reasoningJudge;
     if (reasoningRewriter) reasoning.rewriter = reasoningRewriter;
     if (reasoningDatagen) reasoning.datagen = reasoningDatagen;
 
+    const finalistsNum = Math.max(0, Math.min(12, Math.round(finalists)));
+    const semFinais = !duelsOn || finalistsNum === 0;
+
     const common = {
       theme: theme.trim(),
-      // Com pacote importado, sobe p/ N se stages < N (senão cenários do seed
-      // ficariam de fora — o orchestrator só preenche o que falta p/ `stages`).
-      stages: customStages ? customStages.length : plannedStages,
-      datagenModelId: datagen[0],
+      // Com cenários prontos, `stages` acompanha o que veio no arquivo (senão
+      // parte deles ficaria de fora — o engine só completa o que falta).
+      stages: plannedStages,
+      // Sempre presente (o schema exige), mesmo quando o datagen não vai rodar.
+      datagenModelId: datagen[0] ?? DEFAULT_DATAGEN,
       judgeModelIds: judge,
-      concurrency,
-      timeoutMs,
-      // Campo livre: vazio/inválido já caiu no default em maxTokensNum.
+      concurrency: Math.max(1, Math.min(32, Math.round(concurrency))),
+      timeoutMs: Math.max(1000, Math.min(300000, Math.round(timeoutMs))),
       maxOutputTokens: maxTokensNum,
-      ...(customStages ? { customStages } : {}),
+      ...(rawStages ? { customStages: rawStages } : {}),
       ...(isLivre ? {} : { compliance: { area: complianceArea, includeRessalvas } }),
-      // Evolução de prompts (strip de undefined/vazios):
       ...(scenarioBrief.trim() ? { scenarioBrief: scenarioBrief.trim() } : {}),
       // Seed do pacote: perde o `id` do arquivo (o engine re-rotula as etapas).
       ...(seedCount > 0 && pack ? { scenarioSeed: pack.scenarios.map(({ id, ...spec }) => spec) } : {}),
       // Explícito: o default muda por modo/eixo, então o valor efetivo vai sempre.
       referenceJudging,
+      finalists: finalistsNum,
+      ...(semFinais ? { duels: false } : {}),
+      // Vale nos TRÊS modos: no compare clássico o julgamento é o listwise, que é
+      // justamente quem usa `judgePasses` (antes só ia em variation/training).
+      judgePasses: (twoPassJudge ? 2 : 1) as 1 | 2,
       ...(referenceModel[0] ? { referenceModelId: referenceModel[0] } : {}),
       ...(Object.keys(reasoning).length ? { reasoning } : {}),
     };
@@ -1042,16 +681,13 @@ export function NewRun() {
         promptOptimization: optimize,
         techniqueIds: optimize ? techniques : undefined,
         manualVariants: optimize ? undefined : manualVariants.filter((v) => v.systemPrompt.trim()),
-        // Reescritor explícito (opcional): vazio = a engine usa o gerador.
         ...(optimize && rewriterModel[0] ? { optimizerModelId: rewriterModel[0] } : {}),
-        judgePasses: twoPassJudge ? 2 : 1,
         ...(mode === 'training'
           ? {
-              iterations,
+              iterations: Math.max(2, Math.min(10, Math.round(iterations))),
               minGain: Math.max(0, Math.min(100, minGain)),
               holdoutRatio: Math.max(0, Math.min(0.5, holdoutRatio)),
               feedbackDriven,
-              ...(duels ? { duels: true, duelTopK: Math.max(0, Math.min(32, Math.round(duelTopK))) } : {}),
             }
           : {}),
       };
@@ -1060,11 +696,9 @@ export function NewRun() {
     setSubmitting(true);
     try {
       if (mode === 'training') {
-        const sessionId = await createSession(config);
-        navigate(`/training/${sessionId}`);
+        navigate(`/training/${await createSession(config)}`);
       } else {
-        const runId = await createRun(config);
-        navigate(`/runs/${runId}`);
+        navigate(`/runs/${await createRun(config)}`);
       }
     } catch (err) {
       setError((err as Error).message);
@@ -1072,1081 +706,356 @@ export function NewRun() {
     }
   }
 
-  const keyConnected = !!getStoredKey();
-  const stepId = STEPS[stepIdx].id;
-  const fi = firstInvalid();
-  const isLivre = complianceArea === AREA_LIVRE;
-  const areaMeta = lgpd && !isLivre ? lgpd.areas.find((a) => a.id === complianceArea) : undefined;
-  const areaLabel = isLivre ? 'Livre — todos os modelos' : (areaMeta?.label ?? complianceArea);
-
-  // Card do filtro de preço, reusado nos modos compare e variação/treino.
-  const priceFilterCard = (
-    <div className="card field-card">
-      <div className="field-head">
-        <label className="field-label">Filtro de preço (só participantes)</label>
-        <span className="proposito-count">
-          {modelsLoading ? '—' : `${participantModels.length} de ${filteredModels.length} modelos`}
-        </span>
-      </div>
-      <p className="field-hint" style={{ marginTop: 0 }}>
-        Limita os participantes por preço (USD por 1M tokens). Vazio = sem limite.{' '}
-        <strong>Não afeta</strong> gerador nem juiz.
-      </p>
-      <div className="price-filter-row">
-        <label className="price-field">
-          <span>Input máx. ($/1M)</span>
-          <input
-            type="number"
-            min="0"
-            step="0.1"
-            className="input"
-            placeholder="sem limite"
-            value={maxInputPrice}
-            onChange={(e) => setMaxInputPrice(e.target.value)}
-          />
-        </label>
-        <label className="price-field">
-          <span>Output máx. ($/1M)</span>
-          <input
-            type="number"
-            min="0"
-            step="0.1"
-            className="input"
-            placeholder="sem limite"
-            value={maxOutputPrice}
-            onChange={(e) => setMaxOutputPrice(e.target.value)}
-          />
-        </label>
-      </div>
-    </div>
-  );
-
   return (
-    <form className="screen wizard" onSubmit={submit}>
-      <header className="wizard-head">
+    <form className="screen nr" onSubmit={submit}>
+      <div className="nr-top">
         <h1 className="page-title">Nova Run</h1>
-        <p className="page-sub">
-          Monte seu benchmark em {STEPS.length} passos. Cada etapa explica o que faz — no fim, é só disparar os robôs.
-        </p>
-      </header>
-
-      <StepProgress current={stepIdx} firstInvalid={fi} onJump={goTo} />
-
-      {draftNotice && (
-        <div
-          className="banner banner-neutral"
-          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}
-        >
-          <span>{draftNotice}</span>
-          <button type="button" className="link-toggle" onClick={() => setDraftNotice(null)}>
-            dispensar
-          </button>
-        </div>
-      )}
-
-      {configNotice && (
-        <div
-          className="banner banner-neutral"
-          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}
-        >
-          <span>{configNotice}</span>
-          <button type="button" className="link-toggle" onClick={() => setConfigNotice(null)}>
-            dispensar
-          </button>
-        </div>
-      )}
-
-      {/* input de arquivo da config importada (acionado pelo botão do rodapé) */}
-      <input
-        ref={configFileRef}
-        type="file"
-        accept="application/json,.json"
-        style={{ display: 'none' }}
-        onChange={(e) => {
-          const file = e.target.files?.[0];
-          if (file) void handleConfigFile(file);
-          e.target.value = '';
-        }}
-      />
-
-      <div className="wizard-panel" key={stepId}>
-        {/* ---------------------------------------------------------- passo 1: objetivo */}
-        {stepId === 'mode' && (
-          <>
-            <StepIntro step={1} title="O que você quer descobrir?">
-              Escolha o tipo de experimento. Dá para trocar a qualquer momento — cada opção mostra abaixo como funciona.
-            </StepIntro>
-            <div className="mode-card-grid">
-              {MODE_META.map((m) => (
-                <button
-                  type="button"
-                  key={m.id}
-                  className={`mode-card ${mode === m.id ? 'selected' : ''}`}
-                  onClick={() => setMode(m.id)}
-                >
-                  <span className="mode-card-icon">{m.icon}</span>
-                  <span className="mode-card-title">{m.label}</span>
-                  <span className="mode-card-tag">{m.tagline}</span>
-                  <span className="mode-card-detail">{m.detail}</span>
-                </button>
-              ))}
-            </div>
-            <div className="wizard-pipeline-wrap">
-              <div className="wizard-sub">Como roda o modo “{modeMeta.label}”</div>
-              <Pipeline mode={mode} iterations={iterations} />
-              <button type="button" className="link-toggle" onClick={() => help.open(mode)}>
-                Ver tutorial completo deste modo
-              </button>
-            </div>
-          </>
-        )}
-
-        {/* ---------------------------------------------------------- passo 2: tema */}
-        {stepId === 'theme' && (
-          <>
-            <StepIntro step={2} title="Sobre o que é o benchmark?">
-              Descreva o assunto ou cenário. Um modelo <strong>gerador</strong> vai criar várias perguntas realistas sobre
-              esse tema — são elas que os participantes respondem. Quanto mais específico, melhores as perguntas.
-            </StepIntro>
-            <div className="card field-card">
-              <div className="field-head">
-                <label className="field-label" htmlFor="theme">Tema</label>
-                <div className="preset-row">
-                  <span className="preset-lead">Exemplos:</span>
-                  {PRESETS.map((p) => (
-                    <button key={p.label} type="button" className="chip-tag" onClick={() => setTheme(p.theme)}>
-                      {p.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <textarea
-                id="theme"
-                className="textarea"
-                value={theme}
-                onChange={(e) => setTheme(e.target.value)}
-                placeholder="Ex.: Atendimento de clínica de exames laboratoriais com FAQs e políticas de agendamento"
-                rows={5}
-              />
-            </div>
-
-            <div className="card field-card">
-              <label className="field-label" htmlFor="scenarioBrief">
-                Descreva em detalhe o que você quer testar (opcional)
-              </label>
-              <textarea
-                id="scenarioBrief"
-                className="textarea"
-                style={{ marginTop: 10 }}
-                value={scenarioBrief}
-                onChange={(e) => setScenarioBrief(e.target.value)}
-                placeholder="Ex.: quero ver se os modelos respeitam as regras de jejum de cada exame e não inventam orientações médicas…"
-                rows={3}
-              />
-              <p className="field-hint">
-                Guia a <strong>geração de cenários</strong>: o gerador usa esta descrição p/ criar perguntas focadas
-                no que importa p/ você. Vazio = só o tema acima.
-              </p>
-            </div>
-
-            {/* Pacote de cenários (JSON): importa cenários+gabaritos de uma run
-                anterior como seed; o gerador só cria o que faltar p/ `stages`. */}
-            <div className="card field-card">
-              <div className="field-head">
-                <label className="field-label">Pacote de cenários (JSON)</label>
-                {pack && <span className="proposito-count">{pack.scenarios.length} cenários importados</span>}
-              </div>
-              <p className="field-hint" style={{ marginTop: 0 }}>
-                Importe o pacote exportado ao fim de uma run anterior: os cenários entram como <strong>seed</strong>{' '}
-                (com gabaritos) e o gerador só cria o que faltar. Tema e prompt base são pré-preenchidos (editáveis).
-              </p>
-              <div className="preset-row">
-                <label className="chip-tag" style={{ cursor: 'pointer' }}>
-                  Importar pacote .json
-                  <input
-                    type="file"
-                    accept="application/json,.json"
-                    style={{ display: 'none' }}
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) void handlePackFile(file);
-                      e.target.value = '';
-                    }}
-                  />
-                </label>
-                {pack && (
-                  <button
-                    type="button"
-                    className="chip-tag"
-                    onClick={() => {
-                      setPack(null);
-                      setPackError(null);
-                    }}
-                  >
-                    Remover pacote
-                  </button>
-                )}
-              </div>
-              {packError && <div className="proposito-pruned">⚠️ {packError}</div>}
-              {pack && (
-                <p className="field-hint">
-                  <strong>{pack.scenarios.length} cenários importados</strong> (
-                  {pack.scenarios.filter((s) => s.reference?.trim()).length} com gabarito)
-                  {useCustomStages
-                    ? ' — ignorado: com etapas manuais ligadas, o JSON de etapas é que manda.'
-                    : ` — ${
-                        Math.max(0, plannedStages - pack.scenarios.length) > 0
-                          ? `serão gerados mais ${Math.max(0, plannedStages - pack.scenarios.length)} até completar ${plannedStages} etapas.`
-                          : 'o gerador não precisa criar novos.'
-                      }${
-                        stages < pack.scenarios.length
-                          ? ` O nº de etapas será ajustado para ${pack.scenarios.length} no envio.`
-                          : ''
-                      }`}
-                </p>
-              )}
-            </div>
-
-            <div className="card steppers-card">
-              <div className="steppers-grid">
-                {!useCustomStages && (
-                  <Stepper label="Etapas" value={stages} onStep={(d) => step('stages', stages, setStages, d)} />
-                )}
-                <label className="price-field">
-                  <span>Máx. tokens por resposta</span>
-                  <input
-                    type="number"
-                    className="input"
-                    min={50}
-                    placeholder={String(DEFAULT_MAX_OUTPUT_TOKENS)}
-                    value={maxOutputTokens}
-                    onChange={(e) => setMaxOutputTokens(e.target.value)}
-                  />
-                </label>
-              </div>
-              <p className="field-hint">
-                {useCustomStages ? (
-                  <>
-                    <strong>{effectiveStages} etapa(s)</strong> vêm do JSON abaixo.{' '}
-                  </>
-                ) : (
-                  <>
-                    <strong>Etapas</strong> = quantas perguntas diferentes o gerador cria.{' '}
-                  </>
-                )}
-                <strong>Máx. tokens</strong> limita o tamanho de cada resposta
-                {useCustomStages && ' (usado quando a etapa não traz "maxTokens")'} — o teto real é o do modelo;
-                deixe alto p/ modelos de raciocínio. Vazio = {DEFAULT_MAX_OUTPUT_TOKENS}.
-              </p>
-            </div>
-
-            {/* Loop do treino (só training): explica a evolução e concentra as iterações. */}
-            {mode === 'training' && (
-              <div className="card field-card">
-                <label className="field-label">Como funciona o treino</label>
-                <ol className="field-hint" style={{ margin: '10px 0 0', paddingLeft: 18 }}>
-                  <li>Cada técnica reescreve o prompt.</li>
-                  <li>Todas as versões respondem os MESMOS cenários.</li>
-                  <li>O juiz compara cada resposta com o gabarito e as melhores duelam.</li>
-                  <li>
-                    A vencedora só vira a base da próxima iteração se superar a margem — senão o treino para
-                    (convergiu).
-                  </li>
-                </ol>
-                <div className="steppers-grid" style={{ marginTop: 14 }}>
-                  <Stepper
-                    label="Iterações (2–10)"
-                    value={iterations}
-                    onStep={(d) => step('iterations', iterations, setIterations, d)}
-                  />
-                </div>
-                <p className="field-hint">
-                  <strong>Iterações</strong> = quantas rodadas de evolução do prompt (no máximo — o treino pode
-                  convergir antes).
-                </p>
-              </div>
-            )}
-
-            {/* Etapas manuais (JSON): substituem o datagen e ancoram o juiz pela rubrica. */}
-            <div className="card field-card">
-              <div className="field-head">
-                <label className="field-label">Etapas manuais (JSON)</label>
-                {useCustomStages && (
-                  <span className="proposito-count">
-                    {parsedCustomStages.stages
-                      ? `${parsedCustomStages.stages.length} etapa(s) válidas`
-                      : parsedCustomStages.error
-                        ? 'JSON com erro'
-                        : 'aguardando JSON'}
-                  </span>
-                )}
-              </div>
-              <Toggle
-                checked={useCustomStages}
-                onChange={setUseCustomStages}
-                label="Fornecer as etapas manualmente (em vez de gerar pelo tema)"
-                hint={
-                  useCustomStages
-                    ? 'Ligado: o gerador é ignorado e o benchmark usa exatamente as etapas do JSON. A "rubric" de cada etapa é entregue ao juiz como critério ancorado de correção.'
-                    : 'Desligado: o modelo gerador cria as perguntas a partir do tema.'
-                }
-              />
-              {useCustomStages && (
-                <>
-                  <div className="card field-card" style={{ background: 'var(--subtle)', marginTop: 12, marginBottom: 12 }}>
-                    <button type="button" className="link-toggle" onClick={() => setCollectorOpen((v) => !v)}>
-                      Não tem o JSON? Gerar prompt de coleta
-                      <span className={`caret ${collectorOpen ? 'open' : ''}`}>▶</span>
-                    </button>
-                    {collectorOpen && (
-                      <>
-                        <p className="field-hint" style={{ marginTop: 10 }}>
-                          Gera um prompt (a partir do seu <strong>Tema</strong>) para colar no SEU modelo (ChatGPT,
-                          Claude, etc.). Ele devolve as etapas já no formato JSON — cole o resultado no campo abaixo.
-                          As partes entre <code>{'{{...}}'}</code> você pode substituir.
-                        </p>
-                        <div className="steppers-grid" style={{ marginBottom: 10 }}>
-                          <Stepper
-                            label="Etapas a gerar"
-                            value={collectorCount}
-                            onStep={(d) => setCollectorCount(Math.max(1, Math.min(50, collectorCount + d)))}
-                          />
-                        </div>
-                        <button
-                          type="button"
-                          className="btn-secondary"
-                          onClick={() => {
-                            setCollectorPrompt(buildCollectionPrompt(theme, collectorCount, maxTokensNum));
-                            setCollectorCopied(false);
-                          }}
-                        >
-                          Gerar prompt
-                        </button>
-                        {collectorPrompt && (
-                          <>
-                            <textarea
-                              className="textarea"
-                              style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: 12, marginTop: 10 }}
-                              value={collectorPrompt}
-                              onChange={(e) => setCollectorPrompt(e.target.value)}
-                              rows={10}
-                              spellCheck={false}
-                            />
-                            <div className="preset-row" style={{ marginTop: 8 }}>
-                              <button
-                                type="button"
-                                className="chip-tag"
-                                onClick={() => {
-                                  navigator.clipboard
-                                    ?.writeText(collectorPrompt)
-                                    .then(() => setCollectorCopied(true))
-                                    .catch(() => undefined);
-                                }}
-                              >
-                                {collectorCopied ? '✓ Copiado' : 'Copiar prompt'}
-                              </button>
-                            </div>
-                          </>
-                        )}
-                      </>
-                    )}
-                  </div>
-                  <p className="field-hint" style={{ marginTop: 12 }}>
-                    Array de etapas. Cada uma:{' '}
-                    <strong>question</strong> (pergunta do usuário), <strong>productContext</strong> (system prompt
-                    dado aos competidores), <strong>rubric</strong> (o que a etapa resolve / critério de correção que
-                    ancora os juízes — opcional, mas recomendado) e <strong>maxTokens</strong> (opcional).
-                  </p>
-                  <div className="preset-row" style={{ marginBottom: 8 }}>
-                    <button
-                      type="button"
-                      className="chip-tag"
-                      onClick={() => setCustomStagesText(CUSTOM_STAGES_EXAMPLE)}
-                    >
-                      Carregar exemplo
-                    </button>
-                    <label className="chip-tag" style={{ cursor: 'pointer' }}>
-                      Importar arquivo .json
-                      <input
-                        type="file"
-                        accept="application/json,.json"
-                        style={{ display: 'none' }}
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (!file) return;
-                          file.text().then(setCustomStagesText).catch(() => undefined);
-                          e.target.value = '';
-                        }}
-                      />
-                    </label>
-                  </div>
-                  <textarea
-                    className="textarea"
-                    style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: 13 }}
-                    value={customStagesText}
-                    onChange={(e) => setCustomStagesText(e.target.value)}
-                    placeholder={CUSTOM_STAGES_EXAMPLE}
-                    rows={12}
-                    spellCheck={false}
-                  />
-                  {parsedCustomStages.error && (
-                    <div className="proposito-pruned">⚠️ {parsedCustomStages.error}</div>
-                  )}
-                </>
-              )}
-            </div>
-
-            {/* Propósito / Conformidade LGPD: filtra (consultivo) o catálogo dos próximos passos. */}
-            <div className="card proposito-card">
-              <div className="field-head">
-                <label className="field-label">Propósito / Conformidade LGPD</label>
-                {!isLivre && (
-                  <span className="proposito-count">
-                    {modelsLoading ? '—' : `${filteredModels.length} de ${models.length} modelos permitidos`}
-                  </span>
-                )}
-              </div>
-              <p className="field-hint" style={{ marginTop: 0 }}>
-                Restringe os modelos disponíveis nos próximos passos conforme a área de uso e a LGPD.
-                É <strong>consultivo</strong> — orienta a escolha, mas não altera o roteamento de providers do OpenRouter.
-              </p>
-
-              <div className="proposito-grid">
-                <button
-                  type="button"
-                  className={`proposito-chip ${isLivre ? 'selected' : ''}`}
-                  onClick={() => setComplianceArea(AREA_LIVRE)}
-                >
-                  <span className="proposito-chip-label">🔓 Livre</span>
-                  <span className="proposito-chip-sub">permitir todos os modelos</span>
-                </button>
-                {lgpd?.areas.map((a) => (
-                  <button
-                    key={a.id}
-                    type="button"
-                    className={`proposito-chip ${complianceArea === a.id ? 'selected' : ''}`}
-                    onClick={() => setComplianceArea(a.id)}
-                  >
-                    <span className="proposito-chip-label">{a.label}</span>
-                  </button>
-                ))}
-              </div>
-
-              {areaMeta && (
-                <>
-                  <p className="proposito-desc">{areaMeta.descricao}</p>
-                  <Toggle
-                    checked={includeRessalvas}
-                    onChange={setIncludeRessalvas}
-                    label="Incluir modelos “permitido com ressalvas”"
-                    hint={
-                      includeRessalvas
-                        ? 'Ligado: inclui modelos permitidos sob condições (ZDR, DPA, SCCs, BAA, comunicação ao BACEN…).'
-                        : 'Desligado (rigor máximo): apenas modelos plenamente permitidos para a área.'
-                    }
-                  />
-                  {lgpd && <div className="proposito-aviso">⚠️ {lgpd.aviso}</div>}
-                </>
-              )}
-
-              {prunedNotice && <div className="proposito-pruned">{prunedNotice}</div>}
-            </div>
-          </>
-        )}
-
-        {/* ---------------------------------------------------------- passo 3: participantes */}
-        {stepId === 'players' && (
-          <>
-            {mode === 'compare' ? (
-              <>
-                <StepIntro step={3} title="Quais modelos vão competir?">
-                  Escolha 2 ou mais modelos. Todos respondem às mesmas perguntas e disputam o ranking — o juiz decide quem
-                  foi melhor, sem saber qual modelo é qual.
-                </StepIntro>
-                {priceFilterCard}
-                <div className="card field-card">
-                  <Toggle
-                    checked={compareAxis === 'configs'}
-                    onChange={(v) => setCompareAxis(v ? 'configs' : 'models')}
-                    label="Mesmo modelo, configs diferentes (compare-LLMs)"
-                    hint={
-                      compareAxis === 'configs'
-                        ? 'Ligado: compare temperaturas e níveis de reasoning do mesmo modelo — a identidade de cada concorrente é a tripla modelo+temperatura+reasoning.'
-                        : 'Desligado: modelos distintos disputam o ranking (fluxo clássico).'
-                    }
-                  />
-                </div>
-                {compareAxis === 'models' ? (
-                  <ModelSelector
-                    multi
-                    title="Competidores"
-                    hint="2 ou mais modelos — respondem ao cenário e disputam o ranking."
-                    value={competitors}
-                    onChange={setCompetitors}
-                    excludeIds={[...datagen, ...judge]}
-                    models={participantModels}
-                    loading={modelsLoading}
-                  />
-                ) : (
-                  <div className="card field-card">
-                    <div className="field-head">
-                      <label className="field-label">Configs comparadas</label>
-                      <span className="proposito-count">
-                        {competitorConfigs.filter((r) => r.modelId).length} de 2–12 preenchidas
-                      </span>
-                    </div>
-                    <div className="selector-hint">
-                      2 a 12 configs. O modelo pode se repetir entre as linhas — o que diferencia cada concorrente é a
-                      temperatura e/ou o reasoning.
-                    </div>
-                    {competitorConfigs.map((row, i) => (
-                      <div key={i} className="manual-variant">
-                        <div className="manual-variant-head">
-                          <span className="field-label" style={{ flex: 1 }}>
-                            Config {i + 1}
-                          </span>
-                          <button
-                            type="button"
-                            className="btn-secondary"
-                            disabled={competitorConfigs.length <= 2}
-                            onClick={() => setCompetitorConfigs((rows) => rows.filter((_, idx) => idx !== i))}
-                          >
-                            Remover
-                          </button>
-                        </div>
-                        <ModelSelector
-                          multi={false}
-                          title={`Modelo da config ${i + 1}`}
-                          hint="Pode repetir o mesmo modelo de outra config."
-                          value={row.modelId ? [row.modelId] : []}
-                          onChange={(ids) => updateConfigRow(i, { modelId: ids[0] ?? '' })}
-                          excludeIds={[...datagen, ...judge]}
-                          models={participantModels}
-                          loading={modelsLoading}
-                        />
-                        <div className="price-filter-row" style={{ marginTop: 10 }}>
-                          <label className="price-field">
-                            <span>Temperatura (0–2 · vazio = padrão)</span>
-                            <input
-                              type="number"
-                              className="input"
-                              min={0}
-                              max={2}
-                              step={0.1}
-                              placeholder="padrão"
-                              value={row.temperature}
-                              onChange={(e) => updateConfigRow(i, { temperature: e.target.value })}
-                            />
-                          </label>
-                          <label className="price-field">
-                            <span>Reasoning</span>
-                            <ReasoningSelect
-                              value={row.reasoningLevel}
-                              onChange={(v) => updateConfigRow(i, { reasoningLevel: v })}
-                            />
-                          </label>
-                        </div>
-                      </div>
-                    ))}
-                    <button
-                      type="button"
-                      className="btn-secondary"
-                      disabled={competitorConfigs.length >= 12}
-                      onClick={() =>
-                        setCompetitorConfigs((rows) => [...rows, { modelId: '', temperature: '', reasoningLevel: '' }])
-                      }
-                    >
-                      + Adicionar config
-                    </button>
-                    {dupConfigWarning && (
-                      <div className="proposito-pruned" style={{ marginTop: 10 }}>
-                        ⚠️ {dupConfigWarning}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </>
-            ) : (
-              <>
-                <StepIntro
-                  step={3}
-                  title={mode === 'training' ? 'Qual modelo vamos treinar?' : 'Qual modelo e quais prompts testar?'}
-                >
-                  {mode === 'training' ? (
-                    <>
-                      Escolha 1 modelo. A cada iteração, a melhor versão do system prompt evolui para a próxima rodada —
-                      convergindo para o melhor prompt possível.
-                    </>
-                  ) : (
-                    <>
-                      Escolha 1 modelo. Ele responde com várias versões do system prompt; o objetivo é achar a melhor. Gere
-                      as variações automaticamente a partir de técnicas, ou escreva as suas.
-                    </>
-                  )}
-                </StepIntro>
-                {priceFilterCard}
-                <ModelSelector
-                  multi={false}
-                  title="Modelo sob teste"
-                  hint="Exatamente 1 — a LLM cujo system prompt você quer otimizar."
-                  value={contestantModel}
-                  onChange={setContestantModel}
-                  excludeIds={[...datagen, ...judge]}
-                  models={participantModels}
-                  loading={modelsLoading}
-                />
-                <EffortCard
-                  hint="Nível de raciocínio do modelo sob teste. 'Padrão do modelo' não envia nada — ele usa o próprio default."
-                  value={reasoningCompetitor}
-                  onChange={setReasoningCompetitor}
-                />
-
-                <div className="card field-card genbase-card">
-                  <label className="field-label" htmlFor="taskDescription">
-                    Descrever a tarefa → gerar prompt base (opcional)
-                  </label>
-                  <div className="selector-hint">
-                    Descreva o que o assistente precisa fazer e uma LLM redige um system prompt de
-                    partida. O texto gerado preenche o campo abaixo (editável) e roda como controle.
-                  </div>
-                  <textarea
-                    id="taskDescription"
-                    className="textarea"
-                    style={{ marginTop: 10 }}
-                    value={taskDescription}
-                    onChange={(e) => setTaskDescription(e.target.value)}
-                    placeholder="Ex.: um assistente que classifica tickets de suporte por urgência e responde com o próximo passo."
-                    rows={3}
-                  />
-                  <div className="genbase-actions">
-                    <button
-                      type="button"
-                      className="btn-secondary"
-                      disabled={!taskDescription.trim() || genBaseLoading}
-                      onClick={async () => {
-                        const desc = taskDescription.trim();
-                        if (!desc) return;
-                        setGenBaseLoading(true);
-                        setGenBaseError(null);
-                        try {
-                          const sp = await generateBasePrompt(
-                            desc,
-                            datagen[0] ?? DEFAULT_DATAGEN,
-                            theme.trim() || undefined,
-                          );
-                          setBasePrompt(sp);
-                        } catch (e) {
-                          setGenBaseError((e as Error).message);
-                        } finally {
-                          setGenBaseLoading(false);
-                        }
-                      }}
-                    >
-                      {genBaseLoading ? 'Gerando…' : '✨ Gerar prompt base'}
-                    </button>
-                    <span className="genbase-hint">
-                      usa o modelo gerador (<code className="mono-id">{datagen[0] ?? DEFAULT_DATAGEN}</code>)
-                    </span>
-                  </div>
-                  {genBaseError && (
-                    <div className="banner banner-error" style={{ margin: '10px 0 0' }}>{genBaseError}</div>
-                  )}
-                </div>
-
-                <div className="card field-card">
-                  <label className="field-label" htmlFor="basePrompt">Prompt base (opcional)</label>
-                  <textarea
-                    id="basePrompt"
-                    className="textarea"
-                    style={{ marginTop: 10 }}
-                    value={basePrompt}
-                    onChange={(e) => setBasePrompt(e.target.value)}
-                    placeholder="System prompt de partida. Deixe vazio para que as variações partam do zero a partir do tema."
-                    rows={4}
-                  />
-                  <Toggle
-                    checked={optimize}
-                    onChange={setOptimize}
-                    label="Otimização de prompt (gerar variações automaticamente)"
-                    hint={
-                      optimize
-                        ? 'Ligado: uma LLM gera as variações aplicando as técnicas selecionadas (o prompt base, quando houver, roda como controle).'
-                        : 'Desligado: nenhuma reescrita por LLM — rodam o prompt base (se houver) e as variações que você escrever.'
-                    }
-                  />
-                </div>
-
-                {optimize ? (
-                  <TechniqueSelector value={techniques} onChange={setTechniques} />
-                ) : (
-                  <ManualVariantsEditor value={manualVariants} onChange={setManualVariants} />
-                )}
-
-                {/* Reescritor: quem aplica as técnicas (vazio = o gerador de cenários). */}
-                {optimize && (
-                  <>
-                    <ModelSelector
-                      multi={false}
-                      title="Modelo reescritor (opcional)"
-                      hint="Reescreve os seus prompts aplicando cada técnica selecionada. Vazio = mesmo do gerador (passo Avaliação)."
-                      value={rewriterModel}
-                      onChange={setRewriterModel}
-                      excludeIds={contestantModel}
-                      models={models}
-                      loading={modelsLoading}
-                    />
-                    <EffortCard
-                      hint="Nível de raciocínio do reescritor (vale p/ o gerador quando ele faz a reescrita). 'Padrão do modelo' não envia nada."
-                      value={reasoningRewriter}
-                      onChange={setReasoningRewriter}
-                    />
-                  </>
-                )}
-              </>
-            )}
-          </>
-        )}
-
-        {/* ---------------------------------------------------------- passo 4: avaliação */}
-        {stepId === 'eval' && (
-          <>
-            <StepIntro step={4} title="Quem cria as perguntas e quem julga?">
-              Modelos de apoio: o <strong>gerador</strong> inventa os cenários e o(s) <strong>juiz(es)</strong>{' '}
-              ranqueiam as respostas às cegas e dizem se cada uma é aceitável. Vários juízes rodam em paralelo e o
-              placar combina os votos. Eles não competem
-              {isSingle ? ' — e nenhum juiz é o modelo sob teste, para evitar viés.' : '.'}
-            </StepIntro>
-
-            <ModelSelector
-              multi={false}
-              title="Gerador de cenários"
-              hint="Exatamente 1 modelo — inventa as perguntas do benchmark."
-              value={datagen}
-              onChange={setDatagen}
-              excludeIds={[...(mode === 'compare' ? competitors : contestantModel)]}
-              models={models}
-              loading={modelsLoading}
-            />
-            <EffortCard
-              hint="Nível de raciocínio do gerador de cenários. 'Padrão do modelo' não envia nada — ele usa o próprio default."
-              value={reasoningDatagen}
-              onChange={setReasoningDatagen}
-            />
-
-            <ModelSelector
-              multi
-              title="Juiz(es)"
-              hint="Um ou mais modelos — cada juiz ranqueia às cegas e diz se cada resposta é aceitável. Rodam em paralelo; mais juízes = mais robusto (e mais caro)."
-              value={judge}
-              onChange={setJudge}
-              excludeIds={[...(mode === 'compare' ? competitors : contestantModel)]}
-              models={models}
-              loading={modelsLoading}
-            />
-            <EffortCard
-              hint="Nível de raciocínio de TODOS os juízes (e do gabarito — a referência usa o esforço do juiz). 'Padrão do modelo' não envia nada."
-              value={reasoningJudge}
-              onChange={setReasoningJudge}
-            />
-
-            <div className="roles-note">
-              {mode === 'compare'
-                ? 'Gerador e juízes podem repetir o mesmo modelo e não entram como competidores. Os filtros de área/preço NÃO afetam estes — eles veem o catálogo completo.'
-                : 'Gerador e juízes podem repetir o mesmo modelo; nenhum juiz pode ser o modelo sob teste (evita viés). Os filtros de área/preço NÃO afetam gerador nem juízes.'}
-              {useCustomStages && ' Com etapas manuais (JSON), o gerador NÃO é usado — as perguntas vêm do seu JSON.'}
-            </div>
-
-            {panelWarnings.length > 0 && (
-              <div className="card field-card" style={{ marginTop: 16 }}>
-                <label className="field-label">⚖️ Diversidade do painel de juízes</label>
-                {panelWarnings.map((w, i) => (
-                  <div key={i} className="proposito-pruned" style={{ marginTop: 8 }}>
-                    ⚠️ {w}
-                  </div>
-                ))}
-                <p className="field-hint" style={{ marginTop: 8 }}>
-                  Consultivo: juízes de famílias distintas do executor (e entre si) reduzem viés de
-                  auto-preferência e erros correlacionados. Não bloqueia a run.
-                </p>
-              </div>
-            )}
-
-            {isSingle && (
-              <div className="card field-card" style={{ marginTop: 16 }}>
-                <Toggle
-                  checked={twoPassJudge}
-                  onChange={setTwoPassJudge}
-                  label="Juiz em 2 ordens (anti-viés de posição)"
-                  hint="Avalia cada etapa em duas ordens embaralhadas e tira a média — recomendado quando as variações são parecidas. Dobra o custo do juiz."
-                />
-              </div>
-            )}
-
-            <div className="card field-card" style={{ marginTop: 16 }}>
-              <Toggle
-                checked={referenceJudging}
-                onChange={setRefJudgingChoice}
-                label="Julgamento por referência (gabarito)"
-                hint={
-                  referenceJudging
-                    ? 'Ligado: um modelo forte escreve a resposta ideal (gabarito) de cada cenário e o juiz compara cada resposta contra ela, uma a uma (pointwise).'
-                    : 'Desligado: o juiz monta um ranking listwise comparando as respostas entre si (modo clássico).'
-                }
-              />
-              {referenceJudging && (
-                <>
-                  <ModelSelector
-                    multi={false}
-                    title="Modelo de referência (gabarito)"
-                    hint="Escreve as respostas ideais com que o juiz compara cada resposta. Vazio = o 1º juiz."
-                    value={referenceModel}
-                    onChange={setReferenceModel}
-                    models={models}
-                    loading={modelsLoading}
-                  />
-                  <p className="field-hint" style={{ marginTop: 4 }}>
-                    O esforço da referência é o mesmo do juiz (a engine usa o esforço do juiz no gabarito).
-                    Cenários importados de pacote já podem trazer gabarito próprio.
-                  </p>
-                </>
-              )}
-            </div>
-
-            {mode === 'training' && (
-              <div className="card field-card" style={{ marginTop: 16 }}>
-                <label className="field-label">Treino evolutivo</label>
-                <Toggle
-                  checked={duels}
-                  onChange={setDuels}
-                  label="Duelos (Copeland)"
-                  hint="As K melhores variantes de cada cenário duelam em pares (2 ordens); o placar dos duelos desempata a escolha do vencedor."
-                />
-                {duels && (
-                  <>
-                    <div className="steppers-grid">
-                      <Stepper
-                        label="Quantas variantes duelam (Top-K)"
-                        value={duelTopK}
-                        onStep={(d) => setDuelTopK(Math.max(0, Math.min(32, duelTopK + d)))}
-                      />
-                    </div>
-                    <p className="field-hint">O controle sempre entra; 0 = todas contra todas.</p>
-                  </>
-                )}
-                <div className="price-filter-row" style={{ marginTop: 12 }}>
-                  <label className="price-field">
-                    <span>Margem p/ promover (pontos)</span>
-                    <input
-                      type="number"
-                      className="input"
-                      min={0}
-                      max={100}
-                      step={0.5}
-                      value={minGain}
-                      onChange={(e) => {
-                        const v = e.target.valueAsNumber;
-                        if (!Number.isNaN(v)) setMinGain(v);
-                      }}
-                    />
-                  </label>
-                  <label className="price-field">
-                    <span>Cenários reservados p/ validação (0–50%)</span>
-                    <input
-                      type="number"
-                      className="input"
-                      min={0}
-                      max={50}
-                      step={5}
-                      value={Math.round(holdoutRatio * 100)}
-                      onChange={(e) => {
-                        const v = e.target.valueAsNumber;
-                        if (!Number.isNaN(v)) setHoldoutRatio(v / 100);
-                      }}
-                    />
-                  </label>
-                </div>
-                <p className="field-hint">
-                  <strong>Margem</strong>: quanto a vencedora precisa superar o campeão atual p/ virar a nova base
-                  (0 = sempre promove a melhor). <strong>Validação</strong>: ficam fora do treino; no fim, campeão e
-                  base são reavaliados neles (anti-overfit; precisa ≥5 cenários).
-                </p>
-                <Toggle
-                  checked={feedbackDriven}
-                  onChange={setFeedbackDriven}
-                  label="Aprender com as falhas da rodada anterior"
-                  hint="Ligado: o reescritor vê as falhas da rodada anterior ao gerar as próximas variantes."
-                />
-              </div>
-            )}
-
-            <div className="card steppers-card">
-              {advancedOpen && (
-                <div className="steppers-grid">
-                  <Stepper label="Concorrência" value={concurrency} onStep={(d) => step('concurrency', concurrency, setConcurrency, d)} />
-                  <Stepper label="Timeout (ms)" value={timeoutMs} onStep={(d) => step('timeoutMs', timeoutMs, setTimeoutMs, d)} />
-                </div>
-              )}
-              <button type="button" className="link-toggle" onClick={() => setAdvancedOpen((v) => !v)}>
-                {advancedOpen ? 'Ocultar ajustes avançados' : 'Ajustes avançados (concorrência, timeout)'}
-                <span className={`caret ${advancedOpen ? 'open' : ''}`}>▶</span>
-              </button>
-              {advancedOpen && (
-                <p className="field-hint">
-                  <strong>Concorrência</strong> = quantas chamadas em paralelo. <strong>Timeout</strong> = tempo máximo por
-                  resposta antes de desistir.
-                </p>
-              )}
-            </div>
-          </>
-        )}
-
-        {/* ---------------------------------------------------------- passo 5: revisão */}
-        {stepId === 'review' && (
-          <>
-            <StepIntro step={5} title="Confira e dispare os robôs">
-              Revise o resumo abaixo. Quando estiver tudo certo, é só disparar — você vai acompanhar cada modelo respondendo
-              ao vivo na próxima tela.
-            </StepIntro>
-
-            <div className="review-grid">
-              <div className="card review-card">
-                <div className="kicker" style={{ display: 'block', marginBottom: 14 }}>Resumo da run</div>
-                <div className="summary-rows">
-                  <div className="summary-row">
-                    <span className="k">Modo</span>
-                    <span className="v">{modeMeta.label}</span>
-                  </div>
-                  <div className="summary-row">
-                    <span className="k">Propósito (LGPD)</span>
-                    <span className="v">
-                      {areaLabel}
-                      {!isLivre && !includeRessalvas ? ' · rigor máximo' : ''}
-                    </span>
-                  </div>
-                  <div className="summary-row">
-                    <span className="k">
-                      {isSingle ? 'Variantes de prompt' : compareAxis === 'configs' ? 'Configs comparadas' : 'Competidores'}
-                    </span>
-                    <span className="v">{estimate.n}</span>
-                  </div>
-                  <div className="summary-row">
-                    <span className="k">Etapas</span>
-                    <span className="v">
-                      {estimate.stages}
-                      {useCustomStages ? ' · JSON manual (com rubrica)' : seedCount > 0 ? ` · ${seedCount} do pacote` : ''}
-                    </span>
-                  </div>
-                  {mode === 'training' && (
-                    <div className="summary-row">
-                      <span className="k">Iterações</span>
-                      <span className="v">{estimate.iters}</span>
-                    </div>
-                  )}
-                  {referenceJudging && (
-                    <div className="summary-row">
-                      <span className="k">Julgamento</span>
-                      <span className="v">Por referência{mode === 'training' && duels ? ' + duelos' : ''}</span>
-                    </div>
-                  )}
-                  {isSingle && (
-                    <div className="summary-row">
-                      <span className="k">Modelo sob teste</span>
-                      <span className="v v-mono">
-                        {contestantModel[0] ?? '—'}
-                        {reasoningCompetitor ? ` · effort:${reasoningCompetitor}` : ''}
-                      </span>
-                    </div>
-                  )}
-                  {isSingle && optimize && (rewriterModel[0] || reasoningRewriter) && (
-                    <div className="summary-row">
-                      <span className="k">Reescritor</span>
-                      <span className="v v-mono">
-                        {rewriterModel[0] ?? '(mesmo do gerador)'}
-                        {reasoningRewriter ? ` · effort:${reasoningRewriter}` : ''}
-                      </span>
-                    </div>
-                  )}
-                  <div className="summary-row">
-                    <span className="k">Gerador</span>
-                    <span className="v v-mono">
-                      {useCustomStages ? '— (etapas manuais)' : datagen[0] ?? '—'}
-                      {!useCustomStages && reasoningDatagen ? ` · effort:${reasoningDatagen}` : ''}
-                    </span>
-                  </div>
-                  <div className="summary-row">
-                    <span className="k">{judge.length > 1 ? `Juízes (${judge.length})` : 'Juiz'}</span>
-                    <span className="v v-mono">
-                      {judge.length ? judge.join(', ') : '—'}
-                      {reasoningJudge ? ` · effort:${reasoningJudge}` : ''}
-                    </span>
-                  </div>
-                  <div className="summary-row">
-                    <span className="k">Chamadas de modelo</span>
-                    <span className="v">{estimate.calls}</span>
-                  </div>
-                </div>
-                <div className="summary-divider" />
-                <div className="review-theme-label">Tema</div>
-                <p className="review-theme">{theme.trim() || '—'}</p>
-              </div>
-
-              <div className="card review-card review-cost-card">
-                <div className="est-label">Custo estimado</div>
-                <div className="est-cost">
-                  {modelsLoading ? '—' : `${fmtUsd(estimate.low)} – ${fmtUsd(estimate.high)}`}
-                </div>
-                <div className="est-note">
-                  Estima a inferência do benchmark pelo teto de tokens. A geração/análise de variações (otimização) não está
-                  inclusa.
-                </div>
-                {estimate.refTerms && (
-                  <div className="est-note" style={{ marginTop: 6 }}>
-                    Inclui gabaritos{mode === 'training' && duels ? ' + duelos' : ''} (aprox.).
-                  </div>
-                )}
-                {keyConnected ? (
-                  <div className="aside-key-ok">✓ chave conectada</div>
-                ) : (
-                  <p className="field-hint" style={{ marginTop: 12 }}>
-                    Conecte sua chave da OpenRouter em <strong>Configurações</strong> antes de disparar.
-                  </p>
-                )}
-              </div>
-            </div>
-          </>
-        )}
+        <button type="button" className="btn-secondary" onClick={() => importRef.current?.click()}>Importar JSON</button>
+        <input
+          ref={importRef} type="file" accept="application/json,.json" style={{ display: 'none' }}
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) void handleImport(file);
+            e.target.value = '';
+          }}
+        />
       </div>
 
-      <div className="wizard-foot">
-        {error && <div className="wizard-error">{error}</div>}
-        <div className="wizard-nav">
-          {stepIdx > 0 ? (
-            <button type="button" className="btn-secondary" onClick={() => goTo(stepIdx - 1)}>
-              ← Voltar
-            </button>
+      <div className="seg">
+        {MODES.map((m) => (
+          <button key={m.id} type="button" className={`seg-btn ${mode === m.id ? 'selected' : ''}`} onClick={() => setMode(m.id)}>
+            {m.label}
+          </button>
+        ))}
+      </div>
+      <p className="seg-desc">{MODE_DESCRIPTIONS[mode]}</p>
+
+      {configSummary && (
+        <ImportedLine text={`Configuração importada — ${configSummary}`} action="dispensar" onAction={() => setConfigSummary(null)} />
+      )}
+      {draftNotice && <ImportedLine text={draftNotice} action="dispensar" onAction={() => setDraftNotice(null)} />}
+
+      {/* ------------------------------------------------------------- cenários */}
+      <section className="nr-block">
+        <div className="nr-block-head">
+          <span className="nr-block-title">Cenários</span>
+          <span className="nr-block-status">
+            {importedCount > 0
+              ? `${importedCount} importados${precisaGerar ? ` · +${plannedStages - seedCount} a gerar` : ''}`
+              : `${plannedStages} a gerar`}
+          </span>
+        </div>
+        <div className="nr-block-body">
+          {importedCount > 0 ? (
+            <>
+              <ImportedLine
+                text={`${importedCount} cenários importados${importedRefs ? ` (${importedRefs} com gabarito)` : ''}`}
+                action="remover"
+                onAction={() => {
+                  setPack(null);
+                  setCustomStages(null);
+                }}
+              />
+              {/* Tema continua sendo enviado e guia o datagen/reescritor. Só some
+                  quando veio pronto no arquivo E não faz mais falta — senão um
+                  pacote com tema vazio travaria a run sem campo para corrigir. */}
+              {(rawStages || !theme.trim() || precisaGerar) && (
+                <AreaField label="Tema" value={theme} onChange={setTheme} />
+              )}
+              {!rawStages && (
+                <>
+                  {/* Mantido montado mesmo com seedCount >= stages: desmontar o
+                      campo enquanto o usuário digita nele é um beco sem saída. */}
+                  <div className="nr-inline">
+                    {precisaGerar && (
+                      <ModelSelector multi={false} title="Gerador" value={datagen} onChange={setDatagen} models={models} loading={modelsLoading} />
+                    )}
+                    <NumField label="Quantos" value={stages} onChange={setStages} min={1} max={50} />
+                  </div>
+                  <p className="field-hint">
+                    {precisaGerar
+                      ? `Serão gerados mais ${plannedStages - seedCount} para completar ${plannedStages}.`
+                      : `Os ${seedCount} cenários do arquivo já cobrem o total — nada a gerar.`}
+                  </p>
+                </>
+              )}
+            </>
           ) : (
-            <span />
+            <>
+              <AreaField
+                label="Tema" value={theme} onChange={setTheme}
+                placeholder="Ex.: atendimento de clínica de exames — FAQs, preparo e agendamento"
+              />
+              <div className="nr-inline">
+                <ModelSelector multi={false} title="Gerador" value={datagen} onChange={setDatagen} models={models} loading={modelsLoading} />
+                <NumField label="Quantos" value={stages} onChange={setStages} min={1} max={50} />
+              </div>
+              {briefOpen ? (
+                <AreaField
+                  label="O que testar" value={scenarioBrief} onChange={setScenarioBrief}
+                  placeholder="Ex.: se respeitam as regras de jejum de cada exame e não inventam orientação médica."
+                />
+              ) : (
+                <button type="button" className="link-toggle" onClick={() => setBriefOpen(true)}>detalhar o que testar</button>
+              )}
+            </>
           )}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <button
-              type="button"
-              className="btn-secondary"
-              title="Importa uma configuração completa (arena-config@1) e preenche o assistente"
-              onClick={() => configFileRef.current?.click()}
-            >
-              Importar config (JSON)
-            </button>
-            {stepId !== 'review' ? (
-              <button type="button" className="btn-primary" onClick={() => goTo(stepIdx + 1)}>
-                Continuar →
-              </button>
+        </div>
+      </section>
+
+      {/* ------------------------------------------------------ modelos (compare) */}
+      {mode === 'compare' && (
+        <section className="nr-block">
+          <div className="nr-block-head">
+            <span className="nr-block-title">Modelos</span>
+            <span className="nr-block-status">
+              {compareAxis === 'configs'
+                ? `${competitorConfigs.filter((r) => r.modelId).length} configs`
+                : `${competitors.length} competidores`}
+            </span>
+          </div>
+          <div className="nr-block-body">
+            {compareAxis === 'configs' ? (
+              <p className="field-hint">Comparando configs do mesmo modelo — edite as linhas em Avançado.</p>
             ) : (
-              <button type="submit" className="btn-primary" disabled={submitting}>
-                {submitting ? 'Disparando…' : mode === 'training' ? '🚀 Disparar o treino' : '🚀 Disparar os robôs'}
-              </button>
+              <ModelSelector
+                multi title="Competidores" value={competitors} onChange={setCompetitors}
+                excludeIds={[...datagen, ...judge]} models={participantModels} loading={modelsLoading}
+              />
             )}
           </div>
+        </section>
+      )}
+
+      {/* ------------------------------------------ prompts (variation/training) */}
+      {isSingle && (
+        <section className="nr-block">
+          <div className="nr-block-head">
+            <span className="nr-block-title">Prompts</span>
+            <span className="nr-block-status">{variantCount} variações</span>
+          </div>
+          <div className="nr-block-body">
+            <ModelSelector
+              multi={false} title="Modelo sob teste" value={contestantModel} onChange={setContestantModel}
+              excludeIds={[...datagen, ...judge]} models={participantModels} loading={modelsLoading}
+            />
+
+            {promptImported ? (
+              <ImportedLine text="Prompt base importado" action="editar" onAction={() => setPromptImported(false)} />
+            ) : (
+              <>
+                <AreaField
+                  label="Prompt base" value={basePrompt} onChange={setBasePrompt} rows={4}
+                  placeholder="System prompt de partida (opcional) — roda como controle."
+                />
+                {genOpen ? (
+                  <>
+                    <AreaField
+                      label="Descreva a tarefa" value={taskDescription} onChange={setTaskDescription} rows={2}
+                      placeholder="O gerador redige um prompt base a partir desta descrição."
+                    />
+                    <div className="nr-inline">
+                      <button
+                        type="button" className="btn-secondary"
+                        disabled={!taskDescription.trim() || genBaseLoading}
+                        onClick={() => void gerarPromptBase()}
+                      >
+                        {genBaseLoading ? 'Gerando…' : 'Gerar prompt base'}
+                      </button>
+                      {genBaseError && <span className="nr-err">{genBaseError}</span>}
+                    </div>
+                  </>
+                ) : (
+                  <button type="button" className="link-toggle" onClick={() => setGenOpen(true)}>gerar com IA</button>
+                )}
+              </>
+            )}
+
+            {optimize ? (
+              <div className="nr-field">
+                <span className="nr-field-label">Variações</span>
+                <div className="tech-grid">
+                  <Chip
+                    on={techs.length > 0 && techniques.length === techs.length}
+                    label="Todas"
+                    onClick={() => setTechniques(techniques.length === techs.length ? [] : techs.map((t) => t.id))}
+                  />
+                  {techs.map((t) => (
+                    <Chip
+                      key={t.id} on={techniques.includes(t.id)} label={t.name}
+                      title={`Bom: ${t.good} · Cuidado: ${t.bad}`}
+                      onClick={() =>
+                        setTechniques(techniques.includes(t.id) ? techniques.filter((x) => x !== t.id) : [...techniques, t.id])
+                      }
+                    />
+                  ))}
+                </div>
+                <button type="button" className="link-toggle" onClick={() => setOptimize(false)}>escrever manualmente</button>
+              </div>
+            ) : (
+              <>
+                <ManualVariantsEditor value={manualVariants} onChange={setManualVariants} />
+                <button type="button" className="link-toggle" onClick={() => setOptimize(true)}>usar técnicas</button>
+              </>
+            )}
+
+            {mode === 'training' && (
+              <div className="nr-inline">
+                <NumField label="Rodadas" value={iterations} onChange={setIterations} min={2} max={10} />
+              </div>
+            )}
+          </div>
+        </section>
+      )}
+
+      {/* --------------------------------------------------------------- juízes */}
+      <section className="nr-block">
+        <div className="nr-block-head">
+          <span className="nr-block-title">Juízes</span>
+          <span className="nr-block-status">{judge.length === 1 ? '1 juiz' : `${judge.length} juízes`}</span>
         </div>
+        <div className="nr-block-body">
+          <ModelSelector
+            multi title="Juízes" value={judge} onChange={setJudge}
+            excludeIds={mode === 'compare' ? competitors : contestantModel} models={models} loading={modelsLoading}
+          />
+          {panelWarnings.map((w, i) => <p key={i} className="field-hint">⚠️ {w}</p>)}
+        </div>
+      </section>
+
+      {/* ------------------------------------------------------------- avançado */}
+      <details className="nr-adv">
+        <summary>Avançado</summary>
+
+        <div className="nr-inline">
+          <NumField label="Finalistas" value={finalists} onChange={setFinalists} min={0} max={12} />
+          <TxtNumField
+            label="Máx. tokens" value={maxOutputTokens} onChange={setMaxOutputTokens} min={50}
+            placeholder={String(DEFAULT_MAX_OUTPUT_TOKENS)}
+          />
+          <NumField label="Timeout (ms)" value={timeoutMs} onChange={setTimeoutMs} min={1000} max={300000} step={1000} />
+          <NumField label="Concorrência" value={concurrency} onChange={setConcurrency} min={1} max={32} />
+        </div>
+        <p className="field-hint">Finalistas = quantas variantes duelam no fim (0 = sem finais).</p>
+
+        {/* Vale nos 3 modos: quem consome `judgePasses` e o juiz listwise, que e
+            justamente o default do compare classico. */}
+        <Toggle checked={twoPassJudge} onChange={setTwoPassJudge} label="Juiz em 2 ordens" hint="Reduz viés de posição; dobra o custo do juiz (só no julgamento listwise)." />
+
+        <ModelSelector
+          multi={false} title="Gabarito" hint="Quem escreve a resposta de referência. Vazio = o 1º juiz."
+          value={referenceModel} onChange={setReferenceModel} models={models} loading={modelsLoading}
+        />
+
+        {isSingle && optimize && (
+          <ModelSelector
+            multi={false} title="Reescritor" hint="Vazio = o gerador." value={rewriterModel} onChange={setRewriterModel}
+            excludeIds={contestantModel} models={models} loading={modelsLoading}
+          />
+        )}
+
+        <div className="nr-inline">
+          <EffortField label="Esforço · competidor" value={reasoningCompetitor} onChange={setReasoningCompetitor} />
+          <EffortField label="Esforço · juiz" value={reasoningJudge} onChange={setReasoningJudge} />
+          <EffortField label="Esforço · reescritor" value={reasoningRewriter} onChange={setReasoningRewriter} />
+          <EffortField label="Esforço · gerador" value={reasoningDatagen} onChange={setReasoningDatagen} />
+        </div>
+
+        {mode === 'compare' && (
+          <>
+            <Toggle
+              checked={compareAxis === 'configs'}
+              onChange={(v) => setCompareAxis(v ? 'configs' : 'models')}
+              label="Mesmo modelo, configs diferentes"
+              hint="A identidade do concorrente é a tripla modelo + temperatura + reasoning."
+            />
+            {compareAxis === 'configs' && (
+              <>
+                {competitorConfigs.map((row, i) => (
+                  <div key={i} className="nr-inline">
+                    <ModelSelector
+                      multi={false} title={`Config ${i + 1}`} value={row.modelId ? [row.modelId] : []}
+                      onChange={(ids) => updateConfigRow(i, { modelId: ids[0] ?? '' })}
+                      excludeIds={[...datagen, ...judge]} models={participantModels} loading={modelsLoading}
+                    />
+                    <TxtNumField
+                      label="Temp." value={row.temperature} onChange={(v) => updateConfigRow(i, { temperature: v })}
+                      min={0} max={2} step={0.1} placeholder="padrão"
+                    />
+                    <EffortField label="Reasoning" value={row.reasoningLevel} onChange={(v) => updateConfigRow(i, { reasoningLevel: v })} />
+                    <button
+                      type="button" className="btn-secondary" disabled={competitorConfigs.length <= 2}
+                      onClick={() => setCompetitorConfigs((rows) => rows.filter((_, idx) => idx !== i))}
+                    >
+                      Remover
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button" className="btn-secondary" disabled={competitorConfigs.length >= 12}
+                  onClick={() => setCompetitorConfigs((rows) => [...rows, { modelId: '', temperature: '', reasoningLevel: '' }])}
+                >
+                  + config
+                </button>
+                {dupConfigWarning && <p className="field-hint">⚠️ {dupConfigWarning}</p>}
+              </>
+            )}
+          </>
+        )}
+
+        {mode === 'training' && (
+          <>
+            <div className="nr-inline">
+              <NumField label="Margem p/ promover" value={minGain} onChange={setMinGain} min={0} max={100} step={0.5} />
+              <NumField
+                label="Validação (%)" value={Math.round(holdoutRatio * 100)}
+                onChange={(v) => setHoldoutRatio(v / 100)} min={0} max={50} step={5}
+              />
+            </div>
+            <Toggle checked={feedbackDriven} onChange={setFeedbackDriven} label="Aprender com as falhas da rodada anterior" />
+          </>
+        )}
+
+        <div className="nr-field">
+          <span className="nr-field-label">Conformidade LGPD (consultivo)</span>
+          <div className="tech-grid">
+            <Chip on={isLivre} label="Livre" onClick={() => setComplianceArea(AREA_LIVRE)} />
+            {lgpd?.areas.map((a) => (
+              <Chip key={a.id} on={complianceArea === a.id} label={a.label} title={a.descricao} onClick={() => setComplianceArea(a.id)} />
+            ))}
+          </div>
+          {!isLivre && (
+            <Toggle checked={includeRessalvas} onChange={setIncludeRessalvas} label="Incluir modelos permitidos com ressalvas" />
+          )}
+          {prunedNotice && <p className="field-hint">⚠️ {prunedNotice}</p>}
+        </div>
+
+        <div className="nr-inline">
+          <TxtNumField label="Preço input máx. ($/1M)" value={maxInputPrice} onChange={setMaxInputPrice} min={0} step={0.1} placeholder="sem limite" />
+          <TxtNumField label="Preço output máx. ($/1M)" value={maxOutputPrice} onChange={setMaxOutputPrice} min={0} step={0.1} placeholder="sem limite" />
+        </div>
+      </details>
+
+      {/* --------------------------------------------------------------- rodapé */}
+      <div className="nr-foot">
+        {/* Vermelho só depois de tentar (ou erro real); antes, dica neutra. Com
+            `tried` a mensagem acompanha a pendência atual, não a do clique. */}
+        {error !== null || (tried && pendencias.length > 0) ? (
+          <span className="nr-err">{tried && pendencias.length ? pendencias[0] : error}</span>
+        ) : pendencias.length ? (
+          <span className="nr-hint">{pendencias[0]}</span>
+        ) : (
+          <span className="nr-hint">
+            {keyConnected ? '' : <>Conecte sua chave da OpenRouter em <Link to="/settings">Configurações</Link>.</>}
+          </span>
+        )}
+        <span className="nr-cost" title="Estimativa pelo teto de tokens; inclui gabaritos e finais.">
+          <span className="nr-cost-label">custo estimado</span>{' '}
+          {modelsLoading ? '—' : `~${fmtUsd(estimate.low)} – ${fmtUsd(estimate.high)}`}
+        </span>
+        <button type="submit" className="btn-primary" disabled={submitting}>
+          {submitting ? 'Iniciando…' : 'Iniciar →'}
+        </button>
       </div>
     </form>
   );

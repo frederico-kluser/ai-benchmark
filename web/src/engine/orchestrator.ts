@@ -4,7 +4,7 @@ import { runCompetitor } from './competitor';
 import { judgeStage } from './judge';
 import { generateReferences } from './gabarito';
 import { judgeStageReference } from './refJudge';
-import { runStageDuels, VERDICT_SCORE } from './duels';
+import { blindRankMap, pickFinalists, runStageDuels, seedFromId, VERDICT_SCORE } from './duels';
 import { mergeScenarios } from './scenarioPack';
 import { sanitizeLlmVariants, variantsToContestants } from './llmVariants';
 import { judgeScoreFromVerdicts } from './rank';
@@ -186,7 +186,6 @@ async function runLoop(record: RunRecord, apiKey: string, opts: StartRunOpts): P
   // Resolve contestants on-demand (variacao: gera as variantes via optimizer).
   if (opts.prepare) {
     emitEvent({ type: 'variants.generating', runId });
-    log(runId, 'gerando variantes…');
     const contestants = await opts.prepare();
     if (contestants.length < 2) {
       throw new Error(
@@ -300,30 +299,20 @@ async function runLoop(record: RunRecord, apiKey: string, opts: StartRunOpts): P
     record.stages[i].error = msg;
     record.stages[i].finishedAt = nowIso();
     emitEvent({ type: 'stage.failed', runId, stageIndex: i, error: msg });
-    log(runId, `stage ${i + 1} PULADA (sem cenario)`);
   }
   scheduleSave();
 
-  // Contestants ja sao finais aqui (opts.prepare rodou). Controle = ancora dos
-  // duelos e do standings: o prompt original (isOriginal), o 'carry' do treino,
-  // ou o 1o contestant como fallback.
+  // Contestants ja sao finais aqui (opts.prepare rodou). Controle = ancora do
+  // standings: o prompt original (isOriginal), o 'carry' do treino, ou o 1o
+  // contestant como fallback.
   const controlId =
     record.contestants.find((c) => c.isOriginal || c.id === 'carry')?.id ??
     record.contestants[0]?.id;
-  // Duelos: ligados por default onde houver gabarito; `duels === false` desliga
-  // (duels/duelTopK so existem no TrainingConfig — dai o narrowing por `in`).
-  const duelsOn = !('duels' in record.config && record.config.duels === false);
-  const duelTopK = ('duelTopK' in record.config ? record.config.duelTopK : undefined) ?? 5;
-  // duel.progress agregado: done = etapas com duelo concluido, total = etapas
-  // com reference (so elas duelam). Progresso por etapa — granular o bastante;
-  // progresso por PAR de duelo seria ruido no SSE.
-  const duelStagesTotal = duelsOn ? specs.filter((s) => s.reference?.trim()).length : 0;
-  let duelStagesDone = 0;
+  const labelOf = (id: string): string => record.contestants.find((c) => c.id === id)?.label ?? id;
 
   // === FASE 2: rodar TODAS as etapas (com spec) EM PARALELO. ===
   // Cada etapa e isolada (try/catch): uma falha nao derruba a run nem as outras.
   // O placar e ADITIVO (applyScoreboard) — independe da ordem de termino.
-  const PROGRESS_THROTTLE_MS = 150;
   await Promise.all(
     record.stages.map(async (stageRecord) => {
       const i = stageRecord.index;
@@ -331,30 +320,9 @@ async function runLoop(record: RunRecord, apiKey: string, opts: StartRunOpts): P
       if (!stageSpec || stageRecord.error) return; // pulada na fase 1
 
       try {
-        stageRecord.live = {};
         // Competidores em paralelo — SEM cap local; o limitador global throttla.
         await Promise.all(
           record.contestants.map(async (contestant) => {
-            emitEvent({
-              type: 'competitor.started',
-              runId,
-              stageIndex: i,
-              contestantId: contestant.id,
-              modelId: contestant.modelId,
-            });
-            const startedAt = Date.now();
-            stageRecord.live![contestant.id] = {
-              contestantId: contestant.id,
-              modelId: contestant.modelId,
-              label: contestant.label,
-              startedAt,
-              chars: 0,
-              charsPerSec: 0,
-              preview: '',
-              done: false,
-            };
-            let lastEmit = 0;
-
             const response = await runCompetitor({
               apiKey,
               contestantId: contestant.id,
@@ -368,36 +336,8 @@ async function runLoop(record: RunRecord, apiKey: string, opts: StartRunOpts): P
               // Prioridade do reasoning: override do contestant, senao o do papel.
               temperature: contestant.temperature,
               reasoningLevel: contestant.reasoningLevel ?? record.config.reasoning?.competitor,
-              onProgress: (chars, charsPerSec, preview) => {
-                const live = stageRecord.live?.[contestant.id];
-                if (live) {
-                  live.chars = chars;
-                  live.charsPerSec = charsPerSec;
-                  live.preview = preview;
-                }
-                const now = Date.now();
-                if (now - lastEmit < PROGRESS_THROTTLE_MS) return;
-                lastEmit = now;
-                emitEvent({
-                  type: 'competitor.progress',
-                  runId,
-                  stageIndex: i,
-                  contestantId: contestant.id,
-                  modelId: contestant.modelId,
-                  chars,
-                  charsPerSec,
-                  preview,
-                });
-              },
             });
 
-            const live = stageRecord.live?.[contestant.id];
-            if (live) {
-              live.done = true;
-              live.chars = response.text.length;
-              const elapsedSec = Math.max(0.001, (Date.now() - startedAt) / 1000);
-              live.charsPerSec = response.text.length / elapsedSec;
-            }
             stageRecord.responses.push(response);
             record.totalCostUsd += response.costUsd;
             if (record.costByContestant) {
@@ -409,11 +349,10 @@ async function runLoop(record: RunRecord, apiKey: string, opts: StartRunOpts): P
             return response;
           }),
         );
-        stageRecord.live = undefined;
 
-        // === FASE 3: julgamento. Com gabarito: pointwise vs referencia +
-        // duelos (port do prompt-arena). Sem gabarito: juiz LISTWISE classico
-        // (compare antigo / fallback — fluxo intacto). ===
+        // === FASE 3: julgamento. Com gabarito: pointwise vs referencia (os
+        // duelos sairam daqui — agora sao a FASE 4, so entre os finalistas).
+        // Sem gabarito: juiz LISTWISE classico (compare antigo / fallback). ===
         emitEvent({ type: 'stage.judging', runId, stageIndex: i });
         try {
           if (stageSpec.reference?.trim()) {
@@ -430,44 +369,26 @@ async function runLoop(record: RunRecord, apiKey: string, opts: StartRunOpts): P
             });
             stageRecord.referenceJudge = refJudge;
 
-            // Duelos round-robin do bracket top-K (controle sempre entra) —
-            // barreira por etapa: disparam assim que o pointwise dela termina.
-            if (duelsOn) {
-              stageRecord.duels = await runStageDuels({
-                stage: stageSpec,
-                responses: stageRecord.responses,
-                contestants: record.contestants,
-                judgeModelId: record.config.judgeModelIds[0],
-                controlId,
-                topK: duelTopK,
-                verdictByContestant: refJudge.verdictByContestant,
-                apiKey,
-                reasoningLevel: record.config.reasoning?.judge,
-                timeoutMs: record.config.timeoutMs,
-              });
-              duelStagesDone += 1;
-              emitEvent({ type: 'stage.dueled', runId, stageIndex: i, duels: stageRecord.duels });
-              emitEvent({
-                type: 'duel.progress',
-                runId,
-                done: duelStagesDone,
-                total: duelStagesTotal,
-              });
-            }
-
             // JudgeResult SINTETIZADO para nao quebrar scoreboard/medals/UI:
-            // ranking = ordem Copeland dos duelos quando houver; senao, por
-            // veredito (resolve > parcial > nao; desempate = ordem dos
-            // contestants — Array.sort e estavel).
-            const ranked = stageRecord.duels?.order.length
-              ? stageRecord.duels.order
-              : [...record.contestants]
-                  .sort(
-                    (a, b) =>
-                      VERDICT_SCORE[refJudge.verdictByContestant[b.id] ?? 'nao'] -
-                      VERDICT_SCORE[refJudge.verdictByContestant[a.id] ?? 'nao'],
-                  )
-                  .map((c) => c.id);
+            // ranking SEMPRE por veredito (resolve > parcial > nao). Os duelos so
+            // acontecem na fase 4, entao nao ha ordem Copeland para consultar aqui.
+            // O desempate NAO pode ser a ordem dos contestants: o controle
+            // ('original'/'carry') e sempre o primeiro do array, entao sort estavel
+            // daria a ele todos os 1os lugares em empate — enviesando medalhas e
+            // placar a favor da regua. Usa o shuffle cego semeado pelo conteudo da
+            // etapa (mesmo criterio dos duelos): deterministico e neutro.
+            const ordemCega = blindRankMap(
+              record.contestants.map((c) => c.id),
+              seedFromId(stageSpec.question),
+            );
+            const ranked = [...record.contestants]
+              .sort(
+                (a, b) =>
+                  VERDICT_SCORE[refJudge.verdictByContestant[b.id] ?? 'nao'] -
+                    VERDICT_SCORE[refJudge.verdictByContestant[a.id] ?? 'nao'] ||
+                  (ordemCega.get(a.id) ?? 0) - (ordemCega.get(b.id) ?? 0),
+              )
+              .map((c) => c.id);
             stageRecord.judge = {
               rankedContestantIds: ranked,
               acceptableByContestant: Object.fromEntries(
@@ -480,7 +401,6 @@ async function runLoop(record: RunRecord, apiKey: string, opts: StartRunOpts): P
               inconclusive: refJudge.inconclusive,
             };
           } else {
-            log(runId, `stage ${i + 1} judging (${record.config.judgeModelIds.length} juiz(es))`);
             stageRecord.judge = await judgeStage({
               apiKey,
               stage: stageSpec,
@@ -502,8 +422,8 @@ async function runLoop(record: RunRecord, apiKey: string, opts: StartRunOpts): P
           log(runId, `stage ${i + 1} juiz falhou: ${stageRecord.judge.rawJudgeText}`);
         }
         // Placar ADITIVO (ordem-independente). Listwise: POR JUIZ (cada juiz
-        // pontua seu ranking). Referencia: 1x pelo ranking sintetizado
-        // (duelos > veredito) — judges vem vazio de proposito.
+        // pontua seu ranking). Referencia: 1x pelo ranking por veredito —
+        // judges vem vazio de proposito.
         if (!stageRecord.judge.inconclusive) {
           if (stageRecord.judge.judges.length > 0) {
             for (const j of stageRecord.judge.judges) {
@@ -531,7 +451,6 @@ async function runLoop(record: RunRecord, apiKey: string, opts: StartRunOpts): P
         const msg = stageErr instanceof Error ? stageErr.message : String(stageErr);
         stageRecord.error = stageRecord.error ?? msg;
         stageRecord.finishedAt = nowIso();
-        stageRecord.live = undefined;
         emitEvent({ type: 'stage.failed', runId, stageIndex: i, error: msg });
         log(runId, `stage ${i + 1} erro inesperado, pulando: ${msg}`);
       }
@@ -550,6 +469,73 @@ async function runLoop(record: RunRecord, apiKey: string, opts: StartRunOpts): P
       ]),
     );
   }
+
+  // === FASE 4: FINAIS. So os melhores por judge-score MEDIO (todos os cenarios)
+  // duelam — e ai sim em TODOS os cenarios, todos em paralelo (sem cap local; o
+  // limitador global do openrouter gateia). Antes cada etapa montava seu proprio
+  // bracket; agora a final e uma so, global, e roda depois de tudo. ===
+  const finalsOn = record.config.duels !== false;
+  const finalistCount = record.config.finalists ?? 3;
+  const stagesParaDuelo = record.stages.filter((s) => s.spec?.reference?.trim() && !s.error);
+  if (
+    finalsOn &&
+    finalistCount !== 0 &&
+    stagesParaDuelo.length > 0 &&
+    record.contestants.length >= 2 &&
+    record.judgeScoreByContestant
+  ) {
+    const scores = record.judgeScoreByContestant;
+    const finalistas = pickFinalists(
+      record.contestants.map((c) => ({ id: c.id, score: scores[c.id] ?? 0 })),
+      finalistCount,
+      seedFromId(record.id),
+    );
+    // Menos de 2 finalistas nao forma par — sem final.
+    if (finalistas.length >= 2) {
+      record.finalists = finalistas;
+      emitEvent({
+        type: 'finals.started',
+        runId,
+        finalists: finalistas.map((id) => ({ id, label: labelOf(id), score: scores[id] ?? 0 })),
+      });
+
+      let duelosDone = 0;
+      const total = stagesParaDuelo.length;
+      emitEvent({ type: 'duel.progress', runId, done: 0, total });
+      await Promise.all(
+        stagesParaDuelo.map(async (st) => {
+          try {
+            st.duels = await runStageDuels({
+              stage: st.spec!,
+              responses: st.responses,
+              contestants: record.contestants,
+              judgeModelId: record.config.judgeModelIds[0],
+              duelists: finalistas,
+              topK: finalistas.length,
+              verdictByContestant: st.referenceJudge?.verdictByContestant,
+              apiKey,
+              reasoningLevel: record.config.reasoning?.judge,
+              timeoutMs: record.config.timeoutMs,
+            });
+            emitEvent({ type: 'stage.dueled', runId, stageIndex: st.index, duels: st.duels });
+          } catch (duelErr) {
+            // Degrada: a etapa fica sem duelo, a run NUNCA cai por causa disso.
+            log(
+              runId,
+              `duelos da etapa ${st.index + 1} falharam: ${
+                duelErr instanceof Error ? duelErr.message : String(duelErr)
+              }`,
+            );
+          } finally {
+            duelosDone += 1;
+            emitEvent({ type: 'duel.progress', runId, done: duelosDone, total });
+            scheduleSave();
+          }
+        }),
+      );
+    }
+  }
+
   const stagesComDuelos = record.stages.filter((s) => s.duels);
   if (stagesComDuelos.length > 0) {
     // Copeland agregado cross-estagio: vitoria 1, empate 0.5, derrota 0.
@@ -577,8 +563,6 @@ async function runLoop(record: RunRecord, apiKey: string, opts: StartRunOpts): P
         }
       }
     }
-    const labelOf = (id: string): string =>
-      record.contestants.find((c) => c.id === id)?.label ?? id;
     record.standings = [...acc.entries()]
       .map(([id, s]) => {
         const played = s.wins + s.ties + s.losses;

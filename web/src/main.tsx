@@ -12,8 +12,6 @@ import { PromptsPage } from './pages/PromptsPage';
 import { HelpModal } from './components/HelpModal';
 import { ThemeContext, type Theme, persistTheme, applyTheme } from './theme';
 import { HelpContext, markFirstOpen, type HelpTutorial } from './help';
-import { ProcessingContext, useProcessingState } from './processing';
-import { BrainBackground } from './components/BrainBackground';
 import './styles.css';
 
 function MenuIcon({ open }: { open: boolean }) {
@@ -31,7 +29,6 @@ function Layout({ children }: { children: React.ReactNode }) {
   const theme: Theme = 'dark';
   const [help, setHelp] = useState<HelpTutorial | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
-  const processing = useProcessingState();
 
   useEffect(() => {
     applyTheme(theme);
@@ -47,60 +44,57 @@ function Layout({ children }: { children: React.ReactNode }) {
   return (
     <ThemeContext.Provider value={theme}>
       <HelpContext.Provider value={helpApi}>
-        <ProcessingContext.Provider value={processing}>
-          <div className="app">
-            <BrainBackground isThinking={processing.isProcessing} />
-            <nav className="nav">
-              <div className="nav-inner">
-                <div className="brand" onClick={() => navigate('/new')}>
-                  <span className="brand-badge">P</span>
-                  Prompt Builder
-                </div>
-                <div className="nav-actions">
-                  <div className="nav-menu">
-                    <button
-                      type="button"
-                      className="icon-btn nav-menu-btn"
-                      onClick={() => setMenuOpen((v) => !v)}
-                      aria-label={menuOpen ? 'Fechar menu' : 'Abrir menu'}
-                      aria-expanded={menuOpen}
-                    >
-                      <MenuIcon open={menuOpen} />
-                    </button>
-                    {menuOpen &&
-                      createPortal(
-                        <>
-                          <div className="nav-menu-overlay" onClick={() => setMenuOpen(false)} aria-hidden />
-                          <div className="nav-menu-pop">
-                            <NavLink to="/new" className="nav-link" onClick={() => setMenuOpen(false)}>Nova Run</NavLink>
-                            <NavLink to="/runs" className="nav-link" onClick={() => setMenuOpen(false)}>Histórico</NavLink>
-                            <NavLink to="/prompts" className="nav-link" onClick={() => setMenuOpen(false)}>Prompts</NavLink>
-                            <NavLink to="/settings" className="nav-link" onClick={() => setMenuOpen(false)}>Configurações</NavLink>
-                          </div>
-                        </>,
-                        document.body,
-                      )}
-                  </div>
-                  <NavLink to="/new" className="nav-link nav-link-desktop">Nova Run</NavLink>
-                  <NavLink to="/runs" className="nav-link nav-link-desktop">Histórico</NavLink>
-                  <NavLink to="/prompts" className="nav-link nav-link-desktop">Prompts</NavLink>
-                  <NavLink to="/settings" className="nav-link nav-link-desktop">Configurações</NavLink>
-                  <span className="nav-divider nav-link-desktop" />
-                  <button
-                    className="icon-btn"
-                    onClick={() => setHelp('compare')}
-                    title="Como funciona"
-                    aria-label="Como funciona"
-                  >
-                    ?
-                  </button>
-                </div>
+        <div className="app">
+          <nav className="nav">
+            <div className="nav-inner">
+              <div className="brand" onClick={() => navigate('/new')}>
+                <span className="brand-badge">P</span>
+                Prompt Builder
               </div>
-            </nav>
-            <main className="main">{children}</main>
-            {help && <HelpModal tutorial={help} onClose={() => setHelp(null)} />}
-          </div>
-        </ProcessingContext.Provider>
+              <div className="nav-actions">
+                <div className="nav-menu">
+                  <button
+                    type="button"
+                    className="icon-btn nav-menu-btn"
+                    onClick={() => setMenuOpen((v) => !v)}
+                    aria-label={menuOpen ? 'Fechar menu' : 'Abrir menu'}
+                    aria-expanded={menuOpen}
+                  >
+                    <MenuIcon open={menuOpen} />
+                  </button>
+                  {menuOpen &&
+                    createPortal(
+                      <>
+                        <div className="nav-menu-overlay" onClick={() => setMenuOpen(false)} aria-hidden />
+                        <div className="nav-menu-pop">
+                          <NavLink to="/new" className="nav-link" onClick={() => setMenuOpen(false)}>Nova Run</NavLink>
+                          <NavLink to="/runs" className="nav-link" onClick={() => setMenuOpen(false)}>Histórico</NavLink>
+                          <NavLink to="/prompts" className="nav-link" onClick={() => setMenuOpen(false)}>Prompts</NavLink>
+                          <NavLink to="/settings" className="nav-link" onClick={() => setMenuOpen(false)}>Configurações</NavLink>
+                        </div>
+                      </>,
+                      document.body,
+                    )}
+                </div>
+                <NavLink to="/new" className="nav-link nav-link-desktop">Nova Run</NavLink>
+                <NavLink to="/runs" className="nav-link nav-link-desktop">Histórico</NavLink>
+                <NavLink to="/prompts" className="nav-link nav-link-desktop">Prompts</NavLink>
+                <NavLink to="/settings" className="nav-link nav-link-desktop">Configurações</NavLink>
+                <span className="nav-divider nav-link-desktop" />
+                <button
+                  className="icon-btn"
+                  onClick={() => setHelp('compare')}
+                  title="Como funciona"
+                  aria-label="Como funciona"
+                >
+                  ?
+                </button>
+              </div>
+            </div>
+          </nav>
+          <main className="main">{children}</main>
+          {help && <HelpModal tutorial={help} onClose={() => setHelp(null)} />}
+        </div>
       </HelpContext.Provider>
     </ThemeContext.Provider>
   );

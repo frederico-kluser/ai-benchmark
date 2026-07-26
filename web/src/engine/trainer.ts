@@ -202,6 +202,10 @@ function variationConfigFrom(cfg: TrainingConfig): VariationConfig {
     referenceJudging: cfg.referenceJudging,
     scenarioBrief: cfg.scenarioBrief,
     scenarioSeed: cfg.scenarioSeed,
+    // Fase de finais: sem repassar, TODA iteracao (e o holdout) cairia no
+    // default de 3 finalistas — a escolha do usuario era descartada em silencio.
+    duels: cfg.duels,
+    finalists: cfg.finalists,
     contestantModelId: cfg.contestantModelId,
     basePrompt: cfg.basePrompt,
     techniqueIds: cfg.techniqueIds,

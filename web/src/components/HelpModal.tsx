@@ -13,61 +13,59 @@ const TAB_LABEL: Record<HelpTutorial, string> = {
   training: 'Treino',
 };
 
+// Tutoriais curtos: 3 passos por modo (o que é / o que selecionar / como ler).
+// Devem refletir a tela atual — página única de configuração + heatmap ao vivo +
+// bloco "Final" com os 3 melhores duelando.
 const TUTORIALS: Record<HelpTutorial, Step[]> = {
   compare: [
     {
-      kicker: 'Visão geral',
-      title: 'Bem-vindo ao Prompt Builder',
-      body: 'Descubra qual LLM — ou qual prompt — responde melhor. Há 3 modos: Comparar (vários modelos no mesmo desafio), Variação (um modelo, vários system prompts) e Treino (otimização iterativa do prompt). Este tutorial cobre o modo Comparar; troque de aba acima para ver os outros.',
+      kicker: 'O que é',
+      title: 'Vários modelos, os mesmos cenários',
+      body: 'Todos os modelos respondem às mesmas perguntas. Um gabarito é escrito antes, e o juiz compara cada resposta com ele: resolve, parcial ou não resolve.',
     },
     {
-      kicker: 'Passo 1',
-      title: 'Monte a comparação',
-      body: 'Em “Nova Run”, escreva o tema (ou use um exemplo) e escolha 2 ou mais competidores, 1 gerador (cria os cenários) e 1 juiz. O painel “Resumo da run” mostra nº de chamadas e custo estimado antes de iniciar. Concorrência e timeout ficam em “Ajustes avançados”.',
+      kicker: 'O que selecionar',
+      title: 'Cenários, modelos e juízes',
+      body: 'Importe um JSON de cenários ou mande gerar (escolhendo a LLM geradora e quantos). Escolha os modelos que competem e ao menos 1 juiz. Se o JSON já trouxer tudo, só falta o juiz.',
     },
     {
-      kicker: 'Passo 2',
-      title: 'Acompanhe ao vivo',
-      body: 'Ao iniciar, você vai para a Visão da Run. As etapas abrem sozinhas e você vê cada modelo respondendo token a token, com contadores e o anel de progresso no topo.',
-    },
-    {
-      kicker: 'Passo 3',
-      title: 'Leia o resultado',
-      body: 'O juiz compara as respostas em confrontos (torneio) e a aba “Resumo” traz a classificação (pontos, 1ºs, posição média, % aceitável) e o heatmap — verde é melhor, vermelho é pior. A aba “Etapas” mostra cada resposta com veredito e justificativa.',
+      kicker: 'Como ler',
+      title: 'Heatmap e final',
+      body: 'Enquanto roda, o heatmap preenche cenário × modelo: ✓ resolve, ◐ parcial, ✕ não resolve. No fim, os 3 de maior score duelam entre si em cada cenário e o pódio sai em “Final”.',
     },
   ],
   variation: [
     {
-      kicker: 'Modo Variação',
+      kicker: 'O que é',
       title: 'Um modelo, vários prompts',
-      body: 'Em vez de comparar modelos, você testa várias VARIAÇÕES do system prompt de UM mesmo modelo — para descobrir qual prompt funciona melhor no seu benchmark.',
+      body: 'O modelo é fixo e o que muda é o system prompt. Cada variação enfrenta os mesmos cenários para você descobrir qual prompt funciona melhor.',
     },
     {
-      kicker: 'Passo 1',
-      title: 'Configure as variações',
-      body: 'Escolha o modelo sob teste e, opcionalmente, um prompt base. Com “Otimização de prompt” ligada, selecione técnicas (persona, chain-of-thought, restrições, formato…) — cada uma vira uma variação gerada por uma LLM. Desligada, você escreve as variações à mão.',
+      kicker: 'O que selecionar',
+      title: 'Prompt base, variações e juízes',
+      body: 'Escolha o modelo sob teste, escreva (ou gere) o prompt base e marque as técnicas que viram variações — o botão “Todas” seleciona de uma vez. Depois, os juízes.',
     },
     {
-      kicker: 'Passo 2',
-      title: 'Como é avaliado',
-      body: 'O gerador cria as perguntas; o modelo responde com cada variação; o juiz ranqueia em confrontos às cegas. Na Visão da Run, o painel “Variantes de prompt” mostra o system prompt de cada variação, e o placar aponta a vencedora.',
+      kicker: 'Como ler',
+      title: 'Heatmap e final',
+      body: 'O heatmap mostra cada variação em cada cenário. Em “Final”, as 3 melhores duelam entre si; o bloco “Variantes” guarda o texto de cada prompt.',
     },
   ],
   training: [
     {
-      kicker: 'Modo Treino',
-      title: 'Auto-melhoria do prompt',
-      body: 'O Treino é iterativo: a cada iteração ele pega a variação VENCEDORA, analisa onde ganhou/perdeu e gera a próxima rodada a partir dela — convergindo para um prompt melhor. O prompt original (quando fornecido) é sempre re-testado como controle.',
+      kicker: 'O que é',
+      title: 'O prompt evolui sozinho',
+      body: 'A cada rodada a melhor variação vira a base da próxima. Os cenários são congelados entre as rodadas, e o treino para quando não há mais ganho real.',
     },
     {
-      kicker: 'Passo 1',
-      title: 'Configure o treino',
-      body: 'Como na Variação: modelo sob teste, prompt base opcional e técnicas. Defina também o nº de iterações. O benchmark (as perguntas) é fixado entre as iterações para comparar de forma justa.',
+      kicker: 'O que selecionar',
+      title: 'Igual à variação, mais rodadas',
+      body: 'Modelo sob teste, prompt base, técnicas, juízes — e quantas rodadas de evolução. Uma fatia dos cenários fica reservada para validar o campeão no fim.',
     },
     {
-      kicker: 'Passo 2',
-      title: 'Acompanhe a sessão',
-      body: 'Você vai para a tela da sessão de treino: curva de melhoria por iteração, a vencedora de cada rodada e, ao final, o melhor prompt — pronto para copiar. Dá para abrir a run de cada iteração para ver os detalhes.',
+      kicker: 'Como ler',
+      title: 'Rodada, evolução e melhor prompt',
+      body: 'O heatmap acompanha a rodada corrente e “Evolução” mostra o score de cada variante por rodada. Em “Melhor prompt” você compara com o original, copia e salva na biblioteca.',
     },
   ],
 };

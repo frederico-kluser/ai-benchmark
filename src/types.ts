@@ -133,6 +133,14 @@ export interface RunConfigBase {
   scenarioBrief?: string;
   /** Cenarios importados de pacote JSON (seed); o datagen complementa ate `stages`. */
   scenarioSeed?: StageSpec[];
+  /**
+   * Nº de FINALISTAS que disputam os duelos depois do julgamento pointwise.
+   * Os melhores por judge-score médio (todos os cenários) duelam entre si em
+   * cada cenário. 0 = sem duelos. Default 3.
+   */
+  finalists?: number;
+  /** Liga/desliga a fase de finais (duelos). Default: true quando há gabarito. */
+  duels?: boolean;
 }
 
 /** Campos comuns aos modos de 1 LLM (variation/training). */
@@ -162,10 +170,6 @@ export interface TrainingConfig extends RunConfigBase, SingleModelFields {
   iterations: number;
   /** Margem minima de ganho (pp) sobre o campeao para promover; sem ganho = convergiu. Default 1.0. */
   minGain?: number;
-  /** Liga duelos pairwise (Copeland) por etapa apos o pointwise. */
-  duels?: boolean;
-  /** Top-K do bracket de duelos (controle/carry sempre entram; 0 = round-robin completo). Default 5. */
-  duelTopK?: number;
   /** Fracao de cenarios reservada p/ holdout (clamp [0, 0.5]). Default 0.2. */
   holdoutRatio?: number;
   /** Reflection estilo GEPA: variantes recebem licoes das falhas do campeao. */
@@ -385,6 +389,8 @@ export interface RunRecord {
     losses: number;
     winRate: number;
   }[];
+  /** Ids dos finalistas (top-N por judge-score) que disputaram os duelos. */
+  finalists?: string[];
   totalCostUsd: number;
   startedAt: string;
   finishedAt?: string;
@@ -488,17 +494,6 @@ export type RunEvent =
   | { type: 'stage.generating'; runId: string; stageIndex: number }
   | { type: 'stage.generated'; runId: string; stageIndex: number; spec: StageSpec }
   | { type: 'stage.failed'; runId: string; stageIndex: number; error: string }
-  | { type: 'competitor.started'; runId: string; stageIndex: number; contestantId: string; modelId: string }
-  | {
-      type: 'competitor.progress';
-      runId: string;
-      stageIndex: number;
-      contestantId: string;
-      modelId: string;
-      chars: number;
-      charsPerSec: number;
-      preview: string;
-    }
   | { type: 'competitor.finished'; runId: string; stageIndex: number; response: CompetitorResponse }
   | { type: 'stage.judging'; runId: string; stageIndex: number }
   | {
@@ -510,6 +505,11 @@ export type RunEvent =
       totalCostUsd: number;
     }
   | { type: 'stage.gabarito'; runId: string; stageIndex: number; done: number; total: number }
+  | {
+      type: 'finals.started';
+      runId: string;
+      finalists: { id: string; label: string; score: number }[];
+    }
   | { type: 'stage.dueled'; runId: string; stageIndex: number; duels: StageDuels }
   | { type: 'duel.progress'; runId: string; done: number; total: number }
   | { type: 'run.finished'; runId: string; record: RunRecord }
@@ -518,7 +518,6 @@ export type RunEvent =
 export type SessionEvent =
   | { type: 'session.started'; sessionId: string; record: SessionRecord }
   | { type: 'iteration.started'; sessionId: string; iteration: number; runId: string }
-  | { type: 'iteration.analyzing'; sessionId: string; iteration: number; runId: string }
   | {
       type: 'iteration.finished';
       sessionId: string;

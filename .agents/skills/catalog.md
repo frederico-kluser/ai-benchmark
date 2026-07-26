@@ -13,15 +13,15 @@
 - **[knowledge-architecture](knowledge-architecture/SKILL.md)** — mapa do monorepo (incl. os módulos de evolução em `src/` + `web/src/engine/`), fluxo de dados, comandos exatos de build/run, arquivos-chave.
 - **[knowledge-code-style](knowledge-code-style/SKILL.md)** — convenções: PT-BR, ESM com extensão `.js`, TS strict, `interface Props`, tokens CSS.
 - **[knowledge-backend](knowledge-backend/SKILL.md)** — Express + Zod, `openrouter.ts`, escrita atômica em `storage.ts`, SSE, orquestrador, leitura de dados via `process.cwd()`.
-- **[knowledge-frontend](knowledge-frontend/SKILL.md)** — React + Vite, `api.ts`, IndexedDB v2 (biblioteca de prompts), `ModelSelector`, assistente em passos (compare-llms, pacote de cenários), eventos de gabarito/duelos, design tokens, sem framework de testes.
+- **[knowledge-frontend](knowledge-frontend/SKILL.md)** — React + Vite, `api.ts`, IndexedDB v2 (biblioteca de prompts), `ModelSelector` compacto, Nova Run em **página única**, import unificado de JSON, heatmap/finais de `runShared.tsx`, design tokens, sem framework de testes.
 - **[knowledge-openrouter](knowledge-openrouter/SKILL.md)** — endpoints públicos vs autenticados, `chatCompletion`, cache de 24h, roteamento de provider/ZDR.
-- **[knowledge-benchmark-modes](knowledge-benchmark-modes/SKILL.md)** — modos `compare`/`variation`/`training` (+ eixo compare-llms), `contestants`, pipeline gerador→competidores→julgamento (referência + duelos, listwise de fallback).
-- **[knowledge-prompt-evolution](knowledge-prompt-evolution/SKILL.md)** — sistema de evolução de prompts: gabarito/refJudge/duelos Copeland, minGain, reflection GEPA, holdout + significância, datagen em lotes, pacote de cenários, reasoning por papel, biblioteca de prompts, arquivo de config arena-config@1 (ARENA-CONFIG.md).
+- **[knowledge-benchmark-modes](knowledge-benchmark-modes/SKILL.md)** — modos `compare`/`variation`/`training` (+ eixo compare-llms), `contestants`, pipeline gerador→competidores→julgamento por referência + **fase 4 de finais** (top-N duelam), listwise de fallback.
+- **[knowledge-prompt-evolution](knowledge-prompt-evolution/SKILL.md)** — sistema de evolução de prompts: gabarito/refJudge/finais Copeland (`pickFinalists`), minGain, reflection GEPA, holdout + significância, datagen em lotes, pacote de cenários, reasoning por papel, biblioteca de prompts, arquivo de config arena-config@1 (ARENA-CONFIG.md).
 - **[knowledge-lgpd-compliance](knowledge-lgpd-compliance/SKILL.md)** — filtro consultivo LGPD, base de conhecimento, regeneração do snapshot, gancho de enforcement (fase 2).
 
 ## Tarefa (memória procedural) — terminam com passo `<evolution>`
 - **[task-add-endpoint](task-add-endpoint/SKILL.md)** — adicionar um endpoint na API `/v1/benchmark`.
-- **[task-add-wizard-step](task-add-wizard-step/SKILL.md)** — adicionar/alterar um passo do assistente Nova Run.
+- **[task-edit-newrun-form](task-edit-newrun-form/SKILL.md)** — alterar o formulário (página única) de Nova Run.
 - **[task-run-and-verify](task-run-and-verify/SKILL.md)** — rodar o app e verificar uma mudança ponta a ponta.
 
 ## Meta-skills

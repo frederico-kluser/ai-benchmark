@@ -22,8 +22,8 @@ import {
   listPrompts as engineListPrompts,
   deletePrompt as engineDeletePrompt,
 } from './engine/promptStore';
-import { parseScenarioPack } from './engine/scenarioPack';
-import { parseArenaConfig, type ArenaConfigFile } from './engine/configFile';
+import { parseScenarioPack, SCENARIO_PACK_FORMAT } from './engine/scenarioPack';
+import { parseArenaConfig, ARENA_CONFIG_FORMAT, type ArenaConfigFile } from './engine/configFile';
 
 export interface OpenRouterModel {
   id: string;
@@ -102,6 +102,14 @@ export interface RunConfig {
   referenceModelId?: string;
   /** Julgamento por referencia (pointwise vs gabarito + duelos). */
   referenceJudging?: boolean;
+  /**
+   * No de FINALISTAS que disputam os duelos depois do julgamento pointwise.
+   * Os melhores por judge-score medio (todos os cenarios) duelam entre si em
+   * cada cenario. 0 = sem duelos. Default 3.
+   */
+  finalists?: number;
+  /** Liga/desliga a fase de finais (duelos). Default: true quando ha gabarito. */
+  duels?: boolean;
   /** Descricao detalhada do que testar — guia o datagen. */
   scenarioBrief?: string;
   /** Cenarios importados de pacote JSON (seed). */
@@ -110,10 +118,6 @@ export interface RunConfig {
   competitorConfigs?: { modelId: string; temperature?: number; reasoningLevel?: ReasoningLevel }[];
   /** training: margem minima de ganho (pp) p/ promover; sem ganho = convergiu. Default 1.0. */
   minGain?: number;
-  /** training: liga duelos pairwise (Copeland). */
-  duels?: boolean;
-  /** training: top-K do bracket de duelos (0 = round-robin completo). Default 5. */
-  duelTopK?: number;
   /** training: fracao de cenarios p/ holdout (clamp [0, 0.5]). Default 0.2. */
   holdoutRatio?: number;
   /** training: variantes recebem licoes das falhas do campeao (GEPA). */
@@ -276,6 +280,8 @@ export interface RunRecord {
   costByContestant?: Record<string, number>;
   /** Judge-score agregado por contestant: (resolve + 0.5*parcial) / total * 100. */
   judgeScoreByContestant?: Record<string, number>;
+  /** Ids dos finalistas (top-N por judge-score) que disputaram os duelos. */
+  finalists?: string[];
   /** Classificacao final agregada (Copeland dos duelos / pontos do placar). */
   standings?: {
     id: string;
@@ -661,8 +667,8 @@ export async function readScenarioPackFile(
 
 // Re-exportados do engine para a UI consumir só pela porta única (api.ts).
 // ATENÇÃO: `export { ... } from '...'` NÃO cria binding local neste módulo —
-// por isso parseArenaConfig/ArenaConfigFile também são importados no topo,
-// para uso em readArenaConfigFile.
+// por isso parseArenaConfig/ArenaConfigFile/ARENA_CONFIG_FORMAT também são
+// importados no topo, para uso em readArenaConfigFile/readImportFile.
 export { parseArenaConfig, arenaConfigSummary, ARENA_CONFIG_FORMAT } from './engine/configFile';
 export type { ArenaConfigFile, ArenaConfigScenario } from './engine/configFile';
 
@@ -681,6 +687,99 @@ export async function readArenaConfigFile(
     return { ok: false, error: 'Arquivo não é um JSON válido' };
   }
   return parseArenaConfig(json);
+}
+
+// -------------- Import unificado (um input de arquivo só) --------------
+
+/** Resultado do import unificado de arquivo JSON do assistente. */
+export type ImportedFile =
+  | { kind: 'config'; config: ArenaConfigFile }
+  | { kind: 'pack'; pack: ScenarioPack }
+  | { kind: 'stages'; stages: StageSpec[] };
+
+/** Teto de cenarios crus por arquivo — protege a UI de um JSON gigante. */
+const MAX_IMPORTED_STAGES = 200;
+/** maxTokens usado quando o cenario cru nao traz o campo (o assistente pode sobrescrever). */
+const IMPORTED_STAGE_MAX_TOKENS = 500;
+
+/** Valida um array cru de cenarios (`[{question, productContext, ...}]`). Nunca lanca. */
+function parseRawStages(
+  arr: unknown[],
+): { ok: true; stages: StageSpec[] } | { ok: false; error: string } {
+  if (arr.length === 0) return { ok: false, error: 'Forneça ao menos 1 cenário.' };
+  if (arr.length > MAX_IMPORTED_STAGES)
+    return { ok: false, error: `Máximo de ${MAX_IMPORTED_STAGES} cenários.` };
+  const out: StageSpec[] = [];
+  for (let i = 0; i < arr.length; i++) {
+    const s = arr[i] as Record<string, unknown>;
+    const onde = `Cenário ${i + 1}`;
+    if (!s || typeof s !== 'object' || Array.isArray(s))
+      return { ok: false, error: `${onde}: deve ser um objeto.` };
+    if (typeof s.question !== 'string' || !s.question.trim())
+      return { ok: false, error: `${onde}: "question" obrigatória.` };
+    if (typeof s.productContext !== 'string' || !s.productContext.trim())
+      return { ok: false, error: `${onde}: "productContext" obrigatório.` };
+    if (s.rubric !== undefined && typeof s.rubric !== 'string')
+      return { ok: false, error: `${onde}: "rubric" deve ser texto.` };
+    if (s.reference !== undefined && typeof s.reference !== 'string')
+      return { ok: false, error: `${onde}: "reference" deve ser texto.` };
+    const tokens = s.maxTokens;
+    if (tokens !== undefined && (typeof tokens !== 'number' || !Number.isFinite(tokens) || tokens <= 0))
+      return { ok: false, error: `${onde}: "maxTokens" deve ser número positivo.` };
+    out.push({
+      question: s.question.trim(),
+      productContext: s.productContext.trim(),
+      rubric: typeof s.rubric === 'string' && s.rubric.trim() ? s.rubric.trim() : undefined,
+      reference: typeof s.reference === 'string' && s.reference.trim() ? s.reference.trim() : undefined,
+      maxTokens: typeof tokens === 'number' ? Math.round(tokens) : IMPORTED_STAGE_MAX_TOKENS,
+      origin: 'import',
+    });
+  }
+  return { ok: true, stages: out };
+}
+
+/**
+ * Le UM arquivo JSON e descobre sozinho o que e: `arena-config@1` (config completa),
+ * `ai-benchmark-pack@1` (pacote de cenarios) ou um array cru de etapas
+ * (`[{question, productContext, rubric?, maxTokens?, reference?}]`, ou `{stages:[…]}`).
+ * NUNCA lanca: erro vira `{ ok: false, error }` em PT-BR.
+ */
+export async function readImportFile(
+  file: File,
+): Promise<{ ok: true; data: ImportedFile } | { ok: false; error: string }> {
+  let json: unknown;
+  try {
+    json = JSON.parse(await file.text());
+  } catch {
+    return { ok: false, error: 'Arquivo não é um JSON válido' };
+  }
+  // Discriminador `format` primeiro: so quem nao o tem cai no array cru.
+  const formato =
+    json && typeof json === 'object' && !Array.isArray(json)
+      ? (json as Record<string, unknown>).format
+      : undefined;
+  if (formato === ARENA_CONFIG_FORMAT) {
+    const r = parseArenaConfig(json);
+    return r.ok ? { ok: true, data: { kind: 'config', config: r.config } } : r;
+  }
+  if (formato === SCENARIO_PACK_FORMAT) {
+    const r = parseScenarioPack(json);
+    return r.ok ? { ok: true, data: { kind: 'pack', pack: r.pack } } : r;
+  }
+  const arr = Array.isArray(json)
+    ? json
+    : Array.isArray((json as { stages?: unknown } | null)?.stages)
+      ? (json as { stages: unknown[] }).stages
+      : null;
+  if (arr) {
+    const r = parseRawStages(arr);
+    return r.ok ? { ok: true, data: { kind: 'stages', stages: r.stages } } : r;
+  }
+  return {
+    ok: false,
+    error:
+      'Arquivo não reconhecido: esperado arena-config@1, ai-benchmark-pack@1 ou um array de cenários.',
+  };
 }
 
 // -------------- Cache local (IndexedDB) --------------

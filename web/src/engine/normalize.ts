@@ -49,7 +49,12 @@ export function normalizeRunRecord(raw: any): RunRecord {
     ? raw.stages.map(normalizeStage)
     : [];
 
+  // Espalha `raw` ANTES dos campos normalizados: a lista explicita era um
+  // whitelist e engolia em silencio todo campo novo do RunRecord — foi assim que
+  // `judgeScoreByContestant`, `standings` e `finalists` sumiam ao reler a run do
+  // disco/IndexedDB (o painel de finais vinha vazio depois de um F5).
   return {
+    ...raw,
     id: raw.id,
     status: raw.status,
     config,

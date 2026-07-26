@@ -7,11 +7,13 @@ interface Props {
   value: string[];
   onChange: (ids: string[]) => void;
   title: string;
-  hint: string;
+  hint?: string;
   excludeIds?: string[];
   /** Optional shared catalog (avoids each selector refetching). Self-fetches when omitted. */
   models?: OpenRouterModel[];
   loading?: boolean;
+  /** Compacto: sem card próprio, para embutir numa linha de outro bloco. Default true. */
+  inline?: boolean;
 }
 
 function formatPricePerMTok(usdPerToken: number): string {
@@ -23,6 +25,12 @@ function formatPricePerMTok(usdPerToken: number): string {
 
 function priceLabel(model: OpenRouterModel): string {
   return `in ${formatPricePerMTok(model.pricing.prompt)} / out ${formatPricePerMTok(model.pricing.completion)} /1M`;
+}
+
+/** Nome curto do modelo: o que vem depois da última '/' do id. */
+function shortName(id: string): string {
+  const slash = id.lastIndexOf('/');
+  return slash >= 0 ? id.slice(slash + 1) : id;
 }
 
 // -------- fuzzy search --------
@@ -94,6 +102,7 @@ export function ModelSelector({
   excludeIds = [],
   models: sharedModels,
   loading: sharedLoading,
+  inline = true,
 }: Props) {
   const selfManaged = sharedModels === undefined;
   const [selfModels, setSelfModels] = useState<OpenRouterModel[]>([]);
@@ -144,6 +153,11 @@ export function ModelSelector({
     };
   }, [open]);
 
+  // Ao abrir, o foco vai direto para a busca.
+  useEffect(() => {
+    if (open) inputRef.current?.focus();
+  }, [open]);
+
   // Mantém TODOS os ids selecionados, mesmo os que ainda nao estao no catalogo
   // carregado (ex.: defaults pre-preenchidos) — senao o chip some da tela.
   const selected = useMemo(
@@ -186,75 +200,79 @@ export function ModelSelector({
     onChange(value.filter((v) => v !== id));
   }
 
-  const placeholder = loading
-    ? 'Carregando modelos…'
-    : !multi && value.length > 0
-      ? 'Trocar modelo (apenas 1 permitido)…'
-      : !multi
-        ? 'Escolher 1 modelo…'
-        : 'Buscar modelo (ex.: "claude sonnet", "gpt 5 mini")';
+  const addLabel = loading ? 'carregando…' : !multi && value.length > 0 ? 'trocar' : '+ adicionar';
 
   return (
-    <section className="card selector-card" ref={wrapperRef}>
-      <div className="selector-title">{title}</div>
-      <div className="selector-hint">{hint}</div>
+    <div className={inline ? 'picker' : 'picker card'} ref={wrapperRef}>
+      <span className="picker-label" title={hint}>
+        {title}
+      </span>
 
-      <div className="selector-chips">
+      <div className="picker-chips">
         {selected.map(({ id, model }) => (
-          <div key={id} className="model-chip">
-            <span className="model-chip-text">
-              <span className="model-chip-id">{id}</span>
-              <span className="model-chip-price">
-                {model ? priceLabel(model) : loading ? 'carregando…' : 'fora do catálogo'}
-              </span>
-            </span>
-            <button type="button" className="model-chip-x" aria-label={`Remover ${id}`} onClick={() => remove(id)}>
+          <span
+            key={id}
+            className="picker-chip"
+            title={model ? `${id} — ${priceLabel(model)}` : loading ? `${id} — carregando…` : `${id} — fora do catálogo`}
+          >
+            {shortName(id)}
+            <button type="button" className="picker-chip-x" aria-label={`Remover ${id}`} onClick={() => remove(id)}>
               ×
             </button>
-          </div>
+          </span>
         ))}
       </div>
 
-      <div className="selector-search">
-        <input
-          ref={inputRef}
-          type="text"
-          className="input"
-          placeholder={placeholder}
-          value={query}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            setOpen(true);
-          }}
-          onFocus={() => setOpen(true)}
+      <div className="picker-wrap">
+        <button
+          type="button"
+          className="picker-add"
           disabled={loading}
-        />
+          aria-expanded={open}
+          aria-haspopup="listbox"
+          onClick={() => setOpen((v) => !v)}
+        >
+          {addLabel}
+        </button>
+
         {open && (
-          <ul className="selector-pop">
-            {filtered.length === 0 && <li className="selector-empty">Nenhum modelo encontrado</li>}
-            {filtered.map((m) => (
-              <li key={m.id}>
-                <button
-                  type="button"
-                  className="selector-opt"
-                  onMouseDown={(e) => {
-                    // mousedown para nao perder foco antes do click
-                    e.preventDefault();
-                    select(m.id);
-                  }}
-                >
-                  <span className="selector-opt-text">
-                    <span className="selector-opt-id">{m.id}</span>
-                    <span className="selector-opt-name">{m.name}</span>
-                  </span>
-                  <span className="selector-opt-price">{priceLabel(m)}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
+          <div className="picker-pop">
+            <input
+              ref={inputRef}
+              type="text"
+              className="picker-search"
+              placeholder="Buscar modelo…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && filtered.length > 0) {
+                  e.preventDefault();
+                  select(filtered[0].id);
+                }
+              }}
+            />
+            <ul className="picker-list" role="listbox">
+              {error && <li className="picker-empty">{error}</li>}
+              {!error && filtered.length === 0 && <li className="picker-empty">Nenhum modelo encontrado</li>}
+              {filtered.map((m) => (
+                <li key={m.id}>
+                  <button
+                    type="button"
+                    className="picker-opt"
+                    // mousedown so para nao perder o foco da busca antes do click
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => select(m.id)}
+                  >
+                    <span className="picker-opt-id">{m.id}</span>
+                    <span className="picker-opt-name">{m.name}</span>
+                    <span className="picker-opt-price">{priceLabel(m)}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
       </div>
-      {error && <div className="selector-hint" style={{ color: 'var(--err)', marginTop: 10, marginBottom: 0 }}>{error}</div>}
-    </section>
+    </div>
   );
 }

@@ -24,7 +24,7 @@ Esta skill é o ponto de entrada — ela seleciona e encadeia as demais.
 
 ## Mapa rápido tarefa → skills
 - Novo endpoint / mudança na API → `task-add-endpoint` + `knowledge-backend` (+ `knowledge-openrouter` se chamar modelo).
-- Mudar o assistente Nova Run / seletor de modelo → `task-add-wizard-step` + `knowledge-frontend`.
+- Mudar o formulário de Nova Run / seletor de modelo → `task-edit-newrun-form` + `knowledge-frontend`.
 - Mexer no pipeline de run/treino/juiz → `knowledge-benchmark-modes` + `knowledge-backend`.
 - Conformidade/LGPD/filtro de modelos → `knowledge-lgpd-compliance`.
 - Integração com OpenRouter (chamadas, cache, roteamento) → `knowledge-openrouter`.

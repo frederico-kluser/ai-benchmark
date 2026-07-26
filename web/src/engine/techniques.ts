@@ -28,7 +28,7 @@ export const TECHNIQUE_LIBRARY: PromptTechnique[] = [
   },
   {
     id: 'cot',
-    name: 'Cadeia de raciocinio',
+    name: 'Cadeia de raciocínio',
     good: 'Ganho forte e confiavel em matematica, logica e tarefas simbolicas multi-passo.',
     bad: 'Aumenta tokens e latencia, pode piorar tarefas simples e e redundante em modelos de raciocinio.',
     metaInstruction:
@@ -44,7 +44,7 @@ export const TECHNIQUE_LIBRARY: PromptTechnique[] = [
   },
   {
     id: 'format',
-    name: 'Formato de saida explicito',
+    name: 'Formato de saída explícito',
     good: 'Saidas previsiveis, parseaveis e completas, com menos omissoes.',
     bad: 'Rigidez pode suprimir nuance e formatos estritos como JSON podem degradar a qualidade do raciocinio.',
     metaInstruction:
@@ -52,7 +52,7 @@ export const TECHNIQUE_LIBRARY: PromptTechnique[] = [
   },
   {
     id: 'constraints',
-    name: 'Restricoes/guardrails',
+    name: 'Restrições/guardrails',
     good: 'Torna a resposta mais segura e on-policy, critico em dominio regulado ou clinico.',
     bad: 'Restricoes em excesso geram recusas inuteis e alongam o prompt.',
     metaInstruction:
@@ -60,7 +60,7 @@ export const TECHNIQUE_LIBRARY: PromptTechnique[] = [
   },
   {
     id: 'decompose',
-    name: 'Decomposicao em subtarefas',
+    name: 'Decomposição em subtarefas',
     good: 'Melhora cobertura e completude em tarefas complexas multi-parte.',
     bad: 'Gera verbosidade e overhead em tarefas simples e pode ficar rigido.',
     metaInstruction:
@@ -68,7 +68,7 @@ export const TECHNIQUE_LIBRARY: PromptTechnique[] = [
   },
   {
     id: 'selfcritique',
-    name: 'Autocritica/revisao',
+    name: 'Autocrítica/revisão',
     good: 'Pega erros e melhora factualidade quando ha rubrica, criterio ou verificador externo.',
     bad: 'Sem feedback externo pode nao melhorar e ate piorar, e custa cerca de duas vezes mais tokens e latencia.',
     metaInstruction:
@@ -76,7 +76,7 @@ export const TECHNIQUE_LIBRARY: PromptTechnique[] = [
   },
   {
     id: 'specificity',
-    name: 'Especificidade/criterios',
+    name: 'Especificidade/critérios',
     good: 'Reduz ambiguidade e alinha a resposta ao objetivo.',
     bad: 'Alonga o prompt e arrisca injetar premissas erradas.',
     metaInstruction:
@@ -92,7 +92,7 @@ export const TECHNIQUE_LIBRARY: PromptTechnique[] = [
   },
   {
     id: 'emphasis',
-    name: 'Enfase em instrucoes-chave',
+    name: 'Ênfase em instruções-chave',
     good: 'Combate o efeito lost-in-the-middle e reforca regras obrigatorias em prompts longos.',
     bad: 'Causa duplicacao e verbosidade, com ganho marginal em prompts curtos.',
     metaInstruction:
@@ -100,7 +100,7 @@ export const TECHNIQUE_LIBRARY: PromptTechnique[] = [
   },
   {
     id: 'positive',
-    name: 'Reformulacao positiva',
+    name: 'Reformulação positiva',
     good: 'Modelos tendem a seguir melhor instrucoes positivas do que negacoes.',
     bad: 'Pode alongar e algumas restricoes de seguranca sao naturalmente negativas.',
     metaInstruction:
@@ -108,7 +108,7 @@ export const TECHNIQUE_LIBRARY: PromptTechnique[] = [
   },
   {
     id: 'delimiters',
-    name: 'Delimitadores/secoes',
+    name: 'Delimitadores/seções',
     good: 'Separa instrucao de dados, reduzindo confusao e injecao, e aumenta a clareza.',
     bad: 'Em prompts ja claros o ganho e cosmetico.',
     metaInstruction:
@@ -116,7 +116,7 @@ export const TECHNIQUE_LIBRARY: PromptTechnique[] = [
   },
   {
     id: 'stepback',
-    name: 'Step-back (abstracao)',
+    name: 'Step-back (abstração)',
     good: 'Melhora raciocinio ao derivar primeiro o principio de alto nivel antes de aplicar ao caso.',
     bad: 'Acrescenta passos e tokens, com ganho menor fora de STEM e QA de conhecimento.',
     metaInstruction:
@@ -132,7 +132,7 @@ export const TECHNIQUE_LIBRARY: PromptTechnique[] = [
   },
   {
     id: 'rubric',
-    name: 'Rubrica/criterios embutidos',
+    name: 'Rubrica/critérios embutidos',
     good: 'Ancora a resposta e a autorrevisao em criterios verificaveis, melhorando consistencia e factualidade.',
     bad: 'Alonga o prompt e uma rubrica mal calibrada enviesa a saida.',
     metaInstruction:
@@ -140,7 +140,7 @@ export const TECHNIQUE_LIBRARY: PromptTechnique[] = [
   },
   {
     id: 'uncertainty',
-    name: 'Calibracao de incerteza',
+    name: 'Calibração de incerteza',
     good: 'Reduz alucinacao ao autorizar nao sei e escalonamento quando a confianca e baixa, critico em clinica.',
     bad: 'Pode aumentar recusas ou abstencoes excessivas se mal calibrada.',
     metaInstruction:

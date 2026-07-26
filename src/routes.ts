@@ -74,6 +74,10 @@ const baseFields = {
   scenarioBrief: z.string().max(4000).optional(),
   // Cenarios importados de pacote JSON (seed); o datagen complementa ate `stages`.
   scenarioSeed: z.array(stageSpecSchema).max(50).optional(),
+  // Nº de finalistas (melhores por judge-score) que disputam os duelos. 0 = sem finais.
+  finalists: z.number().int().min(0).max(12).optional(),
+  // Liga/desliga a fase de finais (duelos Copeland entre os finalistas).
+  duels: z.boolean().optional(),
 };
 
 const manualVariantSchema = z.object({
@@ -120,10 +124,6 @@ const trainingObj = z.object({
   iterations: z.number().int().min(2).max(10),
   // Margem minima de ganho (pp) sobre o campeao para promover; sem ganho = convergiu.
   minGain: z.number().min(0).max(100).optional(),
-  // Liga duelos pairwise (Copeland) por etapa apos o pointwise.
-  duels: z.boolean().optional(),
-  // Top-K do bracket de duelos (controle/carry sempre entram; 0 = round-robin completo).
-  duelTopK: z.number().int().min(0).max(32).optional(),
   // Fracao de cenarios reservada p/ holdout (re-score campeao vs controle).
   holdoutRatio: z.number().min(0).max(0.5).optional(),
   // Reflection estilo GEPA: variantes recebem licoes das falhas do campeao.

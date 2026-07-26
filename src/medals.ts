@@ -11,8 +11,8 @@ import type { RunRecord } from './types.js';
 // (vetores de medalha 100% iguais) usamos a qualidade ternaria e o comprimento
 // do prompt (regularizacao anti-overfitting), evitando empate tecnico.
 //
-// Fonte unica: importado tanto pela engine (trainer.pickWinner) quanto pela UI
-// (runShared.medalStandings). Espelho de `web/src/engine/medals.ts`.
+// Usado pelo trainer (linhagem do campeao por iteracao). Espelho de
+// `web/src/engine/medals.ts`.
 // ---------------------------------------------------------------------------
 
 /** Ordinal do veredito ternario: nao < parcial < resolve. */

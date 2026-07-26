@@ -2,7 +2,7 @@
 name: knowledge-architecture
 description: Mapa do repositório ai-benchmark — layout do monorepo (incl. os módulos do sistema de evolução de prompts em src/ e web/src/engine/), separação backend/frontend, fluxo de dados ponta a ponta e comandos exatos de build/run. Use no início de qualquer tarefa para saber ONDE mora cada coisa antes de varrer o codebase, ou quando precisar entender como as peças se conectam.
 metadata:
-  version: 0.3.1
+  version: 0.4.0
   type: knowledge
 ---
 # Arquitetura — ai-benchmark
@@ -37,9 +37,15 @@ web/src/        frontend
   idb.ts        cache IndexedDB v2 (db "benchmark-arena", stores runs/sessions/*Summaries/prompts)
   engine/       CÓPIA client-side do pipeline (ver abaixo) + promptStore.ts (biblioteca de prompts) + configFile.ts (parser arena-config@1)
   diff.ts       diff linha-a-linha (versões de prompt / diff vs. original)
-  pages/        NewRun (assistente 5 passos), RunView, RunsList, TrainingView, PromptsPage, Settings
-  pages/runShared.tsx   reducer applyEvent + ProcessMonitor + standings (compartilhado RunView/TrainingView)
-  components/    ModelSelector, Toggle, TechniqueSelector, ManualVariantsEditor, KeySetup, HelpModal
+  pages/        NewRun (PÁGINA ÚNICA, blocos verticais — não é mais assistente em passos),
+                RunView, RunsList, TrainingView, PromptsPage, Settings
+  pages/runShared.tsx   reducer applyEvent + VERDICT_META/verdictOf/trunc/denseStages/rankColor
+                + heatRows/<ScoreHeatmap> + <FinalsPanel> (compartilhado RunView/TrainingView).
+                Sem ProcessMonitor/computeStandings/medalStandings (removidos em 2026-07-25).
+  components/    ModelSelector (picker compacto), Toggle, ManualVariantsEditor, KeySetup, HelpModal.
+                 REMOVIDOS em 2026-07: TechniqueSelector (técnicas viraram chips inline no NewRun)
+                 e BrainBackground + brain-visualization/ + processing.ts (fundo animado decorativo
+                 — cobria conteúdo e queimava CPU; nada mais consome ProcessingContext)
   lgpd.ts       classificação/filtragem de conformidade; styles.css  design tokens (claro/escuro)
 data/           runtime: runs/ e sessions/ (IGNORADO no git; ver /data/ no .gitignore)
 ```
@@ -64,6 +70,14 @@ data/           runtime: runs/ e sessions/ (IGNORADO no git; ver /data/ no .giti
   Exceções: `engine/promptStore.ts` (biblioteca de prompts) é **client-only**, e do `scenarioPack`
   o backend só usa `mergeScenarios` (export/import do pacote acontece no frontend). Detalhes do
   sistema de evolução em `knowledge-prompt-evolution`.
+
+## Gotcha: `normalizeRunRecord` não pode ser whitelist
+`normalize.ts` (nos DOIS espelhos: `src/` e `web/src/engine/`) montava o `RunRecord` campo a campo
+— um **whitelist** que engolia em silêncio todo campo novo. Foi assim que `judgeScoreByContestant`,
+`standings` e `finalists` sumiam ao **reler** a run do disco/IndexedDB (painel de finais vazio
+depois de um F5), sem nenhum erro de tipo. Hoje o return **espalha `...raw` ANTES** dos campos
+normalizados. **Todo campo novo do `RunRecord`/`SessionRecord` tem de sobreviver à releitura** —
+ao adicionar um, confira o normalize dos dois lados antes de dar a tarefa por pronta.
 
 ## Gotcha de path
 `server.ts` resolve `web/dist` por `__dirname` (relativo ao arquivo). Mas **dados runtime e JSON

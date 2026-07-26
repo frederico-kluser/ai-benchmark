@@ -1,28 +1,24 @@
 # ARENA-CONFIG — Gerador de `arena-config@1.json`
 
-Documento de instruções para uma IA externa (ChatGPT, Claude, Gemini etc.) gerar um arquivo de
-configuração completo para o assistente **Nova Run** do ai-benchmark. Cole **este documento
-inteiro** + a descrição do que você quer testar na IA de sua preferência. Ela devolve um JSON
-pronto; o assistente importa e preenche **tudo** — você só clica em Continuar.
+Instruções para uma IA externa (ChatGPT, Claude, Gemini etc.) gerar o arquivo de configuração
+da página **Nova Run** do ai-benchmark. Cole **este documento inteiro** + a descrição do que
+você quer testar; a IA devolve um JSON puro que a página importa de uma vez.
 
 ---
 
-## 1. O que é / como usar (3 passos)
+## 1. Como usar
 
-O `arena-config@1.json` é um arquivo de configuração declarativa: descreve modo de benchmark,
-modelos (com papéis), nível de raciocínio (effort), cenários de teste, prompt base e todos os
-toggles da run. Ao importá-lo, o assistente Nova Run aplica cada campo no passo correspondente.
+O `arena-config@1.json` descreve, de forma declarativa, modo de benchmark, modelos (com papéis),
+nível de raciocínio (effort), cenários, prompt base e os toggles da run.
 
-1. **Gere** — cole ESTE documento inteiro numa IA, seguido do que você quer testar
-   (ex.: "quero otimizar o prompt do meu assistente de suporte de laboratório"). Ela responde
-   com um JSON puro.
+1. **Gere** — cole ESTE documento numa IA, seguido do que você quer testar (ex.: "quero
+   otimizar o prompt do meu assistente de suporte de laboratório").
 2. **Salve** — grave a resposta como `arena-config.json` (qualquer nome `.json` serve).
-3. **Importe** — no assistente **Nova Run**, clique em **"Importar config (JSON)"** (botão ao
-   lado de **Continuar**), escolha o arquivo e revise o que quiser, passo a passo. Nada é
-   obrigatório refazer: dá para só seguir clicando em Continuar.
+3. **Importe** — em **Nova Run**, botão **Importar JSON**, escolha o arquivo. Tudo é preenchido
+   de uma vez; revise o que quiser e clique em **Iniciar**.
 
-> O importador **valida** o arquivo e rejeita com mensagem de erro em PT-BR se algo estiver
-> fora do contrato (ver seção 7). Campos ausentes caem nos defaults da UI.
+> O importador **valida** o arquivo e rejeita com mensagem em PT-BR o que estiver fora do
+> contrato (ver seção 7). Campos ausentes caem nos defaults da UI.
 
 ---
 
@@ -71,8 +67,8 @@ Você é a IA que recebeu este documento. Siga à risca:
 6. **Infira o modo** se o usuário não disser: "otimizar/treinar meu prompt ao longo de rodadas"
    → `training`; "testar variações/técnicas de prompt" → `variation`; "comparar modelos ou
    configurações" → `compare`.
-7. **Preencha o máximo de campos com bom senso** — o objetivo é o usuário "só clicar em
-   Continuar". Omita apenas o que o contrato marca como opcional e sem default seguro.
+7. **Preencha o máximo de campos com bom senso** — o objetivo é o usuário só clicar em
+   **Iniciar**. Omita apenas o que o contrato marca como opcional e sem default seguro.
 
 ---
 
@@ -88,6 +84,8 @@ arquivo final):
   "theme": "string (obrigatório)",
   "scenarioBrief": "string opcional, <=4000 — briefing detalhado do que testar; guia o gerador de cenários",
   "stages": "int 1..50 — total de cenários (importados + gerados)",
+  "duels": "bool (default true) — liga a fase FINAL de duelos entre os finalistas",
+  "finalists": "int 0..12 (default 3) — quantos disputam a final; 0 desliga",
   "scenarios": [{ "id": "opcional", "question": "obrigatória", "productContext": "''", "maxTokens": "int <=16000 (ausente = herda limits.maxOutputTokens)", "rubric": "''", "reference": "gabarito opcional — se ausente, a engine gera na hora" }],
   "prompt": { "text": "system prompt base (variation/training)", "generateFrom": "opcional — descrição da tarefa p/ o botão 'gerar base' da UI" },
   "models": {
@@ -101,7 +99,7 @@ arquivo final):
   },
   "effort": { "competitor": "nível", "judge": "nível", "rewriter": "nível", "datagen": "nível" },  // todos opcionais
   "variation": { "optimize": "bool (default true)", "techniques": ["ids"], "manualVariants": [{ "label": "", "systemPrompt": "" }] },
-  "training": { "iterations": "int 2..10 (default 3)", "minGain": "0..100 (default 1)", "duels": "bool (default true)", "duelTopK": "int 0..32 (default 5; 0=todos)", "holdoutRatio": "0..0.5 (default 0.2)", "feedbackDriven": "bool (default true)" },
+  "training": { "iterations": "int 2..10 (default 3)", "minGain": "0..100 (default 1)", "holdoutRatio": "0..0.5 (default 0.2)", "feedbackDriven": "bool (default true)" },
   "judging": { "reference": "bool — juiz contra gabarito (default: on p/ variation/training/compare-configs, off p/ compare clássico)", "passes": "1|2 — passes do juiz listwise" },
   "limits": { "maxOutputTokens": "int positivo, LIVRE (o teto real é o do modelo)", "timeoutMs": "int", "concurrency": "int" },
   "compliance": { "area": "slug LGPD", "includeRessalvas": "bool" }
@@ -117,19 +115,22 @@ arquivo final):
 | `theme` | string | **sim** | — | Tema da run em linguagem natural; guia a geração de cenários e aparece no título. |
 | `scenarioBrief` | string | não | `''` | Briefing detalhado do que testar (≤ 4000 chars). Entra no prompt do gerador com prioridade na distribuição dos cenários. |
 | `stages` | int | recomendado | default da UI | Total de cenários da run (importados + gerados), 1..50. Recomendado: 6–12. |
+| `duels` | bool | não | `true` | Liga a **fase final**: terminado o julgamento por gabarito, os finalistas duelam entre si em cada cenário (Copeland — cada par nas 2 ordens; desacordo = empate). `false` = só o judge-score. |
+| `finalists` | int | não | 3 | Quantos disputam a final, 0..12: os melhores por **judge-score médio de toda a run**. `0` desliga a final; valor ≥ nº de variantes = todos duelam. Vale para os três modos. |
 | `scenarios` | array | não | `[]` | Cenários "pinados" (curadoria manual) — ver seção 4. |
-| `prompt` | objeto | variation/training | — | Prompt base sob teste (ver 3.4). |
-| `models` | objeto | **sim** | — | Slugs por papel (ver 3.5). |
-| `effort` | objeto | não | padrão do modelo | Nível de raciocínio por papel (ver 3.6). |
-| `variation` | objeto | só mode `variation` | — | Técnicas e variantes manuais (ver 3.7). |
-| `training` | objeto | só mode `training` | — | Iterações, promoção, duelos, holdout (ver 3.8). |
-| `judging` | objeto | não | por modo | Como julgar: por gabarito ou listwise (ver 3.9). |
-| `limits` | objeto | não | defaults da UI | Tetos de tokens/tempo/concorrência (ver 3.10). |
-| `compliance` | objeto | não | livre | Filtro consultivo LGPD do catálogo de modelos (ver 3.11). |
+| `prompt` | objeto | variation/training | — | Prompt base sob teste (ver 3.3). |
+| `models` | objeto | **sim** | — | Slugs por papel (ver 3.4). |
+| `effort` | objeto | não | padrão do modelo | Nível de raciocínio por papel (ver 3.5). |
+| `variation` | objeto | só mode `variation` | — | Técnicas e variantes manuais (ver 3.6). |
+| `training` | objeto | só mode `training` | — | Iterações, promoção, holdout (ver 3.7). |
+| `judging` | objeto | não | por modo | Como julgar: por gabarito ou listwise (ver 3.8). |
+| `limits` | objeto | não | defaults da UI | Tetos de tokens/tempo/concorrência (ver 3.9). |
+| `compliance` | objeto | não | livre | Filtro consultivo LGPD do catálogo de modelos (ver 3.10). |
 
-> **Removido:** `repeats` (1..3, cópias de cada cenário) não existe mais — cada cenário roda
-> **uma única vez** nos três modos. Arquivos antigos que ainda tragam a chave continuam válidos:
-> ela é simplesmente ignorada na leitura.
+> **Removidos:** `repeats` (cópias de cada cenário — hoje cada cenário roda **uma vez**) e
+> `training.duelTopK` (o bracket por etapa virou a fase final global: `duels` + `finalists`).
+> Arquivos antigos com essas chaves continuam válidos — elas são ignoradas na leitura.
+> `duels`/`finalists` são lidos tanto na raiz quanto dentro de `training`; prefira a raiz.
 
 ### 3.2 `scenarios[]` (cenários pinados)
 
@@ -218,8 +219,6 @@ no `max_tokens` da chamada.
 |---|---|---|---|---|
 | `iterations` | int | não | 3 | Rodadas de evolução encadeadas, 2..10. Em cada uma, o rewriter propõe um desafiante contra a campeã. |
 | `minGain` | number | não | 1 | **Margem de promoção** (0..100 pontos de judge-score): a variante só vira campeã se superar a atual por pelo menos `minGain`. Sem margem → a sessão converge e para. |
-| `duels` | bool | não | `true` | Liga os **duelos Copeland**: bracket entre os melhores prompts, cada par julgado **nas 2 ordens** (desacordo = empate; vitória = 1, empate = 0,5). |
-| `duelTopK` | int | não | 5 | Tamanho do bracket de duelos, 0..32. `0` = round-robin com todos. A campeã (controle) sempre entra no bracket. |
 | `holdoutRatio` | number | não | 0.2 | **Fatia anti-overfit** (0..0.5): reserva parte dos cenários (split intercalado) para uma validação final controle × campeão. Piso de 5 cenários — abaixo disso o holdout é descartado. `0` desliga. |
 | `feedbackDriven` | bool | não | `true` | **Lições da rodada anterior**: até 8 cenários onde a campeã falhou viram um bloco de lições injetado no rewriter da próxima iteração. `false` = variação cega. |
 
@@ -289,6 +288,8 @@ pinados com gabarito + 4 gerados (`stages: 8`), holdout de 25% e feedback por li
   "theme": "Assistente de suporte ao cliente de um laboratório de análises clínicas",
   "scenarioBrief": "Perguntas reais de pacientes: preparo para exames (jejum, coleta, medicamentos), prazos e formas de entrega de resultados, agendamento e convênios. Incluir casos de borda: paciente ansioso pedindo interpretação do laudo (o assistente NUNCA interpreta resultados nem dá diagnóstico), pedido fora do escopo, e 1 pergunta em espanhol.",
   "stages": 8,
+  "duels": true,
+  "finalists": 3,
   "scenarios": [
     {
       "id": "jejum-glicemia",
@@ -342,8 +343,6 @@ pinados com gabarito + 4 gerados (`stages: 8`), holdout de 25% e feedback por li
   "training": {
     "iterations": 4,
     "minGain": 2,
-    "duels": true,
-    "duelTopK": 5,
     "holdoutRatio": 0.25,
     "feedbackDriven": true
   },
@@ -499,7 +498,7 @@ e só então responda:
    `contestant`, `competitors` ou `competitorConfigs[].model`.
 7. `variation.techniques` ⊆ dos 19 ids válidos (seção 3.6); técnicas + `manualVariants`
    somam ≥ 2 variantes.
-8. `training`: `iterations` 2..10, `minGain` 0..100, `holdoutRatio` 0..0.5, `duelTopK` 0..32.
+8. `finalists` 0..12; `training`: `iterations` 2..10, `minGain` 0..100, `holdoutRatio` 0..0.5.
 9. `stages` 1..50; toda entrada de `scenarios[]` tem `question` não-vazia; `maxTokens` ≤ 16000.
 10. Todos os slugs seguem `provedor/modelo`, são estáveis e plausíveis — e, se o usuário citou
     um modelo, o slug usado é exatamente o que ele citou.
@@ -525,5 +524,5 @@ Mensagens típicas do importador da UI (a redação exata pode variar) → causa
 
 ---
 
-*Contrato: `arena-config@1`. Este documento descreve exatamente o que o importador do
-assistente Nova Run valida — não invente campos, não renomeie chaves.*
+*Contrato: `arena-config@1`. Este documento descreve exatamente o que o importador da página
+Nova Run valida — não invente campos, não renomeie chaves.*

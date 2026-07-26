@@ -2,7 +2,7 @@
 name: knowledge-prompt-evolution
 description: O sistema de evolução de prompts do ai-benchmark (portado do prompt-arena) — julgamento por referência (gabarito + refJudge pointwise + duelos Copeland), rank/pickWinner com minGain, reflection GEPA, holdout + significância bootstrap, datagen em lotes, pacote de cenários JSON, reasoning por papel e a biblioteca de prompts. Use ao mexer em gabarito/refJudge/duels/rank/holdout/stats/trainer/datagen/llmVariants/scenarioPack/reasoning/dedup/promptStore, ou em qualquer fluxo de treino/julgamento — leia junto com knowledge-benchmark-modes.
 metadata:
-  version: 0.3.0
+  version: 0.4.0
   type: knowledge
 ---
 # Evolução de prompts — ai-benchmark
@@ -21,13 +21,20 @@ Sistema portado do ondokai-prompt-arena. Cada módulo vive em `src/` **e** espel
 - **refJudge** (`refJudge.ts`): **pointwise** — cada resposta isolada vs gabarito, vereditos
   `resolve/parcial/nao` + 1 frase. Multi-juiz agrega por **média ordinal** (2/1/0; ≥1.5 resolve,
   ≥0.5 parcial). Degradações: sem referência → `parcial` p/ todos; resposta vazia/erro → `nao`.
-- **Duelos** (`duels.ts`): bracket **top-K** (default 5; `duelTopK: 0` = round-robin completo; o
-  **controle sempre entra**), seed **FNV-1a(question) + mulberry32** (shuffle cego determinístico),
-  cada par julgado **nas 2 ordens** (desacordo = empate). **Copeland**: vitória 1, empate 0.5;
-  placements fracionários em empate; fora do bracket = `bracketSize+1`. Juiz = `judgeModelIds[0]`.
-- **JudgeResult SINTETIZADO** (`orchestrator.ts`): `rankedContestantIds` = `duels.order` (ou sort
-  por veredito), `acceptableByContestant` = `verdict !== 'nao'`, `judges: []`, `blindMap: {}` —
-  mantém scoreboard/medals/UI funcionando. Referência pontua **1×**; listwise pontua **por juiz**.
+- **Duelos = fase 4 de FINAIS** (`duels.ts`): não há mais bracket por etapa. Depois de TODAS as
+  etapas julgadas, `pickFinalists(entries, count, seedFromId(record.id))` escolhe os **N melhores
+  globais** por judge-score médio (`record.judgeScoreByContestant`; default **`finalists: 3`**,
+  `0`/`duels:false` desliga, `>= n` = todos) — desempate por shuffle cego semeado, **o controle
+  NÃO tem mais vaga garantida**. Esses mesmos ids vão a `runStageDuels` de cada etapa com gabarito
+  pela opção **`duelists`** (quando presente, **ignora `topK`/`controlId`** e grava
+  `topK = duelists.length`); `selectDuelists` (top-K + controle) continua existindo só como
+  caminho sem `duelists`. Dentro da etapa: seed **FNV-1a(question) + mulberry32**, cada par julgado
+  **nas 2 ordens** (desacordo = empate), **Copeland** vitória 1 / empate 0.5, placements
+  fracionários, fora do bracket = `bracketSize+1`. Juiz = `judgeModelIds[0]`. Grava
+  **`record.finalists: string[]`**; o Copeland cross-etapa agrega em `record.standings`.
+- **JudgeResult SINTETIZADO** (`orchestrator.ts`): `rankedContestantIds` = sort **por veredito**
+  (`VERDICT_SCORE`) — **sempre**, já que os duelos só rodam depois; `acceptableByContestant` =
+  `verdict !== 'nao'`, `judges: []`, `blindMap: {}`. Referência pontua **1×**; listwise **por juiz**.
 
 ## Rank e promoção (rank.ts / trainer.ts)
 - `judgeScore` = `(resolve + 0,5·parcial)/total × 100` por contestant (`judgeScoreByContestant`).
@@ -37,8 +44,8 @@ Sistema portado do ondokai-prompt-arena. Cada módulo vive em `src/` **e** espel
   `convergedAtIteration` + `session.converged` + **break** (vale já na iteração 0).
 - **Reflection GEPA determinístico** (`buildLessons`): até **8** etapas onde a campeã não deu
   `resolve` → bloco `<licoes_da_iteracao_anterior>` injetado pelo variator (cap 4000 chars).
-  **Substituiu** a chamada LLM `analyzeIteration` (removida; o evento `iteration.analyzing`
-  **não é mais emitido** — tipo mantido só p/ records antigos). `feedbackDriven: false` desliga.
+  **Substituiu** a chamada LLM `analyzeIteration` (removida; o evento `iteration.analyzing` saiu
+  do `SessionEvent`). `feedbackDriven: false` desliga.
 - **Holdout** (`holdout.ts`): split **intercalado** (`k = max(2, round(1/ratio))`), ratio 0–0.5
   (default 0.2, `0` desliga), **piso de 5 cenários** (abaixo disso o holdout é descartado). Se
   houver campeão ≠ base, roda 1 run extra (`iteration = config.iterations`, contestants
@@ -68,7 +75,7 @@ Sistema portado do ondokai-prompt-arena. Cada módulo vive em `src/` **e** espel
   é a **tripla {modelId, temperature, reasoningLevel}** — id determinístico
   `llm__<slug>__<level|def>__t<temp|def>` (`llmVariants.ts`). `sanitizeLlmVariants` falha a run
   **cedo** (antes de qualquer LLM); `fairnessWarnings` não-bloqueantes (juiz que também compete).
-  A 1ª variante vira `isOriginal` (âncora dos duelos).
+  A 1ª variante vira `isOriginal` (controle: âncora do `standings`, não mais dos duelos).
 - **Reasoning** (`reasoning.ts`): níveis `off/low/medium/high/max` → budgets 1024/2048/4096/16384
   + headroom 2048 (`max_tokens = max(atual, budget + 2048)`). Por papel:
   `reasoning.{competitor, judge, rewriter, datagen}`; `chatCompletion(Stream)` aceitam
@@ -91,9 +98,15 @@ Sistema portado do ondokai-prompt-arena. Cada módulo vive em `src/` **e** espel
   backend). Import: botão no rodapé do assistente → `readArenaConfigFile` (`api.ts`) →
   `applyArenaConfig` (NewRun) — campos ausentes não pisam o estado atual.
 
-## Eventos novos
-`stage.gabarito` (stageIndex **-1**, agregado) · `stage.dueled` (por índice, antes de
-`stage.judged`) · `duel.progress` (**sem** stageIndex, agregado) · `iteration.promoted`
-{championId, gain} · `session.converged` {iteration} · `session.holdout` {n, scores, gain,
-regressed}. Na UI, os agregados (`stage.gabarito`/`duel.progress`) são interceptados **antes** do
-reducer (estado local de progresso); `stage.dueled` entra no reducer **por índice**.
+## Eventos (novos e REMOVIDOS)
+- **Novos:** `stage.gabarito` (stageIndex **-1**, agregado) · **`finals.started`** (sem
+  stageIndex; `finalists: {id,label,score}[]` — o reducer grava `record.finalists`) ·
+  `stage.dueled` (por índice, agora **depois** de todos os `stage.judged`) · `duel.progress`
+  (**sem** stageIndex, agregado, `done` = etapas dueladas) · `iteration.promoted` {championId,
+  gain} · `session.converged` {iteration} · `session.holdout` {n, scores, gain, regressed}.
+- **Removidos:** `competitor.started` e `competitor.progress` (não existem mais no `RunEvent` — o
+  orchestrator não passa `onProgress` ao `runCompetitor` nem mantém `stageRecord.live`;
+  `CompetitorLiveState`/`StageRecord.live` sobrevivem `@deprecated` só p/ LER records antigos) e
+  `iteration.analyzing` (fora do `SessionEvent`).
+- Na UI, os agregados (`stage.gabarito`/`duel.progress`) são interceptados **antes** do reducer
+  (estado local de progresso); `stage.dueled` entra no reducer **por índice**.

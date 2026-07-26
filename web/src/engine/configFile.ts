@@ -63,11 +63,17 @@ export interface ArenaConfigFile {
   training?: {
     iterations?: number; // int 2..10
     minGain?: number; // 0..100
-    duels?: boolean;
-    duelTopK?: number; // int 0..32
     holdoutRatio?: number; // 0..0.5
     feedbackDriven?: boolean;
+    /** Aceito aqui por compat; o lugar canônico é a raiz do arquivo. */
+    duels?: boolean;
+    /** Aceito aqui por compat; o lugar canônico é a raiz do arquivo. */
+    finalists?: number; // int 0..12
   };
+  /** Liga/desliga a fase de finais (duelos). Default: true onde há gabarito. */
+  duels?: boolean;
+  /** Nº de finalistas que duelam entre si em cada cenário (0 = sem finais). Default 3. */
+  finalists?: number; // int 0..12
   judging?: { reference?: boolean; passes?: 1 | 2 };
   limits?: { maxOutputTokens?: number; timeoutMs?: number; concurrency?: number }; // int positivos
   compliance?: { area: string; includeRessalvas: boolean };
@@ -204,18 +210,27 @@ const arenaConfigSchema = z
               .max(10, 'não pode passar de 10')
               .optional(),
             minGain: z.number('deve ser número').min(0, 'mínimo 0').max(100, 'máximo 100').optional(),
+            holdoutRatio: z.number('deve ser número').min(0, 'mínimo 0').max(0.5, 'máximo 0.5').optional(),
+            feedbackDriven: z.boolean('deve ser boolean').optional(),
+            // Compat: `duels`/`finalists` valem para todos os modos e moram na
+            // raiz; aceitos aqui para não invalidar arquivos antigos.
             duels: z.boolean('deve ser boolean').optional(),
-            duelTopK: z
+            finalists: z
               .number('deve ser número inteiro')
               .int('deve ser número inteiro')
               .min(0, 'mínimo 0')
-              .max(32, 'máximo 32')
+              .max(12, 'máximo 12')
               .optional(),
-            holdoutRatio: z.number('deve ser número').min(0, 'mínimo 0').max(0.5, 'máximo 0.5').optional(),
-            feedbackDriven: z.boolean('deve ser boolean').optional(),
           },
           'training deve ser um objeto',
         )
+        .optional(),
+      duels: z.boolean('deve ser boolean').optional(),
+      finalists: z
+        .number('deve ser número inteiro')
+        .int('deve ser número inteiro')
+        .min(0, 'mínimo 0')
+        .max(12, 'máximo 12')
         .optional(),
       judging: z
         .object(
