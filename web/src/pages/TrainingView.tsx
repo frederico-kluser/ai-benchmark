@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import { ArrowRight, Download } from 'lucide-react';
 import type { RunRecord, SessionRecord, StageSpec } from '../api';
 import {
   cacheSession,
@@ -13,8 +14,32 @@ import {
   downloadScenarioPack,
 } from '../api';
 import { useTheme } from '../theme';
-import { applyEvent, denseStages, rankColor, ScoreHeatmap, FinalsPanel, SectionHead } from './runShared';
+import { applyEvent, denseStages, rankColor, ScoreHeatmap, FinalsPanel } from './runShared';
 import { diffLines } from '../diff';
+import {
+  SmoothTabs,
+  SmoothTabsList,
+  SmoothTabsTab,
+  SmoothTabsPanels,
+  SmoothTabsPanel,
+} from '@/components/motion-ui/smooth-tabs';
+import { CopyButton } from '@/components/motion-ui/copy-button';
+import { Sparkline } from '@/components/motion-ui/sparkline';
+import { Skeleton } from '@/components/motion-ui/skeleton';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import {
+  Banner,
+  DiffView,
+  EmptyState,
+  Pre,
+  Screen,
+  SectionHead,
+  StatusPill,
+  Tag,
+} from '../components/primitives';
+import { useToasts } from '../components/AppShell';
+import { cn } from '@/lib/utils';
 
 // ---------------------------------------------------------------------------
 // Cockpit de treino: acompanha a sessao inteira sem precisar entrar em cada
@@ -62,47 +87,80 @@ function EvolutionHeatmap({
   }, [rounds]);
 
   if (!cols.length || !vars.length) return null;
+
+  const gridStyle = {
+    gridTemplateColumns: `minmax(8rem, 1fr) repeat(${cols.length}, 3rem) 5rem`,
+  };
+
   return (
-    <div className="hm">
-      <div className="hm-scroll">
-        <div className="hm-row hm-head">
-          <div className="hm-name" />
-          {cols.map((col) => (
-            <div className="hm-col" key={col.iteration}>
-              {col.isHoldout ? 'H' : `R${col.iteration + 1}`}
-            </div>
-          ))}
-        </div>
-        {vars.map((v) => (
-          <div className="hm-row" key={v.id}>
-            <div className="hm-name">
-              {v.label}
-              {v.isOriginal && <span className="control-tag">base</span>}
-            </div>
-            {cols.map((col) => {
-              const rodada = col.isHoldout ? 'Holdout' : `Rodada ${col.iteration + 1}`;
-              const score = col.scores[v.id];
-              if (score === undefined) {
-                return (
-                  <div className="hm-cell none" key={col.iteration} title={`${rodada}: não participou`}>
-                    ·
-                  </div>
-                );
-              }
-              const rc = rankColor(col.place.get(v.id) ?? 1, col.total, dark);
-              return (
-                <div
-                  className="hm-cell"
-                  key={col.iteration}
-                  style={{ background: rc.soft, color: rc.text }}
-                  title={`${rodada}: judge-score ${score.toFixed(1)}`}
-                >
-                  {Math.round(score)}
-                </div>
-              );
-            })}
+    <div className="rounded-xl bg-card ring-1 ring-foreground/10">
+      <div className="scroll-slim overflow-x-auto p-3">
+        <div className="min-w-fit">
+          <div className="grid items-center gap-1 pb-1.5" style={gridStyle}>
+            <div />
+            {cols.map((col) => (
+              <div
+                key={col.iteration}
+                className="grid h-6 place-items-center text-[11px] text-muted-foreground tabular"
+              >
+                {col.isHoldout ? 'H' : `R${col.iteration + 1}`}
+              </div>
+            ))}
+            <div className="pr-1 text-right text-[11px] text-muted-foreground">curva</div>
           </div>
-        ))}
+
+          {vars.map((v) => {
+            // A trilha da variante ao longo das rodadas alimenta a sparkline.
+            const history = cols.map((c) => c.scores[v.id]).filter((s): s is number => s !== undefined);
+            return (
+              <div key={v.id} className="grid items-center gap-1 py-0.5" style={gridStyle}>
+                <div className="flex min-w-0 items-center gap-1.5 pr-3">
+                  <span className="truncate text-[13px]">{v.label}</span>
+                  {v.isOriginal && <Tag>base</Tag>}
+                </div>
+                {cols.map((col) => {
+                  const rodada = col.isHoldout ? 'Holdout' : `Rodada ${col.iteration + 1}`;
+                  const score = col.scores[v.id];
+                  if (score === undefined) {
+                    return (
+                      <div
+                        key={col.iteration}
+                        className="grid h-7 place-items-center rounded-[5px] bg-muted/50 text-[13px] text-muted-foreground"
+                        title={`${rodada}: não participou`}
+                      >
+                        ·
+                      </div>
+                    );
+                  }
+                  const rc = rankColor(col.place.get(v.id) ?? 1, col.total, dark);
+                  return (
+                    <div
+                      key={col.iteration}
+                      className="grid h-7 place-items-center rounded-[5px] text-[13px] font-medium tabular"
+                      style={{ background: rc.soft, color: rc.text }}
+                      title={`${rodada}: judge-score ${score.toFixed(1)}`}
+                    >
+                      {Math.round(score)}
+                    </div>
+                  );
+                })}
+                <div className="flex justify-end pr-1">
+                  {history.length > 1 ? (
+                    <Sparkline
+                      history={history}
+                      width={64}
+                      height={22}
+                      tone="primary"
+                      label={`Evolução de ${v.label}`}
+                    />
+                  ) : (
+                    <span className="text-[12px] text-muted-foreground">—</span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
@@ -125,6 +183,7 @@ function BestPromptStudio({
   sessionId: string;
   holdoutAt?: number;
 }) {
+  const { notify } = useToasts();
   // Variantes de cada rodada, ordenadas por judge-score (sem score vai pro fim).
   const data = useMemo(
     () =>
@@ -147,13 +206,11 @@ function BestPromptStudio({
 
   const [selRunId, setSelRunId] = useState<string | undefined>(defaultRunId ?? data[data.length - 1]?.runId);
   const [selCid, setSelCid] = useState<string | undefined>(defaultCid);
-  const [showDiff, setShowDiff] = useState(true);
-  const [copied, setCopied] = useState(false);
+  const [view, setView] = useState<'diff' | 'prompt'>('diff');
   const [saveOpen, setSaveOpen] = useState(false);
   const [saveName, setSaveName] = useState('');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
 
   // Quem o usuario ja escolheu a mao manda; enquanto ele nao escolheu, a
   // selecao SEGUE o campeao sugerido. Acompanhando a sessao ao vivo, `defaultRunId`
@@ -183,21 +240,12 @@ function BestPromptStudio({
   useEffect(() => {
     setSaveOpen(false);
     setSaved(false);
-    setSaveError(null);
   }, [selRunId, selCid]);
-
-  function copy() {
-    if (!selPrompt) return;
-    navigator.clipboard?.writeText(selPrompt).catch(() => undefined);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  }
 
   function openSaveForm() {
     if (!selRound) return;
     const tag = selRound.iteration === holdoutAt ? 'holdout' : `rodada ${selRound.iteration + 1}`;
     setSaveName(`Prompt ${selVariant?.label ?? selCid ?? 'variante'} · ${tag}`);
-    setSaveError(null);
     setSaveOpen(true);
   }
 
@@ -205,7 +253,6 @@ function BestPromptStudio({
     const name = saveName.trim();
     if (!selRound || !selPrompt || !name || saving) return;
     setSaving(true);
-    setSaveError(null);
     try {
       await savePrompt({
         name,
@@ -220,8 +267,9 @@ function BestPromptStudio({
       });
       setSaved(true);
       setSaveOpen(false);
+      notify('Prompt salvo na biblioteca.');
     } catch {
-      setSaveError('Não foi possível salvar na biblioteca.');
+      notify('Não foi possível salvar na biblioteca.', 'error');
     } finally {
       setSaving(false);
     }
@@ -230,108 +278,122 @@ function BestPromptStudio({
   if (!selRound) return null;
 
   return (
-    <div className="card studio-card">
-      <div className="studio-controls">
-        <label className="studio-field">
-          <span className="studio-field-label">Rodada</span>
-          <select
-            className="input studio-select"
-            value={selRunId ?? ''}
-            onChange={(e) => {
-              const rid = e.target.value;
-              const r = data.find((d) => d.runId === rid);
-              escolher(rid, r?.variants[0]?.id);
-            }}
-          >
-            {data.map((d) => (
-              <option key={d.runId} value={d.runId}>
-                {d.iteration === holdoutAt ? 'Holdout' : `Rodada ${d.iteration + 1}`}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
+    <div className="rounded-xl bg-card p-4 ring-1 ring-foreground/10">
+      <label className="flex flex-wrap items-center gap-2">
+        <span className="text-sm font-medium">Rodada</span>
+        <select
+          className="h-8 rounded-lg border border-input bg-background px-2 text-[13px] outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+          value={selRunId ?? ''}
+          onChange={(e) => {
+            const rid = e.target.value;
+            const r = data.find((d) => d.runId === rid);
+            escolher(rid, r?.variants[0]?.id);
+          }}
+        >
+          {data.map((d) => (
+            <option key={d.runId} value={d.runId}>
+              {d.iteration === holdoutAt ? 'Holdout' : `Rodada ${d.iteration + 1}`}
+            </option>
+          ))}
+        </select>
+      </label>
 
-      <div className="studio-variants">
+      <div className="mt-3 flex flex-col gap-1.5">
         {selRound.variants.map((v, idx) => (
           <button
             type="button"
             key={v.id}
-            className={`studio-variant ${v.id === selCid ? 'selected' : ''}`}
             onClick={() => escolher(undefined, v.id)}
             disabled={!v.systemPrompt}
             title={v.systemPrompt ? '' : 'Esta variante não tem system prompt próprio.'}
+            className={cn(
+              'flex items-center gap-3 rounded-lg border px-3 py-2 text-left transition-colors',
+              v.id === selCid ? 'border-primary bg-primary/10' : 'border-border hover:bg-muted',
+              !v.systemPrompt && 'cursor-not-allowed opacity-50',
+            )}
           >
-            <span className="studio-variant-place">{idx + 1}º</span>
-            <span className="studio-variant-label">
-              {v.label}
-              {v.isOriginal && <span className="control-tag">base</span>}
+            <span className="w-6 shrink-0 font-mono text-[12px] text-muted-foreground tabular">{idx + 1}º</span>
+            <span className="flex min-w-0 flex-1 items-center gap-1.5">
+              <span className="truncate text-[13px]">{v.label}</span>
+              {v.isOriginal && <Tag>base</Tag>}
             </span>
-            <span className="muted" style={{ fontSize: 12 }}>
+            <span className="shrink-0 text-[12px] text-muted-foreground tabular">
               {v.score === undefined ? '—' : `${Math.round(v.score)} pts`}
             </span>
           </button>
         ))}
       </div>
 
-      <div className="studio-toolbar">
-        <div className="tabs">
-          <button className={`tab ${!showDiff ? 'active' : ''}`} onClick={() => setShowDiff(false)}>Prompt</button>
-          <button className={`tab ${showDiff ? 'active' : ''}`} onClick={() => setShowDiff(true)}>Diff vs. original</button>
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button type="button" className="btn-secondary" onClick={openSaveForm} disabled={!selPrompt || saved}>
-            {saved ? 'Salvo ✓' : 'Salvar na biblioteca'}
-          </button>
-          <button type="button" className="btn-secondary" onClick={copy} disabled={!selPrompt}>
-            {copied ? 'Copiado!' : 'Copiar'}
-          </button>
-        </div>
-      </div>
+      {!selPrompt ? (
+        <p className="mt-4 text-[13px] text-muted-foreground">
+          Esta variante usa o contexto do cenário (sem system prompt próprio).
+        </p>
+      ) : (
+        <SmoothTabs
+          value={view}
+          onValueChange={(v) => setView(v as 'diff' | 'prompt')}
+          className="mt-4 flex flex-col gap-3"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <SmoothTabsList ariaLabel="Ver prompt ou diff" className="w-fit">
+              <SmoothTabsTab value="diff" className="px-3 py-1.5 text-[13px]">
+                Diff vs. original
+              </SmoothTabsTab>
+              <SmoothTabsTab value="prompt" className="px-3 py-1.5 text-[13px]">
+                Prompt
+              </SmoothTabsTab>
+            </SmoothTabsList>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={openSaveForm} disabled={saved}>
+                {saved ? 'Salvo' : 'Salvar na biblioteca'}
+              </Button>
+              <CopyButton
+                value={selPrompt}
+                label="Copiar prompt"
+                copiedLabel="Prompt copiado"
+                className="h-7 rounded-lg border border-border px-2.5 text-[0.8rem]"
+              >
+                Copiar
+              </CopyButton>
+            </div>
+          </div>
+
+          <SmoothTabsPanels>
+            <SmoothTabsPanel value="diff">
+              <DiffView diff={diff} />
+            </SmoothTabsPanel>
+            <SmoothTabsPanel value="prompt">
+              <Pre>{selPrompt}</Pre>
+            </SmoothTabsPanel>
+          </SmoothTabsPanels>
+        </SmoothTabs>
+      )}
 
       {saveOpen && (
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <input
-            className="input"
-            style={{ flex: '1 1 260px', width: 'auto' }}
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <Input
+            className="h-8 min-w-[16rem] flex-1"
+            aria-label="Nome na biblioteca"
             value={saveName}
             onChange={(e) => setSaveName(e.target.value)}
             placeholder="Nome na biblioteca"
           />
-          <button
-            type="button"
-            className="btn-primary"
-            style={{ fontSize: 14, padding: '10px 18px' }}
-            onClick={saveToLibrary}
-            disabled={saving || !saveName.trim()}
-          >
+          <Button size="sm" onClick={() => void saveToLibrary()} disabled={saving || !saveName.trim()}>
             {saving ? 'Salvando…' : 'Salvar'}
-          </button>
-          <button type="button" className="btn-secondary" onClick={() => setSaveOpen(false)}>
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => setSaveOpen(false)}>
             Cancelar
-          </button>
-        </div>
-      )}
-      {saveError && <div className="banner banner-error" style={{ marginBottom: 0 }}>{saveError}</div>}
-      {saved && (
-        <div className="muted" style={{ fontSize: 13 }}>
-          Salvo ✓ · <Link to="/prompts">ver na biblioteca →</Link>
+          </Button>
         </div>
       )}
 
-      {!selPrompt ? (
-        <div className="muted" style={{ fontSize: 13 }}>Esta variante usa o contexto do cenário (sem system prompt próprio).</div>
-      ) : showDiff ? (
-        <pre className="context-pre studio-diff">
-          {diff.map((l, i) => (
-            <div key={i} className={`diff-line diff-${l.type}`}>
-              <span className="diff-gutter">{l.type === 'add' ? '+' : l.type === 'del' ? '−' : ' '}</span>
-              {l.text || ' '}
-            </div>
-          ))}
-        </pre>
-      ) : (
-        <pre className="context-pre" style={{ maxHeight: 360 }}>{selPrompt}</pre>
+      {saved && (
+        <p className="mt-3 text-[13px] text-muted-foreground">
+          Salvo ·{' '}
+          <Link className="text-primary underline-offset-4 hover:underline" to="/prompts">
+            ver na biblioteca
+          </Link>
+        </p>
       )}
     </div>
   );
@@ -340,8 +402,8 @@ function BestPromptStudio({
 export function TrainingView() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
-  const theme = useTheme();
-  const dark = theme === 'dark';
+  const { resolved } = useTheme();
+  const dark = resolved === 'dark';
   const [session, setSession] = useState<SessionRecord | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [liveRun, setLiveRun] = useState<RunRecord | null>(null);
@@ -485,8 +547,24 @@ export function TrainingView() {
     return (session?.pinnedStages ?? []).filter((s) => s.question);
   }, [rounds, session]);
 
-  if (error) return <div className="screen center-screen"><div className="banner banner-error">{error}</div></div>;
-  if (!session) return <div className="screen center-screen"><div className="loading-note">Carregando…</div></div>;
+  if (error) {
+    return (
+      <Screen wide>
+        <Banner tone="error">{error}</Banner>
+      </Screen>
+    );
+  }
+
+  if (!session) {
+    return (
+      <Screen wide>
+        <div className="flex flex-col gap-4">
+          <Skeleton className="h-24 w-full rounded-xl" />
+          <Skeleton className="h-64 w-full rounded-xl" />
+        </div>
+      </Screen>
+    );
+  }
 
   const done = session.bestPromptByIteration.length;
   const planned = session.config.iterations ?? 0;
@@ -535,51 +613,72 @@ export function TrainingView() {
   }
 
   return (
-    <div className="screen">
-      <div className="card rv-head">
-        <div className="run-header-main">
-          <div className="run-title-row">
-            <h1 className="run-title">Treino <code>{session.id.slice(0, 8)}</code></h1>
-            <span className={`pill pill-${session.status}`}>{session.status}</span>
-            {isRunning && <span className="live-pill"><span className="dot" />AO VIVO</span>}
+    <Screen wide>
+      <header className="rounded-xl bg-card p-5 ring-1 ring-foreground/10">
+        <div className="flex flex-wrap items-start justify-between gap-6">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <h1 className="font-heading text-xl font-medium tracking-tight">
+                Treino <code className="font-mono text-[17px] text-muted-foreground">{session.id.slice(0, 8)}</code>
+              </h1>
+              <StatusPill status={session.status} />
+            </div>
+            <p className="mt-1.5 max-w-prose text-sm text-muted-foreground">
+              {session.config.theme} ·{' '}
+              <code className="font-mono text-[12.5px]">{session.config.contestantModelId}</code>
+            </p>
           </div>
-          <div className="run-theme">
-            {session.config.theme} · <code className="mono-id">{session.config.contestantModelId}</code>
+
+          <div className="flex shrink-0 flex-wrap items-start gap-6">
+            <div className="min-w-[5rem]">
+              <div className="text-[11px] tracking-wide text-muted-foreground uppercase">rodada</div>
+              <div className="mt-0.5 font-heading text-lg font-medium tabular">
+                {done}/{planned}
+              </div>
+            </div>
+            <div className="min-w-[5rem]">
+              <div className="text-[11px] tracking-wide text-muted-foreground uppercase">custo</div>
+              <div className="mt-0.5 font-heading text-lg font-medium tabular">
+                ${session.totalCostUsd.toFixed(4)}
+              </div>
+            </div>
           </div>
         </div>
-        <div className="rv-stats">
-          <div className="rv-stat">
-            <span className="rv-stat-label">rodada</span>
-            {done}/{planned}
-          </div>
-          <div className="rv-stat">
-            <span className="rv-stat-label">custo</span>
-            ${session.totalCostUsd.toFixed(4)}
-          </div>
-          <button type="button" className="btn-secondary" onClick={downloadPack} disabled={!packScenarios.length}>
+
+        <div className="mt-4 border-t border-border pt-4">
+          <Button variant="outline" size="sm" onClick={downloadPack} disabled={!packScenarios.length}>
+            <Download aria-hidden="true" />
             Pacote
-          </button>
+          </Button>
         </div>
-      </div>
+      </header>
 
       {session.status === 'error' && session.error && (
-        <div className="banner banner-error"><strong>Treino falhou:</strong> {session.error}</div>
+        <Banner tone="error" className="mt-4">
+          <strong>Treino falhou:</strong> {session.error}
+        </Banner>
       )}
       {session.status === 'aborted' && (
-        <div className="banner banner-neutral">Treino interrompido — o servidor reiniciou enquanto ele rodava.</div>
+        <Banner className="mt-4">Treino interrompido — o servidor reiniciou enquanto ele rodava.</Banner>
       )}
       {gates.length > 0 && (
-        <div className={`banner ${session.holdout?.regressed ? 'banner-error' : 'banner-neutral'}`}>
+        <Banner tone={session.holdout?.regressed ? 'error' : 'neutral'} className="mt-4">
           {gates.join(' · ')}
-        </div>
+        </Banner>
       )}
 
       {roundShown ? (
         <>
           <SectionHead
-            glyph="◱"
-            tone="teal"
-            status={<Link to={`/runs/${roundShown.id}`}>detalhe →</Link>}
+            status={
+              <Link
+                className="inline-flex items-center gap-1 text-primary underline-offset-4 hover:underline"
+                to={`/runs/${roundShown.id}`}
+              >
+                detalhe
+                <ArrowRight className="size-3.5" aria-hidden="true" />
+              </Link>
+            }
           >
             {roundLabel}
             {isRunning && ' — ao vivo'}
@@ -592,25 +691,25 @@ export function TrainingView() {
 
           {showFinals && (
             <>
-              <SectionHead glyph="▲" tone="orange" style={{ marginTop: 30 }}>Final da rodada</SectionHead>
+              <SectionHead>Final da rodada</SectionHead>
               <FinalsPanel record={roundShown} progress={duelProgress} />
             </>
           )}
         </>
       ) : (
-        <div className="card" style={{ color: 'var(--text-3)' }}>Preparando a rodada…</div>
+        <EmptyState>Preparando a rodada…</EmptyState>
       )}
 
       {rounds.length > 1 && (
         <>
-          <SectionHead glyph="↗" tone="blue" style={{ marginTop: 30 }}>Evolução</SectionHead>
+          <SectionHead>Evolução</SectionHead>
           <EvolutionHeatmap rounds={rounds} dark={dark} holdoutAt={holdoutAt} />
         </>
       )}
 
       {rounds.length > 0 && (
         <>
-          <SectionHead glyph="✓" tone="purple" style={{ marginTop: 30 }}>Melhor prompt</SectionHead>
+          <SectionHead>Melhor prompt</SectionHead>
           <BestPromptStudio
             rounds={rounds}
             originalPrompt={originalPrompt}
@@ -621,6 +720,6 @@ export function TrainingView() {
           />
         </>
       )}
-    </div>
+    </Screen>
   );
 }

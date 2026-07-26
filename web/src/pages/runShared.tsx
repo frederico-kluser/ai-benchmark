@@ -2,16 +2,37 @@
 // TrainingView (cockpit de treino). A UNICA visualizacao de progresso/resultado
 // e o heatmap (cenario x variante); o bloco de finais so aparece no fim.
 import { useMemo } from 'react';
-import type { CSSProperties, KeyboardEvent, ReactNode } from 'react';
+import type { KeyboardEvent } from 'react';
 import type { RunRecord, StageRecord, Verdict } from '../api';
 import { normalizeContestants } from '../api';
 import { useTheme } from '../theme';
+import {
+  Accordion,
+  AccordionItem,
+  AccordionTrigger,
+  AccordionPanel,
+} from '@/components/motion-ui/accordion';
+import { ProgressBar } from '@/components/motion-ui/progress-bar';
+import { Tag } from '../components/primitives';
+import { cn } from '@/lib/utils';
 
-// Veredito ternario -> rotulo + classe CSS (ok/partial/bad).
-export const VERDICT_META: Record<Verdict, { label: string; cls: string }> = {
-  resolve: { label: 'resolve', cls: 'ok' },
-  parcial: { label: 'parcial', cls: 'partial' },
-  nao: { label: 'não resolve', cls: 'bad' },
+// Veredito ternario -> rotulo + classes do token semantico correspondente.
+export const VERDICT_META: Record<Verdict, { label: string; cell: string; pill: string }> = {
+  resolve: {
+    label: 'resolve',
+    cell: 'bg-resolve-soft text-resolve',
+    pill: 'border-resolve/30 bg-resolve-soft/60 text-resolve',
+  },
+  parcial: {
+    label: 'parcial',
+    cell: 'bg-parcial-soft text-parcial',
+    pill: 'border-parcial/30 bg-parcial-soft/60 text-parcial',
+  },
+  nao: {
+    label: 'não resolve',
+    cell: 'bg-nao-soft text-nao',
+    pill: 'border-nao/30 bg-nao-soft/60 text-nao',
+  },
 };
 
 /** Glifo de cada veredito no heatmap (pendente = ponto). */
@@ -46,7 +67,8 @@ export interface RankColor {
   text: string;
 }
 
-// Verde (melhor) -> vermelho (pior), em HSL. `pos` é 1-based.
+// Verde (melhor) -> vermelho (pior), em HSL. `pos` é 1-based. Escala de DADO
+// (posição no ranking), por isso é uma rampa contínua e não um token do tema.
 export function rankColor(pos: number, total: number, dark: boolean): RankColor {
   const tl = dark ? 72 : 34;
   const sa = dark ? 0.22 : 0.15;
@@ -56,36 +78,6 @@ export function rankColor(pos: number, total: number, dark: boolean): RankColor 
   const frac = (pos - 1) / (total - 1);
   const hue = Math.round(145 - (145 - 6) * frac);
   return { solid: `hsl(${hue} 62% 44%)`, soft: `hsl(${hue} 75% 50% / ${sa})`, text: `hsl(${hue} 58% ${tl}%)` };
-}
-
-// ---------------------------------------------------------------------------
-// Cabecalho de secao no mesmo idioma das listas agrupadas: tile de icone
-// colorido + titulo. Os glifos sao Unicode — SF Symbols e proprietario e nao
-// pode ser embutido; emoji esta fora por decisao de identidade.
-// ---------------------------------------------------------------------------
-
-/** Tom semantico do tile (ver `.tile-*` em styles.css). */
-export type TileTone = 'teal' | 'purple' | 'indigo' | 'blue' | 'orange' | 'gray';
-
-interface SectionHeadProps {
-  /** Glifo do tile — decorativo, entao `aria-hidden` (o titulo ja nomeia). */
-  glyph: string;
-  tone: TileTone;
-  /** Titulo da secao. */
-  children: ReactNode;
-  /** Complemento discreto a direita (link "detalhe →", contagem). */
-  status?: ReactNode;
-  style?: CSSProperties;
-}
-
-export function SectionHead({ glyph, tone, children, status, style }: SectionHeadProps) {
-  return (
-    <div className="ios-head-inline" style={style}>
-      <span className={`ios-tile tile-${tone}`} aria-hidden="true">{glyph}</span>
-      <span className="ios-group-title">{children}</span>
-      {status && <span className="ios-group-status">{status}</span>}
-    </div>
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -169,6 +161,9 @@ interface ScoreHeatmapProps {
  * A ÚNICA visualização de progresso/resultado: linhas = variantes (ordem
  * estável), colunas = cenários, célula = ✓ (resolve) / ◐ (parcial) / ✕ (não) /
  * · (pendente). Coluna final = score 0–100 + contagem `n✓ n◐ n✕`.
+ *
+ * Não sai do catálogo: o Motion UI tem `sparkline` como único gráfico, e uma
+ * matriz cenário × variante não é nenhuma das 35 peças. Daí a grade explícita.
  */
 export function ScoreHeatmap({ record, ranked = false, onStageClick }: ScoreHeatmapProps) {
   const { rows, stages } = useMemo(() => heatRows(record), [record]);
@@ -197,56 +192,86 @@ export function ScoreHeatmap({ record, ranked = false, onStageClick }: ScoreHeat
 
   if (!linhas.length || !stages.length) {
     return (
-      <div className="hm">
-        <div className="hm-legend">Aguardando os primeiros resultados…</div>
+      <div className="rounded-xl bg-card px-4 py-10 text-center text-sm text-muted-foreground ring-1 ring-foreground/10">
+        Aguardando os primeiros resultados…
       </div>
     );
   }
 
+  // Grade derivada do NÚMERO de cenários — é dado, não decoração de layout.
+  const gridStyle = {
+    gridTemplateColumns: `minmax(8rem, 1fr) repeat(${stages.length}, 1.75rem) 5rem`,
+  };
+  const cellBase =
+    'grid h-7 place-items-center rounded-[5px] text-[13px] leading-none select-none';
+
   return (
-    <div className="hm">
-      <div className="hm-legend">✓ resolve · ◐ parcial · ✕ não resolve · · pendente</div>
-      <div className="hm-scroll">
-        <div className="hm-row hm-head">
-          <div className="hm-name" />
-          {stages.map((s, i) => (
+    <div className="rounded-xl bg-card ring-1 ring-foreground/10">
+      <div className="border-b border-border px-4 py-2 text-[12px] text-muted-foreground">
+        ✓ resolve · ◐ parcial · ✕ não resolve · · pendente
+      </div>
+      <div className="scroll-slim overflow-x-auto p-3">
+        <div className="min-w-fit">
+          <div className="grid items-center gap-1 pb-1.5" style={gridStyle}>
+            <div />
+            {stages.map((s, i) => (
+              <div
+                key={s.index}
+                title={onStageClick ? `Cenário ${i + 1} — clique para abrir` : `Cenário ${i + 1}`}
+                className={cn(
+                  'grid h-6 place-items-center rounded-[5px] text-[11px] text-muted-foreground tabular',
+                  onStageClick && 'cursor-pointer hover:bg-muted focus-visible:bg-muted focus-visible:outline-none',
+                )}
+                {...clickProps(s.index)}
+              >
+                {i + 1}
+              </div>
+            ))}
             <div
-              className={`hm-col${onStageClick ? ' hm-clickable' : ''}`}
-              key={s.index}
-              title={onStageClick ? `Cenário ${i + 1} — clique para abrir` : undefined}
-              {...clickProps(s.index)}
+              className="pr-1 text-right text-[11px] text-muted-foreground"
+              title="(resolve + ½·parcial) ÷ julgados × 100"
             >
-              {i + 1}
-            </div>
-          ))}
-          <div className="hm-score-head" title="(resolve + ½·parcial) ÷ julgados × 100">score</div>
-        </div>
-        {linhas.map((row) => (
-          <div className="hm-row" key={row.contestantId}>
-            <div className="hm-name" title={row.label}>
-              <span className="hm-name-text">{row.label}</span>
-              {row.isControl && <span className="control-tag">base</span>}
-              {row.isFinalist && <span className="finalist-tag">final</span>}
-            </div>
-            {stages.map((s, i) => {
-              const v = row.verdicts[i];
-              return (
-                <div
-                  className={`hm-cell ${v ? VERDICT_META[v].cls : 'none'}${onStageClick ? ' hm-clickable' : ''}`}
-                  key={s.index}
-                  title={`Cenário ${i + 1}: ${v ? VERDICT_META[v].label : 'pendente'}${onStageClick ? ' — clique para abrir' : ''}`}
-                  {...clickProps(s.index)}
-                >
-                  {v ? VERDICT_GLYPH[v] : '·'}
-                </div>
-              );
-            })}
-            <div className="hm-score">
-              {row.score === null ? '—' : row.score.toFixed(0)}
-              <span className="hm-counts">{row.resolve}✓ {row.parcial}◐ {row.nao}✕</span>
+              score
             </div>
           </div>
-        ))}
+
+          {linhas.map((row) => (
+            <div key={row.contestantId} className="grid items-center gap-1 py-0.5" style={gridStyle}>
+              <div className="flex min-w-0 items-center gap-1.5 pr-3" title={row.label}>
+                <span className="truncate text-[13px]">{row.label}</span>
+                {row.isControl && <Tag>base</Tag>}
+                {row.isFinalist && (
+                  <Tag className="border-primary/30 bg-primary/10 text-primary">final</Tag>
+                )}
+              </div>
+              {stages.map((s, i) => {
+                const v = row.verdicts[i];
+                return (
+                  <div
+                    key={s.index}
+                    title={`Cenário ${i + 1}: ${v ? VERDICT_META[v].label : 'pendente'}${onStageClick ? ' — clique para abrir' : ''}`}
+                    className={cn(
+                      cellBase,
+                      v ? VERDICT_META[v].cell : 'bg-muted/50 text-muted-foreground',
+                      onStageClick && 'cursor-pointer focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+                    )}
+                    {...clickProps(s.index)}
+                  >
+                    {v ? VERDICT_GLYPH[v] : '·'}
+                  </div>
+                );
+              })}
+              <div className="pr-1 text-right leading-tight">
+                <span className="text-[13px] font-medium tabular">
+                  {row.score === null ? '—' : row.score.toFixed(0)}
+                </span>
+                <span className="block text-[10px] text-muted-foreground tabular">
+                  {row.resolve}✓ {row.parcial}◐ {row.nao}✕
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -290,8 +315,8 @@ interface FinalsPanelProps {
  * confrontos.
  */
 export function FinalsPanel({ record, progress }: FinalsPanelProps) {
-  const theme = useTheme();
-  const dark = theme === 'dark';
+  const { resolved } = useTheme();
+  const dark = resolved === 'dark';
   const stagesComDuelos = useMemo(
     () => denseStages(record.stages).filter((s) => s.duels),
     [record],
@@ -344,41 +369,71 @@ export function FinalsPanel({ record, progress }: FinalsPanelProps) {
 
   if (!finalistIds.length && !stagesComDuelos.length) return null;
 
+  const running = progress && progress.done < progress.total;
+
   return (
-    <div className="finals">
-      {progress && progress.done < progress.total && (
-        <div className="finals-progress">Duelos {progress.done}/{progress.total}</div>
-      )}
-      {rows.map((r, i) => (
-        <div className="finals-row" key={r.id}>
-          <span className="place-badge" style={{ background: rankColor(i + 1, rows.length, dark).solid }}>
-            {i + 1}º
-          </span>
-          <span className="finals-label" title={r.label}>{r.label}</span>
-          {typeof r.points === 'number' ? (
-            <>
-              <span className="finals-stat">{r.points} pts</span>
-              <span className="finals-stat">{r.wins}–{r.ties}–{r.losses}</span>
-            </>
-          ) : (
-            <span className="finals-stat" title="judge-score">{(r.score ?? 0).toFixed(0)}</span>
-          )}
+    <div className="rounded-xl bg-card ring-1 ring-foreground/10">
+      {running && (
+        <div className="border-b border-border px-4 py-3">
+          <ProgressBar
+            value={progress.done / Math.max(1, progress.total)}
+            size="sm"
+            progressbar
+            label="Duelos"
+            valueLabel={`${progress.done}/${progress.total}`}
+            aria-label="Progresso dos duelos"
+          />
         </div>
-      ))}
+      )}
+
+      <ol className="p-2">
+        {rows.map((r, i) => (
+          <li key={r.id} className="flex items-center gap-3 rounded-lg px-2 py-2">
+            <span
+              className="grid size-6 shrink-0 place-items-center rounded-full text-[11px] font-semibold text-white"
+              style={{ background: rankColor(i + 1, rows.length, dark).solid }}
+            >
+              {i + 1}
+            </span>
+            <span className="min-w-0 flex-1 truncate text-sm" title={r.label}>
+              {r.label}
+            </span>
+            {typeof r.points === 'number' ? (
+              <>
+                <span className="shrink-0 text-[13px] font-medium tabular">{r.points} pts</span>
+                <span className="w-16 shrink-0 text-right text-[12px] text-muted-foreground tabular">
+                  {r.wins}–{r.ties}–{r.losses}
+                </span>
+              </>
+            ) : (
+              <span className="shrink-0 text-[13px] tabular" title="judge-score">
+                {(r.score ?? 0).toFixed(0)}
+              </span>
+            )}
+          </li>
+        ))}
+      </ol>
+
       {pares.length > 0 && (
-        <details className="finals-details">
-          <summary>Confrontos</summary>
-          <div style={{ color: 'var(--text-2)', fontSize: 13 }}>
-            {pares.map((p) => (
-              <div key={p.key}>
-                {p.labelA} × {p.labelB} —{' '}
-                {p.winsA === p.winsB
-                  ? `empate (${p.winsA}–${p.winsB} de ${p.total})`
-                  : `venceu ${p.winsA > p.winsB ? p.labelA : p.labelB} (${Math.max(p.winsA, p.winsB)} de ${p.total})`}
-              </div>
-            ))}
-          </div>
-        </details>
+        <Accordion className="border-t border-border">
+          <AccordionItem value="confrontos">
+            <AccordionTrigger className="px-4 py-3 text-[13px]" headingLevel={3}>
+              Confrontos
+            </AccordionTrigger>
+            <AccordionPanel className="px-4 pb-4 text-[13px] text-muted-foreground">
+              <ul className="space-y-1">
+                {pares.map((p) => (
+                  <li key={p.key}>
+                    {p.labelA} × {p.labelB} —{' '}
+                    {p.winsA === p.winsB
+                      ? `empate (${p.winsA}–${p.winsB} de ${p.total})`
+                      : `venceu ${p.winsA > p.winsB ? p.labelA : p.labelB} (${Math.max(p.winsA, p.winsB)} de ${p.total})`}
+                  </li>
+                ))}
+              </ul>
+            </AccordionPanel>
+          </AccordionItem>
+        </Accordion>
       )}
     </div>
   );

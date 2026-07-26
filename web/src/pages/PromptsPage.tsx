@@ -1,8 +1,22 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { ArrowRight, Pencil, Search } from 'lucide-react';
 import type { SavedPrompt } from '../api';
 import { deletePrompt, listPrompts, updatePrompt } from '../api';
 import { diffLines } from '../diff';
+import {
+  Accordion,
+  AccordionItem,
+  AccordionTrigger,
+  AccordionPanel,
+} from '@/components/motion-ui/accordion';
+import { CopyButton } from '@/components/motion-ui/copy-button';
+import { HoldToConfirmButton } from '@/components/motion-ui/hold-to-confirm';
+import { SkeletonResolveList, SkeletonResolveRow, Skeleton } from '@/components/motion-ui/skeleton';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { DiffView, EmptyState, MiniLabel, PageHeader, Pre, Screen, Tag } from '../components/primitives';
+import { useToasts } from '../components/AppShell';
 
 // Biblioteca de prompts salvos (store 'prompts' do IndexedDB): lista, busca,
 // renomeia, exclui e compara as versões dos prompts promovidos nos treinos e
@@ -26,12 +40,6 @@ function originLabel(origin: Origin): string {
   if (origin?.kind === 'training') return 'treino';
   if (origin?.kind === 'variation') return 'variação';
   return 'manual';
-}
-
-function originBadgeClass(origin: Origin): string {
-  if (origin?.kind === 'training') return 'b-warn';
-  if (origin?.kind === 'variation') return 'b-blue';
-  return 'b-neutral';
 }
 
 /** Técnica/iteração de proveniência, quando registradas no save. */
@@ -59,11 +67,10 @@ interface PromptItemProps {
 
 function PromptItem({ prompt: p, onUpdated, onDeleted }: PromptItemProps) {
   const navigate = useNavigate();
-  const [open, setOpen] = useState(false);
+  const { notify } = useToasts();
   const [editing, setEditing] = useState(false);
   const [draftName, setDraftName] = useState(p.name);
   const [saving, setSaving] = useState(false);
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [selVersion, setSelVersion] = useState(p.version);
 
   // Versões ordenadas; por construção do promptStore a corrente é a última.
@@ -71,10 +78,7 @@ function PromptItem({ prompt: p, onUpdated, onDeleted }: PromptItemProps) {
   const selIdx = versions.findIndex((v) => v.version === selVersion);
   const sel = selIdx >= 0 ? versions[selIdx] : versions[versions.length - 1];
   const prev = selIdx > 0 ? versions[selIdx - 1] : undefined;
-  const diff = useMemo(
-    () => (sel && prev ? diffLines(prev.text, sel.text) : []),
-    [sel, prev],
-  );
+  const diff = useMemo(() => (sel && prev ? diffLines(prev.text, sel.text) : []), [sel, prev]);
 
   const link = originLink(p.origin);
   const detail = originDetail(p.origin);
@@ -100,166 +104,140 @@ function PromptItem({ prompt: p, onUpdated, onDeleted }: PromptItemProps) {
   async function confirmDelete() {
     await deletePrompt(p.id);
     onDeleted(p.id);
+    notify(`“${p.name}” excluído.`);
   }
 
   function useAsBase() {
-    // Contrato com o NewRun: ele lê e remove a chave ao montar o assistente.
+    // Contrato com o NewRun: ele lê e remove a chave ao montar a tela.
     localStorage.setItem(DRAFT_KEY, JSON.stringify({ text: p.text, name: p.name }));
     navigate('/new');
   }
 
   return (
-    <div className="stage-card">
-      {/* Head é div (não button) porque carrega link e botões de ação dentro —
-          os cliques interativos fazem stopPropagation para não expandir. */}
-      <div className="stage-head" onClick={() => setOpen((v) => !v)}>
-        <span className="stage-head-left">
-          <span className={`stage-caret ${open ? 'open' : ''}`}>▶</span>
-          {editing ? (
-            <span
-              style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <input
-                className="input"
-                style={{ maxWidth: 320, padding: '7px 11px', fontSize: 13 }}
-                value={draftName}
-                autoFocus
-                onChange={(e) => setDraftName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') void saveRename();
-                  if (e.key === 'Escape') cancelRename();
-                }}
-              />
-              <button
-                type="button"
-                className="export-btn"
-                disabled={saving || !draftName.trim()}
-                onClick={() => void saveRename()}
-              >
-                Salvar
-              </button>
-              <button type="button" className="export-btn" onClick={cancelRename}>
-                Cancelar
-              </button>
+    <AccordionItem value={p.id} className="border-b border-border last:border-b-0">
+      {editing ? (
+        // Renomear substitui o gatilho: um <input> dentro do <button> do
+        // accordion roubaria o clique e o teclado do próprio gatilho.
+        <div className="flex flex-wrap items-center gap-2 px-4 py-3">
+          <Input
+            className="h-8 min-w-[14rem] flex-1"
+            aria-label="Novo nome do prompt"
+            value={draftName}
+            autoFocus
+            onChange={(e) => setDraftName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') void saveRename();
+              if (e.key === 'Escape') cancelRename();
+            }}
+          />
+          <Button size="sm" disabled={saving || !draftName.trim()} onClick={() => void saveRename()}>
+            Salvar
+          </Button>
+          <Button variant="ghost" size="sm" onClick={cancelRename}>
+            Cancelar
+          </Button>
+        </div>
+      ) : (
+        <AccordionTrigger className="px-4 py-3" headingLevel={3}>
+          <span className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
+            <span className="flex flex-wrap items-center gap-2">
+              <span className="truncate text-sm font-medium">{p.name}</span>
+              <Tag>v{p.version}</Tag>
+              <Tag>{originLabel(p.origin)}</Tag>
             </span>
-          ) : (
-            <span style={{ minWidth: 0 }}>
-              <span className="stage-snippet" style={{ display: 'block' }}>{p.name}</span>
-              <span className="muted" style={{ fontSize: 12 }}>
-                {`v${p.version} · `}
-                {link ? (
-                  <Link to={link.to} onClick={(e) => e.stopPropagation()}>
-                    {originLabel(p.origin)}
-                  </Link>
-                ) : (
-                  originLabel(p.origin)
-                )}
-                {` · atualizado em ${formatDate(p.updatedAt)}`}
-              </span>
+            <span className="text-[12px] font-normal text-muted-foreground">
+              atualizado em {formatDate(p.updatedAt)}
             </span>
-          )}
-        </span>
-        <span className="stage-head-right" onClick={(e) => e.stopPropagation()}>
-          <button type="button" className="export-btn" onClick={useAsBase}>
+          </span>
+        </AccordionTrigger>
+      )}
+
+      <AccordionPanel className="px-4 pb-4">
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <Button variant="outline" size="sm" onClick={useAsBase}>
             Usar como base
-          </button>
-          {!editing && (
-            <button
-              type="button"
-              className="export-btn"
-              onClick={() => {
-                setDraftName(p.name);
-                setEditing(true);
-              }}
+            <ArrowRight aria-hidden="true" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setDraftName(p.name);
+              setEditing(true);
+            }}
+          >
+            <Pencil aria-hidden="true" />
+            Renomear
+          </Button>
+          <CopyButton
+            value={p.text}
+            label="Copiar prompt"
+            copiedLabel="Prompt copiado"
+            className="h-7 rounded-lg border border-border px-2.5 text-[0.8rem]"
+          >
+            Copiar
+          </CopyButton>
+          {/* Segurar para excluir: sem diálogo de confirmação e sem clique
+              acidental — a barra só completa depois de 1,2 s de pressão. */}
+          <HoldToConfirmButton
+            holdSeconds={1.2}
+            onConfirm={() => void confirmDelete()}
+            className="ml-auto h-7 rounded-lg border border-destructive/30 px-2.5 text-[0.8rem] text-destructive"
+          >
+            Segure para excluir
+          </HoldToConfirmButton>
+          {link && (
+            <Link
+              to={link.to}
+              className="text-[13px] text-primary underline-offset-4 hover:underline"
             >
-              Renomear
-            </button>
+              {link.label}
+            </Link>
           )}
-          {confirmingDelete ? (
-            <>
-              <button
-                type="button"
-                className="export-btn"
-                style={{ color: 'var(--err)' }}
-                onClick={() => void confirmDelete()}
-              >
-                Confirmar exclusão?
-              </button>
-              <button type="button" className="export-btn" onClick={() => setConfirmingDelete(false)}>
-                Cancelar
-              </button>
-            </>
-          ) : (
-            <button type="button" className="export-btn" onClick={() => setConfirmingDelete(true)}>
-              Excluir
-            </button>
-          )}
-        </span>
-      </div>
+        </div>
 
-      {open && (
-        <div className="stage-body">
-          <div className="stage-block">
-            <div className="label-mini">
-              Origem: <span className={`stage-badge ${originBadgeClass(p.origin)}`}>{originLabel(p.origin)}</span>
-              {detail && (
-                <span className="muted" style={{ marginLeft: 8, textTransform: 'none', letterSpacing: 0 }}>
-                  {detail}
-                </span>
-              )}
-              {link && (
-                <Link to={link.to} className="session-link" style={{ marginLeft: 8, marginTop: 0 }}>
-                  {link.label}
-                </Link>
-              )}
-            </div>
-          </div>
+        {detail && (
+          <p className="mb-4 text-[13px] text-muted-foreground">
+            Origem: {originLabel(p.origin)} · {detail}
+          </p>
+        )}
 
-          <div className="stage-block">
-            <div className="label-mini">{`Prompt atual (v${p.version})`}</div>
-            <pre className="context-pre" style={{ maxHeight: 360 }}>{p.text}</pre>
-          </div>
+        <div className="mb-4">
+          <MiniLabel>Prompt atual (v{p.version})</MiniLabel>
+          <Pre>{p.text}</Pre>
+        </div>
 
-          <div className="stage-block">
-            <div className="label-mini" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-              Versão
-              <select
-                className="input"
-                style={{ width: 'auto', padding: '6px 10px', fontSize: 13 }}
-                value={sel?.version ?? p.version}
-                onChange={(e) => setSelVersion(Number(e.target.value))}
-              >
-                {versions.map((v) => (
-                  <option key={v.version} value={v.version}>
-                    {`v${v.version} — ${formatDate(v.savedAt)}${v.version === p.version ? ' (atual)' : ''}`}
-                  </option>
-                ))}
-              </select>
-              {prev && sel && (
-                <span className="muted" style={{ textTransform: 'none', letterSpacing: 0 }}>
-                  {`diff de v${sel.version} vs. v${prev.version}`}
-                </span>
-              )}
-            </div>
-            {prev && sel ? (
-              <pre className="context-pre studio-diff" style={{ maxHeight: 360 }}>
-                {diff.map((l, i) => (
-                  <div key={i} className={`diff-line diff-${l.type}`}>
-                    <span className="diff-gutter">{l.type === 'add' ? '+' : l.type === 'del' ? '−' : ' '}</span>
-                    {l.text || ' '}
-                  </div>
-                ))}
-              </pre>
-            ) : (
-              <div className="muted" style={{ fontSize: 13, marginTop: 8 }}>
-                Primeira versão — não há versão anterior para comparar.
-              </div>
+        <div>
+          <div className="mb-1.5 flex flex-wrap items-center gap-2">
+            <MiniLabel className="mb-0">Versão</MiniLabel>
+            <select
+              className="h-7 rounded-lg border border-input bg-background px-2 text-[12.5px] outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+              aria-label="Versão para comparar"
+              value={sel?.version ?? p.version}
+              onChange={(e) => setSelVersion(Number(e.target.value))}
+            >
+              {versions.map((v) => (
+                <option key={v.version} value={v.version}>
+                  {`v${v.version} — ${formatDate(v.savedAt)}${v.version === p.version ? ' (atual)' : ''}`}
+                </option>
+              ))}
+            </select>
+            {prev && sel && (
+              <span className="text-[12px] text-muted-foreground">
+                diff de v{sel.version} vs. v{prev.version}
+              </span>
             )}
           </div>
+          {prev && sel ? (
+            <DiffView diff={diff} />
+          ) : (
+            <p className="text-[13px] text-muted-foreground">
+              Primeira versão — não há versão anterior para comparar.
+            </p>
+          )}
         </div>
-      )}
-    </div>
+      </AccordionPanel>
+    </AccordionItem>
   );
 }
 
@@ -286,9 +264,7 @@ export function PromptsPage() {
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return prompts;
-    return prompts.filter(
-      (p) => p.name.toLowerCase().includes(q) || p.text.toLowerCase().includes(q),
-    );
+    return prompts.filter((p) => p.name.toLowerCase().includes(q) || p.text.toLowerCase().includes(q));
   }, [prompts, query]);
 
   function handleUpdated(updated: SavedPrompt) {
@@ -300,40 +276,51 @@ export function PromptsPage() {
   }
 
   return (
-    <div className="screen">
-      <h1 className="page-title">Prompts</h1>
-      <p className="page-sub">
-        Biblioteca de prompts salvos dos treinos e variações, com histórico de versões.
-      </p>
+    <Screen>
+      <PageHeader
+        title="Prompts"
+        subtitle="Biblioteca de prompts salvos dos treinos e variações, com histórico de versões."
+      />
 
-      <div className="hist-toolbar">
-        <input
-          className="input input-pill search-input"
+      <div className="relative mb-4">
+        <Search
+          className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+          aria-hidden="true"
+        />
+        <Input
+          className="pl-8"
           placeholder="Buscar por nome ou conteúdo…"
+          aria-label="Buscar prompt"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
       </div>
 
       {loading ? (
-        <div className="inline-status">
-          <span className="spinner" /> Carregando prompts…
+        <div className="overflow-hidden rounded-xl bg-card ring-1 ring-foreground/10">
+          <SkeletonResolveList loading>
+            {[0, 1, 2].map((i) => (
+              <SkeletonResolveRow
+                key={i}
+                index={i}
+                className="border-b border-border px-4 py-4 last:border-b-0"
+                skeleton={<Skeleton className="h-8 w-full rounded-md" />}
+                content={null}
+              />
+            ))}
+          </SkeletonResolveList>
         </div>
       ) : prompts.length === 0 ? (
-        <div className="table-card">
-          <div className="table-empty">
-            Nenhum prompt salvo ainda — salve o campeão de um treino ou variação
-          </div>
-        </div>
+        <EmptyState>Nenhum prompt salvo ainda — salve o campeão de um treino ou variação.</EmptyState>
       ) : visible.length === 0 ? (
-        <div className="table-card">
-          <div className="table-empty">Nenhum prompt corresponde à busca.</div>
-        </div>
+        <EmptyState>Nenhum prompt corresponde à busca.</EmptyState>
       ) : (
-        visible.map((p) => (
-          <PromptItem key={p.id} prompt={p} onUpdated={handleUpdated} onDeleted={handleDeleted} />
-        ))
+        <Accordion className="overflow-hidden rounded-xl bg-card ring-1 ring-foreground/10">
+          {visible.map((p) => (
+            <PromptItem key={p.id} prompt={p} onUpdated={handleUpdated} onDeleted={handleDeleted} />
+          ))}
+        </Accordion>
       )}
-    </div>
+    </Screen>
   );
 }

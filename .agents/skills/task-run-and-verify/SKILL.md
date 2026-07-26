@@ -2,7 +2,7 @@
 name: task-run-and-verify
 description: Procedimento para rodar o ai-benchmark e verificar uma mudança ponta a ponta, já que não há framework de testes. Use ANTES de dar qualquer tarefa por concluída — type-check dos dois lados, build, e smoke test (curl nos endpoints ou a UI no navegador).
 metadata:
-  version: 0.1.0
+  version: 0.2.0
   type: task
 ---
 # Tarefa: rodar e verificar
@@ -25,9 +25,27 @@ Não há testes automatizados. A verificação é type-check + execução + obse
 - Endpoints com key: enviar header `-H 'x-openrouter-key: <key>'`.
 - **Pare o servidor depois** (`pkill -f "dist/server.js"`); confirme que parou.
 
+## Smoke de UI headless (sem depender do usuário abrir o navegador)
+`npm run web:build && npx vite preview --port 4173` (dentro de `web/`) e dirija com Playwright.
+Não há Playwright no projeto — reaproveite uma instalação vizinha
+(`import { chromium } from '<outro-projeto>/node_modules/playwright/index.mjs'`).
+
+O que vale medir, porque a olho passa batido:
+- **erros de console e `pageerror`** por rota, nos dois `colorScheme` (`light`/`dark`);
+- **overflow horizontal**: `documentElement.scrollWidth - clientWidth` tem de ser 0;
+- **contraste WCAG real**: `getComputedStyle` devolve `oklch(...)`, que não dá para converter na mão
+  — pinte a cor num `<canvas>` 1×1 (empilhando os fundos até um opaco) e leia o RGB de volta.
+  Foi assim que as células do heatmap apareceram em 2,78:1 no tema claro.
+- **estado sem dado é enganoso**: semeie o IndexedDB (`benchmark-arena` v2, store `runs` +
+  `runSummaries`) com um `RunRecord` sintético terminado para exercitar heatmap, finais e o
+  accordion de cenários. Guarde o script no scratchpad, não no repo.
+- A chave fica em `localStorage['openrouter_api_key']` — um valor falso já passa o `KeyGate` sem
+  nenhuma chamada real.
+- **Pare o preview depois** (`pkill -f "vite preview"`).
+
 ## Smoke de feature (exemplos)
 - Run curta: crie uma run com `stages=1` e confira o `data/runs/<id>.json` gerado.
-- Filtro LGPD: no passo Tema, troque a área e veja o catálogo dos seletores mudar; "Livre" volta tudo.
+- Filtro LGPD: no Avançado, troque a área e veja o catálogo dos seletores mudar; "Livre" volta tudo.
 
 ## Critério de "pronto"
 Type-check verde + comportamento observado bate com o esperado. Relate honestamente o que foi (e

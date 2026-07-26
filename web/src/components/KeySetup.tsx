@@ -1,6 +1,12 @@
 import { useEffect, useState } from 'react';
+import { Check, LoaderCircle, TriangleAlert } from 'lucide-react';
 import type { ValidateKeyResponse } from '../api';
 import { getStoredKey, setStoredKey, validateKey } from '../api';
+import { MultiStateButton } from '@/components/motion-ui/multi-state-button';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Banner, PageHeader, Screen } from './primitives';
+import { cn } from '@/lib/utils';
 
 type Status = 'idle' | 'validating' | 'valid' | 'invalid';
 
@@ -9,7 +15,7 @@ function usd(v: number): string {
 }
 
 function describeKey(res: ValidateKeyResponse): string {
-  const parts: string[] = ['✓ Key válida'];
+  const parts: string[] = ['Key válida'];
   if (res.label) parts.push(`(${res.label})`);
   if (typeof res.usageUsd === 'number') {
     const limit =
@@ -19,6 +25,14 @@ function describeKey(res: ValidateKeyResponse): string {
   if (res.isFreeTier) parts.push('· tier gratuito');
   return parts.join(' ') + '.';
 }
+
+// Rótulo e glifo do botão por estado — o MultiStateButton morfa a largura entre eles.
+const BUTTON_LABEL: Record<Status, string> = {
+  idle: 'Validar e salvar',
+  validating: 'Validando…',
+  valid: 'Key salva',
+  invalid: 'Tentar de novo',
+};
 
 export function KeySetup({ onSaved }: { onSaved?: () => void }) {
   const [key, setKey] = useState(getStoredKey());
@@ -63,24 +77,37 @@ export function KeySetup({ onSaved }: { onSaved?: () => void }) {
     setMessage(null);
   }
 
-  const statusClass = status === 'valid' ? 'ok' : status === 'invalid' ? 'err' : 'neutral';
+  const icon =
+    status === 'validating' ? (
+      <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
+    ) : status === 'valid' ? (
+      <Check className="size-4" aria-hidden="true" />
+    ) : status === 'invalid' ? (
+      <TriangleAlert className="size-4" aria-hidden="true" />
+    ) : undefined;
 
   return (
-    <div className="card settings-card">
-      <div className="settings-title">OpenRouter API Key</div>
-      <div className="settings-desc">
-        Cole sua key do OpenRouter. Ela fica salva só no <code>localStorage</code> deste navegador e
-        vai direto do navegador para o OpenRouter — nenhum outro servidor a recebe.{' '}
-        <a href="https://openrouter.ai/keys" target="_blank" rel="noreferrer">
-          openrouter.ai/keys&nbsp;↗
+    <div className="rounded-xl bg-card p-5 ring-1 ring-foreground/10">
+      <h2 className="font-heading text-base font-medium">OpenRouter API Key</h2>
+      <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
+        Cole sua key do OpenRouter. Ela fica salva só no <code className="font-mono text-[12.5px]">localStorage</code>{' '}
+        deste navegador e vai direto do navegador para o OpenRouter — nenhum outro servidor a recebe.{' '}
+        <a
+          className="text-primary underline-offset-4 hover:underline"
+          href="https://openrouter.ai/keys"
+          target="_blank"
+          rel="noreferrer"
+        >
+          openrouter.ai/keys ↗
         </a>
-      </div>
+      </p>
 
-      <div className="key-row">
-        <input
-          className="input input-mono"
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <Input
+          className="min-w-[16rem] flex-1 font-mono text-[13px]"
           type="password"
           autoComplete="off"
+          aria-label="OpenRouter API key"
           placeholder="sk-or-v1-..."
           value={key}
           onChange={(e) => setKey(e.target.value)}
@@ -93,22 +120,32 @@ export function KeySetup({ onSaved }: { onSaved?: () => void }) {
             }
           }}
         />
-        <button
-          type="button"
-          className="key-validate"
+        <MultiStateButton
+          state={status}
+          icon={icon}
+          feedback={status === 'invalid' ? 'shake' : status === 'valid' ? 'pop' : 'none'}
+          announce={message ?? undefined}
           disabled={status === 'validating'}
-          onClick={() => handleValidate()}
+          onClick={() => void handleValidate()}
+          pillClassName="rounded-lg px-3.5 py-2 text-sm font-medium"
+          surfaceClassName={
+            status === 'invalid' ? 'bg-destructive/10 text-destructive' : 'bg-primary text-primary-foreground'
+          }
         >
-          {status === 'validating' ? 'Validando…' : 'Validar e salvar'}
-        </button>
+          {BUTTON_LABEL[status]}
+        </MultiStateButton>
         {status === 'valid' && (
-          <button type="button" className="btn-secondary" onClick={handleClear}>
+          <Button type="button" variant="ghost" onClick={handleClear}>
             Remover
-          </button>
+          </Button>
         )}
       </div>
 
-      {message && <div className={`key-status ${statusClass}`}>{message}</div>}
+      {message && (
+        <Banner tone={status === 'invalid' ? 'error' : 'neutral'} className="mt-3">
+          {message}
+        </Banner>
+      )}
     </div>
   );
 }
@@ -117,13 +154,13 @@ export function KeyGate({ children }: { children: React.ReactNode }) {
   const [hasKey, setHasKey] = useState(!!getStoredKey());
   if (!hasKey) {
     return (
-      <div className="screen">
-        <h1 className="page-title">Conecte sua chave</h1>
-        <p className="page-sub">
-          Para criar uma run, cole sua chave da OpenRouter. Ela fica salva só no seu navegador.
-        </p>
+      <Screen>
+        <PageHeader
+          title="Conecte sua chave"
+          subtitle="Para criar uma run, cole sua chave da OpenRouter. Ela fica salva só no seu navegador."
+        />
         <KeySetup onSaved={() => setHasKey(true)} />
-      </div>
+      </Screen>
     );
   }
   return <>{children}</>;

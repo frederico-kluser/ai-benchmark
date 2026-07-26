@@ -37,16 +37,23 @@ web/src/        frontend
   idb.ts        cache IndexedDB v2 (db "benchmark-arena", stores runs/sessions/*Summaries/prompts)
   engine/       CÓPIA client-side do pipeline (ver abaixo) + promptStore.ts (biblioteca de prompts) + configFile.ts (parser arena-config@1)
   diff.ts       diff linha-a-linha (versões de prompt / diff vs. original)
-  pages/        NewRun (PÁGINA ÚNICA, blocos verticais — não é mais assistente em passos),
+  pages/        NewRun (fluxo em ABAS animadas: segmentado de modo + SmoothTabs),
                 RunView, RunsList, TrainingView, PromptsPage, Settings
   pages/runShared.tsx   reducer applyEvent + VERDICT_META/verdictOf/trunc/denseStages/rankColor
                 + heatRows/<ScoreHeatmap> + <FinalsPanel> (compartilhado RunView/TrainingView).
                 Sem ProcessMonitor/computeStandings/medalStandings (removidos em 2026-07-25).
-  components/    ModelSelector (picker compacto), Toggle, ManualVariantsEditor, KeySetup, HelpModal.
-                 REMOVIDOS em 2026-07: TechniqueSelector (técnicas viraram chips inline no NewRun)
-                 e BrainBackground + brain-visualization/ + processing.ts (fundo animado decorativo
-                 — cobria conteúdo e queimava CPU; nada mais consome ProcessingContext)
-  lgpd.ts       classificação/filtragem de conformidade; styles.css  design tokens (claro/escuro)
+  components/    AppShell (header + paleta ⌘K + transição de rota + toasts), primitives.tsx
+                 (Screen/PageHeader/SectionHead/Banner/SettingRow/Pre/DiffView…), Modal,
+                 ModelSelector, ManualVariantsEditor, KeySetup, HelpModal.
+    ui/          shadcn (CLI) — button, input, textarea, card, badge, label, switch, select…
+    motion-ui/   Motion UI (CLI, registry @motion) — 20 peças + ui-theme. NÃO EDITE:
+                 `shadcn add` sobrescreve. Customização vai em wrapper.
+                 REMOVIDOS em 2026-07: TechniqueSelector (técnicas viraram chips inline no NewRun),
+                 Toggle, e BrainBackground + brain-visualization/ + processing.ts (fundo animado
+                 decorativo — cobria conteúdo e queimava CPU)
+  lgpd.ts       classificação/filtragem de conformidade
+  index.css     entrada do Tailwind v4 + camada de tokens (substituiu styles.css em 2026-07-26)
+  ../motion.theme.ts   tokens de MOVIMENTO (raiz do web/, gerenciado pelo CLI da Motion)
 data/           runtime: runs/ e sessions/ (IGNORADO no git; ver /data/ no .gitignore)
 ```
 

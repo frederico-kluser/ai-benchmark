@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { Search } from 'lucide-react';
 import type { RunMode, RunSummary, SessionSummary } from '../api';
 import { fetchRuns, fetchSessions } from '../api';
+import { SegmentedToggle, SegmentedToggleOption } from '@/components/motion-ui/segmented-toggle';
+import { SkeletonResolveList, SkeletonResolveRow, Skeleton } from '@/components/motion-ui/skeleton';
+import { Input } from '@/components/ui/input';
+import { Banner, EmptyState, PageHeader, Screen, StatusPill, Tag } from '../components/primitives';
 
 const MONTHS = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 
@@ -37,9 +42,57 @@ type Item =
   | { kind: 'session'; s: SessionSummary; at: string; status: RunSummary['status']; theme: string }
   | { kind: 'run'; r: RunSummary; at: string; status: RunSummary['status']; theme: string };
 
+/** Uma linha da lista — mesma grade para run e sessão de treino. */
+function Row({
+  to,
+  id,
+  status,
+  mode,
+  theme,
+  left,
+  right,
+  cost,
+  at,
+}: {
+  to: string;
+  id: string;
+  status: RunSummary['status'];
+  mode: string;
+  theme: string;
+  left: string;
+  right: string;
+  cost: number;
+  at: string;
+}) {
+  return (
+    <Link
+      to={to}
+      className="grid grid-cols-[auto_1fr_auto] items-center gap-x-4 gap-y-2 border-b border-border px-4 py-3 last:border-b-0 hover:bg-muted/60 focus-visible:bg-muted focus-visible:outline-none sm:grid-cols-[5.5rem_7rem_1fr_auto_auto_10rem]"
+    >
+      <code className="font-mono text-[12px] text-muted-foreground">{id.slice(0, 8)}</code>
+      <span className="flex items-center gap-1.5">
+        <StatusPill status={status} />
+      </span>
+      <span className="col-span-3 min-w-0 truncate text-sm sm:col-span-1" title={theme}>
+        {theme}
+      </span>
+      <span className="hidden items-center gap-1.5 sm:flex">
+        <Tag>{mode}</Tag>
+      </span>
+      <span className="hidden shrink-0 text-right text-[12px] text-muted-foreground tabular sm:block">
+        {left}/{right}
+      </span>
+      <span className="hidden shrink-0 text-right text-[12px] text-muted-foreground tabular md:block">
+        ${cost.toFixed(4)} · {formatDate(at)}
+      </span>
+    </Link>
+  );
+}
+
 export function RunsList() {
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | Group>('all');
   const [query, setQuery] = useState('');
@@ -50,7 +103,8 @@ export function RunsList() {
         setRuns(r);
         setSessions(s);
       })
-      .catch((e) => setError(e.message));
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
   }, []);
 
   // Sessões de treino viram uma linha (link p/ /training); as runs-filhas (iterações)
@@ -73,85 +127,100 @@ export function RunsList() {
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     return items.filter(
-      (it) =>
-        (filter === 'all' || groupOf(it.status) === filter) &&
-        (!q || it.theme.toLowerCase().includes(q)),
+      (it) => (filter === 'all' || groupOf(it.status) === filter) && (!q || it.theme.toLowerCase().includes(q)),
     );
   }, [items, filter, query]);
 
-  if (error) return <div className="screen center-screen"><div className="banner banner-error">{error}</div></div>;
+  if (error) {
+    return (
+      <Screen wide>
+        <Banner tone="error">{error}</Banner>
+      </Screen>
+    );
+  }
 
   return (
-    <div className="screen">
-      <h1 className="page-title">Histórico</h1>
-      <p className="page-sub">Runs e treinos executados, mais recentes primeiro.</p>
+    <Screen wide>
+      <PageHeader title="Histórico" subtitle="Runs e treinos executados, mais recentes primeiro." />
 
-      <div className="hist-toolbar">
-        <div className="filter-pills">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <SegmentedToggle
+          value={filter}
+          onChange={(v) => setFilter(v as 'all' | Group)}
+          ariaLabel="Filtrar por status"
+        >
           {FILTERS.map((f) => (
-            <button
-              key={f.key}
-              className={`filter-pill ${filter === f.key ? 'active' : ''}`}
-              onClick={() => setFilter(f.key)}
-            >
+            <SegmentedToggleOption key={f.key} value={f.key} className="px-3 py-1.5 text-[13px]">
               {f.label}
-              <span className="count">{counts[f.key]}</span>
-            </button>
+              <span className="text-[11px] opacity-70 tabular">{counts[f.key]}</span>
+            </SegmentedToggleOption>
           ))}
+        </SegmentedToggle>
+
+        <div className="relative min-w-[14rem] flex-1 sm:max-w-xs sm:flex-none">
+          <Search
+            className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+            aria-hidden="true"
+          />
+          <Input
+            className="pl-8"
+            placeholder="Buscar por tema…"
+            aria-label="Buscar por tema"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
         </div>
-        <input
-          className="input input-pill search-input"
-          placeholder="Buscar por tema…"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
       </div>
 
-      <div className="table-card">
-        <div className="runs-head">
-          <div>ID</div><div>Status</div><div>Modo</div><div>Tema</div><div>Etapas</div><div>Comp.</div><div>Custo</div><div>Início</div>
-        </div>
-        {visible.map((it) =>
-          it.kind === 'run' ? (
-            <Link className="runs-row" key={it.r.id} to={`/runs/${it.r.id}`}>
-              <div className="r-id">{it.r.id.slice(0, 8)}</div>
-              <div>
-                <span className={`pill pill-${it.r.status}`}>
-                  {it.r.status === 'running' && <span className="pill-dot" />}
-                  {it.r.status}
-                </span>
-              </div>
-              <div><span className={`pill pill-${it.r.mode ?? 'compare'} r-mode`}>{modeLabel(it.r.mode)}</span></div>
-              <div className="r-theme">{it.r.theme}</div>
-              <div className="r-num">{it.r.stages}</div>
-              <div className="r-num">{it.r.contestants ?? it.r.competitors}</div>
-              <div className="r-cost">${it.r.totalCostUsd.toFixed(4)}</div>
-              <div className="r-date">{formatDate(it.r.startedAt)}</div>
-            </Link>
-          ) : (
-            <Link className="runs-row" key={it.s.id} to={`/training/${it.s.id}`}>
-              <div className="r-id">{it.s.id.slice(0, 8)}</div>
-              <div>
-                <span className={`pill pill-${it.s.status}`}>
-                  {it.s.status === 'running' && <span className="pill-dot" />}
-                  {it.s.status}
-                </span>
-              </div>
-              <div><span className="pill pill-training r-mode">treino</span></div>
-              <div className="r-theme">{it.s.theme}</div>
-              <div className="r-num">{it.s.iterationsDone}/{it.s.iterationsPlanned}</div>
-              <div className="r-num">—</div>
-              <div className="r-cost">${it.s.totalCostUsd.toFixed(4)}</div>
-              <div className="r-date">{formatDate(it.s.startedAt)}</div>
-            </Link>
-          ),
-        )}
-        {visible.length === 0 && (
-          <div className="table-empty">
+      <div className="overflow-hidden rounded-xl bg-card ring-1 ring-foreground/10">
+        {loading ? (
+          <SkeletonResolveList loading>
+            {[0, 1, 2, 3].map((i) => (
+              <SkeletonResolveRow
+                key={i}
+                index={i}
+                className="border-b border-border px-4 py-3 last:border-b-0"
+                skeleton={<Skeleton className="h-6 w-full rounded-md" />}
+                content={null}
+              />
+            ))}
+          </SkeletonResolveList>
+        ) : visible.length === 0 ? (
+          <EmptyState>
             {items.length === 0 ? 'Nenhuma run ainda.' : 'Nenhuma run corresponde a esse filtro.'}
-          </div>
+          </EmptyState>
+        ) : (
+          visible.map((it) =>
+            it.kind === 'run' ? (
+              <Row
+                key={it.r.id}
+                to={`/runs/${it.r.id}`}
+                id={it.r.id}
+                status={it.r.status}
+                mode={modeLabel(it.r.mode)}
+                theme={it.r.theme}
+                left={String(it.r.stages)}
+                right={String(it.r.contestants ?? it.r.competitors)}
+                cost={it.r.totalCostUsd}
+                at={it.r.startedAt}
+              />
+            ) : (
+              <Row
+                key={it.s.id}
+                to={`/training/${it.s.id}`}
+                id={it.s.id}
+                status={it.s.status}
+                mode="treino"
+                theme={it.s.theme}
+                left={String(it.s.iterationsDone)}
+                right={String(it.s.iterationsPlanned)}
+                cost={it.s.totalCostUsd}
+                at={it.s.startedAt}
+              />
+            ),
+          )
         )}
       </div>
-    </div>
+    </Screen>
   );
 }

@@ -9,6 +9,12 @@ Monorepo TypeScript: backend Express (`src/`) + frontend React/Vite (`web/`). UI
 - SPA estática (client-side, deploy Vercel): `npm run web:build` → `web/dist` (roda sem backend; ver `vercel.json`)
 - type-check backend: `npx tsc -p tsconfig.json --noEmit` · frontend: `cd web && npx tsc -b`
 - **Não há** `test` nem `lint` configurados. Verifique por type-check + execução manual.
+- ⚠️ **`npm install` exige `MOTION_TOKEN` no ambiente.** `web/.npmrc` aponta o escopo `@motionplus`
+  para o registry privado da Motion, e `motion-plus` (`@motionplus/core`) é dependência de runtime
+  real — `stagger-reveal` e `skeleton` a importam. Sem a variável, o npm falha com
+  `Failed to replace env in config` em **qualquer** comando, até offline. Vale para todo mundo do
+  time e para o CI/Vercel (adicione `MOTION_TOKEN` nas env vars do projeto). Token novo em
+  <https://motion.dev/dashboard/tokens> (exige Motion+). No repo só existe o placeholder.
 
 ## Regras (só o não-óbvio)
 - Backend é **ESM NodeNext**: imports relativos terminam em **`.js`** mesmo para arquivos `.ts`.
@@ -29,11 +35,20 @@ Monorepo TypeScript: backend Express (`src/`) + frontend React/Vite (`web/`). UI
   `max_tokens` = HTTP 400) e é encaixado na allowlist por `fitEffort`; em modelo `mandatory` o
   nível `off` não é enviado. Ao mexer nisso, revalide com o catálogo real (ver
   `scratchpad/smoke/fit-test.ts` no histórico: 214 modelos × 7 níveis, 0 violações).
-- **Design da UI = idioma do iOS Settings:** lista agrupada (`.ios-group`/`.ios-row`) com tile
-  colorido por domínio (`--sys-teal` cenários, `--sys-purple` prompts, `--sys-indigo` juízes) e a
-  explicação de cada ajuste em `.ios-row-sub`. Booleano é `.ios-switch` (51×31), não checkbox.
-  ⚠️ Cuidado com especificidade ao criar controles: `.toggle input` (0,1,1) vencia `.ios-switch`
-  (0,1,0) e amassava o switch — o componente `Toggle` foi removido justamente por isso.
+- **UI = Tailwind v4 + shadcn + Motion UI (React 19).** `web/src/styles.css` e a linguagem visual
+  iOS (`.ios-*`, `.nr-*`, `.picker-*`, `.hm-*`, `--sys-*`) **não existem mais** — não as ressuscite.
+  Estilo é utilitário no JSX, **só com classe semântica** (`bg-card`, `text-muted-foreground`,
+  `border-border`); tokens em `web/src/index.css`; tema claro/escuro pela classe `dark` no `<html>`.
+  Antes de escrever JSX de UI novo, **consulte o catálogo do Motion UI** (skill `motion-plus-ui`):
+  acordeão, tabs, segmentado, paleta ⌘K, overlay, sheet, toast, skeleton, progress, sparkline,
+  copy/hold-to-confirm e shrink-header já estão instalados em `web/src/components/motion-ui/`.
+  Essa pasta e `components/ui/` são do CLI — **edite em wrapper, nunca no source**; um `add` novo
+  sobrescreve, e `add @motion/motion-theme` sobrescreve o `web/motion.theme.ts` customizado.
+  Movimento vem do tema (`useMotionUITransition`), nunca `stiffness`/`damping` na mão.
+  Tokens de veredito (`resolve`/`parcial`/`nao` + `-soft`) são dado, não decoração: ao mexer neles,
+  **meça o contraste** (AA em 13px nos dois temas) em vez de julgar a olho.
+  ⚠️ O React foi de 18 → **19** porque as peças do Motion UI são tipadas para 19 (`smooth-tabs`,
+  `copy-button` e `sheet` não passam no `tsc -b` sob 18). Não regrida.
 - **Não há mais streaming ao vivo por competidor:** os eventos `competitor.started`/`competitor.progress` foram removidos e ninguém escreve `StageRecord.live` (o tipo só sobrevive p/ ler records antigos). A tela de run em andamento é **só o heatmap**.
 - ⚠️ **Dois whitelists engolem campo novo em silêncio** — ao adicionar campo em `RunConfigBase`/`RunRecord`, cheque os dois: (1) `normalizeRunRecord` (`normalize.ts`), que hoje espalha `...raw` de propósito (antes perdia `judgeScoreByContestant`/`standings`/`finalists` ao reler do IndexedDB); (2) **`variationConfigFrom` (`trainer.ts`)**, que enumera campo a campo — o que faltar ali é descartado em toda iteração do treino e no holdout, sem erro nenhum.
 - No **training**, promoção exige margem `minGain` sobre a campeã (`rank.ts`); `analyzeIteration` **não existe mais** (feedback = lições GEPA determinísticas) e o evento `iteration.analyzing` não é mais emitido. Holdout (piso 5) + significância bootstrap fecham a sessão.

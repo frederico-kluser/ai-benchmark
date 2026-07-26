@@ -1,17 +1,37 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { ArrowLeft, Download } from 'lucide-react';
 import type { Contestant, RunRecord, StageRecord, StageSpec, Verdict } from '../api';
-import { buildScenarioPack, cacheRun, downloadScenarioPack, fetchRun, normalizeContestants, openRunStream, runMode } from '../api';
 import {
-  VERDICT_META,
-  verdictOf,
-  trunc,
-  denseStages,
-  applyEvent,
-  ScoreHeatmap,
-  FinalsPanel,
+  buildScenarioPack,
+  cacheRun,
+  downloadScenarioPack,
+  fetchRun,
+  normalizeContestants,
+  openRunStream,
+  runMode,
+} from '../api';
+import {
+  Accordion,
+  AccordionItem,
+  AccordionTrigger,
+  AccordionPanel,
+} from '@/components/motion-ui/accordion';
+import { ProgressBar } from '@/components/motion-ui/progress-bar';
+import { Skeleton } from '@/components/motion-ui/skeleton';
+import { Button } from '@/components/ui/button';
+import {
+  Banner,
+  EmptyState,
+  MiniLabel,
+  Pre,
+  Screen,
   SectionHead,
-} from './runShared';
+  StatusPill,
+  Tag,
+} from '../components/primitives';
+import { VERDICT_META, verdictOf, trunc, denseStages, applyEvent, ScoreHeatmap, FinalsPanel } from './runShared';
+import { cn } from '@/lib/utils';
 
 // Notacao decimal sempre: "$4.00e-4" e ilegivel para quem so quer saber quanto
 // custou. Abaixo de 1 centesimo de centavo, um teto basta.
@@ -78,14 +98,24 @@ function runToCsv(record: RunRecord, byId: Map<string, Contestant>): string {
   return rows.join('\n');
 }
 
+/** Número grande + rótulo pequeno, no cabeçalho da run. */
+function Stat({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="min-w-[5rem]">
+      <div className="text-[11px] tracking-wide text-muted-foreground uppercase">{label}</div>
+      <div className="mt-0.5 font-heading text-lg font-medium tabular">{children}</div>
+    </div>
+  );
+}
+
 export function RunView() {
   const { id } = useParams<{ id: string }>();
   const [record, setRecord] = useState<RunRecord | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // Accordion dos cenarios: no maximo UM aberto por vez (null = todos fechados).
-  const [openStage, setOpenStage] = useState<number | null>(null);
-  // Lista <details> dos cenarios: controlada para o clique no heatmap poder
-  // força-la aberta. null = default (aberta so quando a run termina).
+  // Accordion dos cenarios (Base UI, um aberto por vez): array de valores.
+  const [openStages, setOpenStages] = useState<string[]>([]);
+  // Lista de cenarios: controlada para o clique no heatmap poder força-la
+  // aberta. null = default (aberta so quando a run termina).
   const [listOpen, setListOpen] = useState<boolean | null>(null);
   // Progresso agregado dos duelos (evento `duel.progress`) — NUNCA passa pelo
   // reducer: o evento nem stageIndex tem. Fica local e alimenta o FinalsPanel.
@@ -131,18 +161,15 @@ export function RunView() {
     };
   }, [id]);
 
-  function toggleStage(idx: number) {
-    setOpenStage((prev) => (prev === idx ? null : idx));
-  }
-
   // Clique numa celula do heatmap: abre o cenario correspondente e rola ate o
   // card. A lista pode estar recolhida durante a run — força aberta ANTES do
-  // scroll (o rAF espera o details renderizar aberto).
+  // scroll (o rAF espera o painel renderizar aberto).
   function openStageFromHeatmap(idx: number) {
-    setOpenStage(idx);
+    // O `value` do AccordionItem É o id do elemento no DOM (âncora de deep-link).
+    setOpenStages([`stage-${idx}`]);
     setListOpen(true);
     requestAnimationFrame(() => {
-      document.getElementById(`stage-${idx}`)?.scrollIntoView({ behavior: 'smooth' });
+      document.getElementById(`stage-${idx}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     });
   }
 
@@ -189,8 +216,24 @@ export function RunView() {
     return null;
   }, [record, contestants]);
 
-  if (error) return <div className="screen center-screen"><div className="banner banner-error">{error}</div></div>;
-  if (!record) return <div className="screen center-screen"><div className="loading-note">Carregando…</div></div>;
+  if (error) {
+    return (
+      <Screen wide>
+        <Banner tone="error">{error}</Banner>
+      </Screen>
+    );
+  }
+
+  if (!record) {
+    return (
+      <Screen wide>
+        <div className="flex flex-col gap-4">
+          <Skeleton className="h-24 w-full rounded-xl" />
+          <Skeleton className="h-64 w-full rounded-xl" />
+        </div>
+      </Screen>
+    );
+  }
 
   const mode = runMode(record);
   const isSingle = mode !== 'compare';
@@ -204,6 +247,7 @@ export function RunView() {
   // exporta pela TrainingView.
   const canExportPack =
     record.status === 'finished' && mode === 'variation' && packRefCount > 0 && Boolean(packPrompt);
+  const stagesOpen = listOpen ?? !isRunning;
 
   function exportScenarioPack() {
     if (!record || !packPrompt) return;
@@ -213,128 +257,158 @@ export function RunView() {
   }
 
   return (
-    <div className="screen runview">
-      <div className="card rv-head">
-        <div className="run-header-main">
-          <div className="run-title-row">
-            <h1 className="run-title">Run <code>{record.id.slice(0, 8)}</code></h1>
-            <span className={`pill pill-${record.status}`}>{record.status}</span>
-            {isRunning && <span className="live-pill"><span className="dot" />AO VIVO</span>}
-          </div>
-          <div className="run-theme">{trunc(record.config.theme, 140)}</div>
-          {record.sessionId && (
-            <Link className="session-link" to={`/training/${record.sessionId}`}>
-              ← sessão de treino{record.iteration != null ? ` · rodada ${record.iteration + 1}` : ''}
-            </Link>
-          )}
-        </div>
-
-        <div className="rv-stats">
-          <div className="rv-stat">
-            <span className="rv-stat-label">cenários</span>
-            {doneStages}/{totalStages}
-          </div>
-          <div className="rv-stat">
-            <span className="rv-stat-label">custo</span>
-            {formatUsd(record.totalCostUsd)}
-          </div>
-          <div className="export-row">
-            <button type="button" className="export-btn" onClick={() => download(`run-${record.id}.json`, JSON.stringify(record, null, 2), 'application/json')}>JSON</button>
-            <button type="button" className="export-btn" onClick={() => download(`run-${record.id}.csv`, runToCsv(record, byId), 'text/csv;charset=utf-8')}>CSV</button>
-            {canExportPack && (
-              <button type="button" className="export-btn" onClick={exportScenarioPack}>Pacote</button>
+    <Screen wide>
+      <header className="rounded-xl bg-card p-5 ring-1 ring-foreground/10">
+        <div className="flex flex-wrap items-start justify-between gap-6">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <h1 className="font-heading text-xl font-medium tracking-tight">
+                Run <code className="font-mono text-[17px] text-muted-foreground">{record.id.slice(0, 8)}</code>
+              </h1>
+              <StatusPill status={record.status} />
+            </div>
+            <p className="mt-1.5 max-w-prose text-sm text-muted-foreground">
+              {trunc(record.config.theme, 180)}
+            </p>
+            {record.sessionId && (
+              <Link
+                className="mt-2 inline-flex items-center gap-1 text-[13px] text-primary underline-offset-4 hover:underline"
+                to={`/training/${record.sessionId}`}
+              >
+                <ArrowLeft className="size-3.5" aria-hidden="true" />
+                sessão de treino
+                {record.iteration != null ? ` · rodada ${record.iteration + 1}` : ''}
+              </Link>
             )}
           </div>
+
+          <div className="flex shrink-0 flex-wrap items-start gap-6">
+            <Stat label="cenários">
+              {doneStages}/{totalStages}
+            </Stat>
+            <Stat label="custo">{formatUsd(record.totalCostUsd)}</Stat>
+          </div>
         </div>
-      </div>
+
+        {isRunning && (
+          <ProgressBar
+            className="mt-4"
+            value={totalStages ? doneStages / totalStages : 0}
+            size="sm"
+            progressbar
+            aria-label="Cenários julgados"
+          />
+        )}
+
+        <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-border pt-4">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => download(`run-${record.id}.json`, JSON.stringify(record, null, 2), 'application/json')}
+          >
+            <Download aria-hidden="true" />
+            JSON
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => download(`run-${record.id}.csv`, runToCsv(record, byId), 'text/csv;charset=utf-8')}
+          >
+            <Download aria-hidden="true" />
+            CSV
+          </Button>
+          {canExportPack && (
+            <Button variant="outline" size="sm" onClick={exportScenarioPack}>
+              <Download aria-hidden="true" />
+              Pacote
+            </Button>
+          )}
+        </div>
+      </header>
 
       {record.status === 'error' && record.error && (
-        <div className="banner banner-error"><strong>A run falhou:</strong> {record.error}</div>
+        <Banner tone="error" className="mt-4">
+          <strong>A run falhou:</strong> {record.error}
+        </Banner>
       )}
       {record.status === 'aborted' && (
-        <div className="banner banner-neutral">Run interrompida — o servidor reiniciou enquanto ela rodava.</div>
+        <Banner className="mt-4">Run interrompida — o servidor reiniciou enquanto ela rodava.</Banner>
       )}
 
-      <SectionHead glyph="◱" tone="teal">Resultados</SectionHead>
+      <SectionHead>Resultados</SectionHead>
       <ScoreHeatmap record={record} ranked={!isRunning} onStageClick={openStageFromHeatmap} />
 
       {hasFinals && (
         <>
-          <SectionHead glyph="▲" tone="orange">Final</SectionHead>
+          <SectionHead>Final</SectionHead>
           <FinalsPanel record={record} progress={duelProgress} />
         </>
       )}
 
       {/* Enquanto roda, a tela e SO o heatmap: o drill-down por cenario fica
           recolhido por default (aberto so quando a run termina), mas o usuario
-          e o clique no heatmap mandam (estado controlado, sincronizado no toggle). */}
-      <details
-        className="stage-list"
-        open={listOpen ?? !isRunning}
-        onToggle={(e) => setListOpen(e.currentTarget.open)}
+          e o clique no heatmap mandam. */}
+      <SectionHead
+        status={
+          <button
+            type="button"
+            className="text-primary underline-offset-4 hover:underline"
+            onClick={() => setListOpen(!stagesOpen)}
+          >
+            {stagesOpen ? 'recolher' : 'expandir'}
+          </button>
+        }
       >
-        {/* O cabecalho vive DENTRO do <summary> (so spans — conteudo valido) para
-            o clique/foco continuarem sendo do proprio summary. */}
-        <summary className="ios-head-inline">
-          <span className="ios-tile tile-indigo" aria-hidden="true">⚖</span>
-          <span className="ios-group-title">Cenários{stages.length ? ` (${stages.length})` : ''}</span>
-        </summary>
-        {stages.length === 0 && (
-          <div className="card" style={{ color: 'var(--text-3)' }}>Aguardando o primeiro cenário…</div>
-        )}
-        {stages.map((stage) => (
-          <StageCard
-            key={stage.index}
-            stage={stage}
-            byId={byId}
-            contestants={contestants}
-            open={openStage === stage.index}
-            onToggle={() => toggleStage(stage.index)}
-          />
-        ))}
-      </details>
+        Cenários{stages.length ? ` (${stages.length})` : ''}
+      </SectionHead>
+
+      {stages.length === 0 ? (
+        <EmptyState>Aguardando o primeiro cenário…</EmptyState>
+      ) : stagesOpen ? (
+        <Accordion
+          value={openStages}
+          onValueChange={setOpenStages}
+          className="divide-y divide-border overflow-hidden rounded-xl bg-card ring-1 ring-foreground/10"
+        >
+          {stages.map((stage) => (
+            <StageRow key={stage.index} stage={stage} byId={byId} contestants={contestants} />
+          ))}
+        </Accordion>
+      ) : (
+        <EmptyState>{stages.length} cenários — expanda para ver enunciado e respostas.</EmptyState>
+      )}
 
       {isSingle && contestants.length > 0 && (
         <>
-          <SectionHead glyph="✎" tone="purple">Variantes</SectionHead>
-          <details className="card variants-card">
-            <summary className="muted" style={{ cursor: 'pointer', fontSize: 13 }}>
-              {contestants.length} variantes
-              {contestants[0]?.modelId ? ` · ${contestants[0].modelId}` : ''}
-            </summary>
-            <div style={{ marginTop: 14 }}>
-              {contestants.map((c) => (
-                <div className="contestant-row" key={c.id}>
-                  <div className="contestant-head">
-                    <span className="contestant-label">
-                      {c.label}
-                      {c.isOriginal && <span className="control-tag">base</span>}
-                      {c.techniqueId && <span className="tech-tag">{c.techniqueId}</span>}
-                    </span>
-                  </div>
-                  {c.systemPrompt && <pre className="context-pre contestant-prompt">{c.systemPrompt}</pre>}
+          <SectionHead status={contestants[0]?.modelId}>Variantes ({contestants.length})</SectionHead>
+          <div className="flex flex-col gap-3">
+            {contestants.map((c) => (
+              <div key={c.id} className="rounded-xl bg-card p-4 ring-1 ring-foreground/10">
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-medium">{c.label}</span>
+                  {c.isOriginal && <Tag>base</Tag>}
+                  {c.techniqueId && <Tag>{c.techniqueId}</Tag>}
                 </div>
-              ))}
-            </div>
-          </details>
+                {c.systemPrompt && <Pre>{c.systemPrompt}</Pre>}
+              </div>
+            ))}
+          </div>
         </>
       )}
-    </div>
+    </Screen>
   );
 }
 
-interface StageCardProps {
+interface StageRowProps {
   stage: StageRecord;
   byId: Map<string, Contestant>;
   /** Contestants na ordem da run — desempate estavel da lista de respostas. */
   contestants: Contestant[];
-  open: boolean;
-  onToggle: () => void;
 }
 
 // Um cenario do accordion: cabecalho "01 · pergunta" e, aberto, o enunciado
 // completo + as respostas ordenadas por veredito.
-function StageCard({ stage, byId, contestants, open, onToggle }: StageCardProps) {
+function StageRow({ stage, byId, contestants }: StageRowProps) {
   const orderOf = new Map<string, number>(contestants.map((c, i) => [c.id, i] as [string, number]));
   const sortedResponses = stage.responses.slice().sort((a, b) => {
     const va = stageVerdict(stage, a.contestantId);
@@ -346,79 +420,88 @@ function StageCard({ stage, byId, contestants, open, onToggle }: StageCardProps)
   });
 
   const numLabel = String(stage.index + 1).padStart(2, '0');
-  const snippet = stage.spec ? trunc(stage.spec.question, 90) : stage.error ? 'Cenário pulado' : 'Gerando cenário…';
+  const snippet = stage.spec ? trunc(stage.spec.question, 110) : stage.error ? 'Cenário pulado' : 'Gerando cenário…';
 
   return (
-    <div className="stage-card" id={`stage-${stage.index}`}>
-      <button className="stage-head" onClick={onToggle}>
-        <span className="stage-head-left">
-          <span className="stage-num">{numLabel}</span>
-          <span className="stage-snippet">{snippet}</span>
+    <AccordionItem value={`stage-${stage.index}`}>
+      <AccordionTrigger className="px-4 py-3.5 text-left" headingLevel={3}>
+        <span className="flex min-w-0 flex-1 items-baseline gap-3">
+          <span className="shrink-0 font-mono text-[12px] text-muted-foreground tabular">{numLabel}</span>
+          <span className="min-w-0 flex-1 truncate text-[13px]">{snippet}</span>
+          {stage.error && <Tag className="shrink-0">pulado</Tag>}
         </span>
-        <span className="stage-head-right">
-          {stage.error && <span className="stage-badge b-neutral">pulado</span>}
-          <span className={`stage-caret ${open ? 'open' : ''}`}>▶</span>
-        </span>
-      </button>
+      </AccordionTrigger>
+      <AccordionPanel className="px-4 pb-4">
+        {stage.error && (
+          <Banner className="mb-4">
+            <strong>Cenário pulado:</strong> {stage.error}
+          </Banner>
+        )}
 
-      {open && (
-        <div className="stage-body">
-          {stage.error && (
-            <div className="banner banner-neutral" style={{ marginTop: 16, marginBottom: 0 }}>
-              <strong>Cenário pulado:</strong> {stage.error}
+        {stage.spec && (
+          <div className="flex flex-col gap-4">
+            <div>
+              <MiniLabel>Pergunta</MiniLabel>
+              <p className="text-sm leading-relaxed">{stage.spec.question}</p>
             </div>
-          )}
-
-          {stage.spec && (
-            <>
-              <div className="stage-block">
-                <div className="label-mini">Pergunta</div>
-                <div className="q-text">{stage.spec.question}</div>
+            <div>
+              <MiniLabel>Contexto</MiniLabel>
+              <Pre>{stage.spec.productContext}</Pre>
+            </div>
+            {stage.spec.rubric?.trim() && (
+              <div>
+                <MiniLabel>Rubrica</MiniLabel>
+                <Pre>{stage.spec.rubric}</Pre>
               </div>
-              <div className="stage-block">
-                <div className="label-mini">Contexto</div>
-                <pre className="context-pre">{stage.spec.productContext}</pre>
+            )}
+            {stage.spec.reference?.trim() && (
+              <div>
+                <MiniLabel>Gabarito</MiniLabel>
+                <Pre>{stage.spec.reference}</Pre>
               </div>
-              {stage.spec.rubric?.trim() && (
-                <div className="stage-block">
-                  <div className="label-mini">Rubrica</div>
-                  <pre className="context-pre">{stage.spec.rubric}</pre>
-                </div>
-              )}
-              {stage.spec.reference?.trim() && (
-                <div className="stage-block">
-                  <div className="label-mini">Gabarito</div>
-                  <pre className="context-pre">{stage.spec.reference}</pre>
-                </div>
-              )}
-            </>
-          )}
+            )}
+          </div>
+        )}
 
-          {sortedResponses.length > 0 && (
-            <div className="answers">
-              {sortedResponses.map((r) => {
-                const v = stageVerdict(stage, r.contestantId);
-                const meta = v ? VERDICT_META[v] : undefined;
-                const explanation = stage.referenceJudge?.explanationByContestant?.[r.contestantId];
-                return (
-                  <div className="answer-card" key={r.contestantId}>
-                    <div className="answer-head">
-                      <span className="answer-model">{byId.get(r.contestantId)?.label ?? r.modelId}</span>
-                      {meta && <span className={`verdict-pill ${meta.cls}`}>{meta.label}</span>}
-                    </div>
-                    <div className="answer-meta">
-                      {formatMs(r.latencyMs)} · {r.tokensIn}→{r.tokensOut} tok · {formatUsd(r.costUsd)}
-                      {r.status === 'error' && <span className="err"> · ERRO: {r.errorMsg}</span>}
-                    </div>
-                    {explanation && <div className="answer-note">{explanation}</div>}
-                    {r.status === 'ok' && <pre className="answer-text">{r.text}</pre>}
+        {sortedResponses.length > 0 && (
+          <div className="mt-5 flex flex-col gap-3">
+            {sortedResponses.map((r) => {
+              const v = stageVerdict(stage, r.contestantId);
+              const meta = v ? VERDICT_META[v] : undefined;
+              const explanation = stage.referenceJudge?.explanationByContestant?.[r.contestantId];
+              return (
+                <div key={r.contestantId} className="rounded-lg border border-border p-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-[13px] font-medium">
+                      {byId.get(r.contestantId)?.label ?? r.modelId}
+                    </span>
+                    {meta && (
+                      <span
+                        className={cn(
+                          'inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium',
+                          meta.pill,
+                        )}
+                      >
+                        {meta.label}
+                      </span>
+                    )}
                   </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
+                  <div className="mt-1 font-mono text-[11.5px] text-muted-foreground tabular">
+                    {formatMs(r.latencyMs)} · {r.tokensIn}→{r.tokensOut} tok · {formatUsd(r.costUsd)}
+                    {r.status === 'error' && <span className="text-destructive"> · ERRO: {r.errorMsg}</span>}
+                  </div>
+                  {explanation && (
+                    <p className="mt-2 border-l-2 border-border pl-3 text-[13px] text-muted-foreground">
+                      {explanation}
+                    </p>
+                  )}
+                  {r.status === 'ok' && <Pre className="mt-2">{r.text}</Pre>}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </AccordionPanel>
+    </AccordionItem>
   );
 }
