@@ -106,8 +106,6 @@ export interface RunConfig {
   scenarioBrief?: string;
   /** Cenarios importados de pacote JSON (seed). */
   scenarioSeed?: StageSpec[];
-  /** compare: repeticoes de cada cenario (1-3). */
-  repeats?: number;
   /** compare-llms: variantes de config {modelo, temp, reasoning}. */
   competitorConfigs?: { modelId: string; temperature?: number; reasoningLevel?: ReasoningLevel }[];
   /** training: margem minima de ganho (pp) p/ promover; sem ganho = convergiu. Default 1.0. */

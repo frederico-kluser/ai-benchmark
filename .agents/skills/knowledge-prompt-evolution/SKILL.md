@@ -2,7 +2,7 @@
 name: knowledge-prompt-evolution
 description: O sistema de evolução de prompts do ai-benchmark (portado do prompt-arena) — julgamento por referência (gabarito + refJudge pointwise + duelos Copeland), rank/pickWinner com minGain, reflection GEPA, holdout + significância bootstrap, datagen em lotes, pacote de cenários JSON, reasoning por papel e a biblioteca de prompts. Use ao mexer em gabarito/refJudge/duels/rank/holdout/stats/trainer/datagen/llmVariants/scenarioPack/reasoning/dedup/promptStore, ou em qualquer fluxo de treino/julgamento — leia junto com knowledge-benchmark-modes.
 metadata:
-  version: 0.2.0
+  version: 0.3.0
   type: knowledge
 ---
 # Evolução de prompts — ai-benchmark
@@ -15,8 +15,8 @@ Sistema portado do ondokai-prompt-arena. Cada módulo vive em `src/` **e** espel
   clássico (`orchestrator.ts`). Toggle explícito sobrepõe. Etapa sem `reference` (gabarito falhou
   ou compare clássico) cai no **listwise** de `judge.ts` — degrada, nunca crash.
 - **Gabarito** (`gabarito.ts` → `generateReferences`): 1 chamada por etapa, **temp 0**,
-  maxTokens 1500, modelo = `referenceModelId ?? judgeModelIds[0]`, `reasoning.judge`. Roda antes
-  da expansão por `repeats` (as cópias herdam o gabarito). Progresso agregado via evento
+  maxTokens 1500, modelo = `referenceModelId ?? judgeModelIds[0]`, `reasoning.judge`. Um gabarito
+  por cenário — cada cenário roda 1× (sem expansão). Progresso agregado via evento
   `stage.gabarito` com **`stageIndex: -1`** (não é etapa — não indexar no array de stages).
 - **refJudge** (`refJudge.ts`): **pointwise** — cada resposta isolada vs gabarito, vereditos
   `resolve/parcial/nao` + 1 frase. Multi-juiz agrega por **média ordinal** (2/1/0; ≥1.5 resolve,
@@ -68,8 +68,7 @@ Sistema portado do ondokai-prompt-arena. Cada módulo vive em `src/` **e** espel
   é a **tripla {modelId, temperature, reasoningLevel}** — id determinístico
   `llm__<slug>__<level|def>__t<temp|def>` (`llmVariants.ts`). `sanitizeLlmVariants` falha a run
   **cedo** (antes de qualquer LLM); `fairnessWarnings` não-bloqueantes (juiz que também compete).
-  A 1ª variante vira `isOriginal` (âncora dos duelos). `repeats` 1–3: cada cenário vira R cópias
-  (só compare não-pinado).
+  A 1ª variante vira `isOriginal` (âncora dos duelos).
 - **Reasoning** (`reasoning.ts`): níveis `off/low/medium/high/max` → budgets 1024/2048/4096/16384
   + headroom 2048 (`max_tokens = max(atual, budget + 2048)`). Por papel:
   `reasoning.{competitor, judge, rewriter, datagen}`; `chatCompletion(Stream)` aceitam

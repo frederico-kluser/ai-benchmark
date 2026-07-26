@@ -219,14 +219,6 @@ async function runLoop(record: RunRecord, apiKey: string, opts: StartRunOpts): P
   const pinnedStages = rawPinned?.map(saneMaxTokens);
   const pinado = Boolean(pinnedStages && pinnedStages.length);
 
-  // repeats (so compare, nao-pinado): cada cenario vira R copias EXATAS como
-  // cenarios distintos — mede a variancia das respostas e separa o vencedor
-  // real do ruido (port do prompt-arena).
-  const repeats =
-    !pinado && record.config.mode === 'compare'
-      ? Math.max(1, Math.floor(record.config.repeats ?? 1))
-      : 1;
-
   // Julgamento por referencia efetivo: ligado por default em variation/training
   // e no compare-llms; DESLIGADO no compare classico — runs listwise antigas
   // ficam compativeis em comportamento. Se TODOS os gabaritos falharem,
@@ -243,7 +235,7 @@ async function runLoop(record: RunRecord, apiKey: string, opts: StartRunOpts): P
     : (record.config.scenarioSeed ?? []).map((s) => saneMaxTokens({ ...s, origin: 'import' as const }));
   const alvo = pinado ? pinnedStages!.length : Math.max(record.config.stages, seed.length);
   record.stages = Array.from(
-    { length: alvo * repeats },
+    { length: alvo },
     (_, i): StageRecord => ({ index: i, responses: [], startedAt: nowIso() }),
   );
   for (let i = 0; i < record.stages.length; i++) {
@@ -279,10 +271,10 @@ async function runLoop(record: RunRecord, apiKey: string, opts: StartRunOpts): P
     }
   }
 
-  // === FASE 1.5: gabaritos (respostas de referencia), ANTES da expansao por
-  // repeats — as copias exatas herdam a mesma `reference`, evitando R chamadas
-  // identicas. Etapas que ja trazem reference (seed/pinadas) passam intactas;
-  // falha num gabarito so deixa a etapa sem reference (degrada na fase 3). ===
+  // === FASE 1.5: gabaritos (respostas de referencia), um por cenario — cada
+  // cenario roda uma unica vez. Etapas que ja trazem reference (seed/pinadas)
+  // passam intactas; falha num gabarito so deixa a etapa sem reference
+  // (degrada na fase 3). ===
   if (referenceJudging) {
     specs = await generateReferences({
       stages: specs,
@@ -295,12 +287,6 @@ async function runLoop(record: RunRecord, apiKey: string, opts: StartRunOpts): P
       onProgress: (done, total) =>
         emitEvent({ type: 'stage.gabarito', runId, stageIndex: -1, done, total }),
     });
-  }
-
-  // Expansao por repeats: R copias exatas de cada cenario (compartilham o
-  // gabarito por construcao).
-  if (repeats > 1) {
-    specs = specs.flatMap((s) => Array.from({ length: repeats }, () => ({ ...s })));
   }
 
   // Materializa as specs nos slots; se faltou cenario (dedup/falha de lote),

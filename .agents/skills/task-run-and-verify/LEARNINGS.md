@@ -10,6 +10,16 @@
 - 2026-07-17 (inferência) — O `npx tsc` resolvido fora de `web/node_modules` pode ser uma versão
   antiga (ex: 4.9.5) que não reconhece `moduleResolution: "bundler"`. Para type-check do frontend,
   use `./node_modules/.bin/tsc -b` dentro de `web/` após `npm install`.
+- 2026-07-25 (inferência) — Dá para verificar se o Zod de `POST /v1/benchmark/runs` aceita (ou
+  descarta) um campo **sem key válida**: `runConfigSchema.safeParse` roda ANTES do `validateKey`.
+  Resposta `401` = o schema passou; `400 "Config invalida"` = o schema rejeitou. Útil para provar
+  compatibilidade retroativa ao remover um campo (o Zod, sem `.strict()`, apenas o descarta).
+- 2026-07-25 (inferência) — Módulos puros de `web/src/engine/` rodam headless com
+  `npx tsx <script.ts>` executado **a partir de `web/`** (os imports sem extensão resolvem). Bom
+  para smoke de parsers (`parseArenaConfig`, `parseScenarioPack`) sem subir navegador.
+- 2026-07-25 (inferência) — O shell é **zsh**: `${PIPESTATUS[0]}` vem vazio (lá é `$pipestatus[1]`).
+  Para conferir exit code de type-check, rode o comando **sem pipe** e leia `$?` — senão você lê
+  "sucesso" de um comando que falhou.
 - 2026-07-17 (inferência) — Sem navegador disponível, o smoke de responsividade mobile pode ser
   complementado verificando se as media queries e as classes do menu hambúrguer aparecem no CSS
   gerado (`web/dist/assets/index-*.css`) e se o servidor de produção responde `200` com o

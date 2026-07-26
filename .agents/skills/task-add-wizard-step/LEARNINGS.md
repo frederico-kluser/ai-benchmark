@@ -11,6 +11,12 @@
   exata só pega uma das indentações — confira ambas.
 - 2026-06-17 (inferência) — Default de filtro ficou em `livre` de propósito: qualquer área não-livre
   poda os defaults de origem chinesa (`deepseek` gerador, `moonshotai` juiz) na carga inicial.
+- 2026-07-25 (usuário) — Não existe mais seletor de rodadas/repetições: `repeats` foi removido, cada
+  cenário roda 1× nos três modos. Ao **remover** um campo do assistente são **6** pontos de toque, e
+  o type-check só pega alguns: `useState`, o card JSX, a estimativa de custo **+ o array de deps do
+  `useMemo`** (tem `eslint-disable exhaustive-deps` — deps órfãs passam batido), `applyArenaConfig`,
+  o objeto de `submit()` e a linha do resumo do passo **Revisar**. Grep pelo nome do campo antes de
+  fechar.
 - 2026-06-18 (usuário) — Filtros são por PAPEL: participantes (competidores/contestant) recebem o
   catálogo filtrado (LGPD + preço via `participantModels`); gerador e juiz recebem `models` (completo,
   sem filtro) e a poda NÃO os toca. Gerador e juiz podem repetir o mesmo modelo (sem `excludeIds`

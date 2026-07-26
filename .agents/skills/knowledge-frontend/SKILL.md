@@ -2,7 +2,7 @@
 name: knowledge-frontend
 description: Padrões do frontend React/Vite do ai-benchmark — camada api.ts, cache IndexedDB (v2, com a biblioteca de prompts), o componente ModelSelector, o assistente Nova Run em passos (com compare-llms, pacote de cenários e toggles de evolução), SSE ao vivo (incl. eventos de gabarito/duelos) e design tokens CSS. Use ao adicionar/alterar qualquer coisa em web/src/ (telas, componentes, chamadas de API, estilos).
 metadata:
-  version: 0.4.0
+  version: 0.5.0
   type: knowledge
 ---
 # Frontend — ai-benchmark
@@ -63,12 +63,13 @@ Dev em `:5173` com proxy de `/v1` e `/health` → `:3001` (`vite.config.ts`).
 - **Filtros por papel (NewRun):** participantes recebem `participantModels` (LGPD + preço input/output); **gerador e juiz recebem `models` completo** (não filtrados) e **podem repetir o mesmo modelo** (sem `excludeIds` entre eles).
 
 ## Assistente Nova Run (`pages/NewRun.tsx`)
-- Ver `task-add-wizard-step` para o passo a passo. Resumo: um array `STEPS` dirige o fluxo; um `models` compartilhado alimenta todos os seletores; estimativa de custo via `priceById` (já inclui gabaritos/duelos/repeats).
+- Ver `task-add-wizard-step` para o passo a passo. Resumo: um array `STEPS` dirige o fluxo; um `models` compartilhado alimenta todos os seletores; estimativa de custo via `priceById` (já inclui gabaritos/duelos; escala por etapas × iterações — não há mais `repeats`).
 - **Controles novos do sistema de evolução:** passo Tema — `scenarioBrief` (textarea que guia o
   datagen) + **import de pacote de cenários** (ver seção acima). Passo Participantes (compare) —
   toggle do **eixo compare-llms** ("Mesmo modelo, configs diferentes"): editor de 2–12 linhas
-  `{modelId, temperature, reasoningLevel}` (identidade = a tripla; aviso de duplicada) + stepper
-  `repeats` 1–3. Passo Avaliação — toggle **`referenceJudging`** (todos os modos; default ON em
+  `{modelId, temperature, reasoningLevel}` (identidade = a tripla; aviso de duplicada). **Não há
+  mais stepper de repetições/rodadas** — cada cenário roda 1× nos três modos (removido 2026-07-25).
+  Passo Avaliação — toggle **`referenceJudging`** (todos os modos; default ON em
   variation/training/compare-llms, OFF no compare clássico; vai sempre explícito no config; o
   seletor de **modelo de referência** fica dentro deste card, visível só quando ligado) e bloco
   **"Treino evolutivo"** (só training: `duels`, `duelTopK` 0–32, `minGain` 0–100, `holdoutRatio`

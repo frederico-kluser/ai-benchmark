@@ -72,8 +72,6 @@ const baseFields = {
   referenceJudging: z.boolean().optional(),
   // Descricao detalhada do que testar — guia o datagen na geracao de cenarios.
   scenarioBrief: z.string().max(4000).optional(),
-  // compare: repeticoes de cada cenario (1-3) como cenarios distintos.
-  repeats: z.number().int().min(1).max(3).optional(),
   // Cenarios importados de pacote JSON (seed); o datagen complementa ate `stages`.
   scenarioSeed: z.array(stageSpecSchema).max(50).optional(),
 };
@@ -225,7 +223,6 @@ const runConfigSchema = z
       }
     } else {
       // variation | training: anti vies de auto-preferencia do juiz.
-      // (`repeats` > 1 so faz sentido em compare; aqui e simplesmente ignorado, sem erro.)
       if (cfg.judgeModelIds.includes(cfg.contestantModelId)) {
         ctx.addIssue({
           code: 'custom',

@@ -199,7 +199,7 @@ export function RunView() {
   const copelandStandings = useMemo(() => record?.standings ?? [], [record]);
 
   // Cenarios do pacote de export: spec de cada etapa, dedup por question
-  // (repeats/seeds podem repetir a mesma pergunta; o gabarito viaja no spec).
+  // (seeds podem repetir a mesma pergunta; o gabarito viaja no spec).
   const packScenarios = useMemo(() => {
     const seen = new Set<string>();
     const out: StageSpec[] = [];

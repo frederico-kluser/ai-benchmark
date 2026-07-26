@@ -69,8 +69,6 @@ export interface ArenaConfigFile {
     feedbackDriven?: boolean;
   };
   judging?: { reference?: boolean; passes?: 1 | 2 };
-  /** Repetições de cada cenário (só compare; separa vencedor real de ruído). */
-  repeats?: number; // int 1..3
   limits?: { maxOutputTokens?: number; timeoutMs?: number; concurrency?: number }; // int positivos
   compliance?: { area: string; includeRessalvas: boolean };
 }
@@ -227,12 +225,6 @@ const arenaConfigSchema = z
           },
           'judging deve ser um objeto',
         )
-        .optional(),
-      repeats: z
-        .number('deve ser número inteiro')
-        .int('deve ser número inteiro')
-        .min(1, 'mínimo 1')
-        .max(3, 'máximo 3')
         .optional(),
       limits: z
         .object(

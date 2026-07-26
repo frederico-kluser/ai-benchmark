@@ -2,7 +2,7 @@
 name: knowledge-benchmark-modes
 description: Os três modos de benchmark do ai-benchmark (compare, variation, training — incluindo o eixo compare-llms), o conceito de "contestant" e o pipeline gerador→competidores→julgamento (por referência + duelos, com listwise de fallback). Use ao mexer em orchestrator/trainer/variator/datagen/competitor/judge, ao alterar RunConfig, ou ao trabalhar com placar, iterações e a tela de resultados.
 metadata:
-  version: 0.3.0
+  version: 0.4.0
   type: knowledge
 ---
 # Modos de benchmark — ai-benchmark
@@ -21,6 +21,11 @@ scoreboard/medals/UI funcionando. O juiz **listwise** de `judge.ts` (1 chamada p
 2026-06-18) virou **fallback**: compare clássico ou etapa sem gabarito. Detalhes do sistema de
 evolução (gabarito/duelos/rank/holdout/pacote/reasoning) em **`knowledge-prompt-evolution`**.
 Resultado: `scoreboard` por contestant + aceitabilidade.
+
+**Uma rodada só (desde 2026-07-25):** cada cenário roda **exatamente uma vez** nos três modos. O
+campo `repeats` (1–3 cópias por cenário, só compare) foi **removido** de `RunConfig`, do Zod, do
+arena-config e do assistente — `record.stages.length === alvo`, sem expansão. Configs/arquivos
+antigos que ainda tragam a chave passam sem erro (o Zod, sem `.strict()`, apenas a descarta).
 
 ## Execução paralela (desde 2026-06-18)
 `runLoop` (`orchestrator.ts`) roda em 2 fases: (1) **pré-gera todos os cenários em paralelo**
@@ -54,8 +59,8 @@ Competidor genérico com `id`, `label`, `modelId`, `systemPrompt?`, `techniqueId
 ## Os três modos
 - **compare** (`POST /runs`): ≥2 `competitorModelIds` — **ou** o eixo **compare-llms**: 2–12
   `competitorConfigs` (XOR na API), onde a identidade do competidor é a **tripla
-  {modelId, temperature, reasoningLevel}** (`llmVariants.ts`), com `repeats` 1–3 (cada cenário
-  vira R cópias). Mesmas perguntas, ranking. Juiz e gerador não podem ser competidores.
+  {modelId, temperature, reasoningLevel}** (`llmVariants.ts`). Mesmas perguntas, ranking. Juiz e
+  gerador não podem ser competidores.
 - **variation** (`POST /runs`): 1 `contestantModelId` + variações de prompt. As variações vêm de **técnicas** (`techniqueIds`, otimização ligada → `variator.ts` reescreve via um modelo "optimizer") ou **manuais** (`manualVariants`). `basePrompt` opcional roda como controle. Juiz ≠ modelo sob teste (anti-viés).
 - **training** (`POST /sessions`): como variation, porém **N `iterations`** encadeadas (`trainer.ts`).
   Sessão (`SessionRecord`) agrega as runs; `pinnedStages` congela os cenários após a iteração 0

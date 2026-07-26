@@ -126,7 +126,10 @@ arquivo final):
 | `judging` | objeto | não | por modo | Como julgar: por gabarito ou listwise (ver 3.9). |
 | `limits` | objeto | não | defaults da UI | Tetos de tokens/tempo/concorrência (ver 3.10). |
 | `compliance` | objeto | não | livre | Filtro consultivo LGPD do catálogo de modelos (ver 3.11). |
-| `repeats` | int | não (só compare) | 1 | 1..3 — cada cenário vira R cópias (mede variância). Só faz sentido em compare com cenários gerados. |
+
+> **Removido:** `repeats` (1..3, cópias de cada cenário) não existe mais — cada cenário roda
+> **uma única vez** nos três modos. Arquivos antigos que ainda tragam a chave continuam válidos:
+> ela é simplesmente ignorada na leitura.
 
 ### 3.2 `scenarios[]` (cenários pinados)
 
@@ -424,10 +427,10 @@ de propósito — caem nos defaults (`judges[0]` e `datagen`).
 }
 ```
 
-### 5.c) Compare — 3 configs do mesmo modelo + repeats 2
+### 5.c) Compare — 3 configs do mesmo modelo
 
-Eixo compare-llms: o mesmo modelo roda em 3 configurações (temperatura e reasoning distintos),
-cada cenário duplicado (`repeats: 2`) para medir variância. A identidade de cada competidor é a
+Eixo compare-llms: o mesmo modelo roda em 3 configurações (temperatura e reasoning distintos)
+sobre os mesmos cenários, cada um rodado uma vez. A identidade de cada competidor é a
 tripla modelo+temperatura+reasoning.
 
 ```json
@@ -462,7 +465,6 @@ tripla modelo+temperatura+reasoning.
       { "model": "openai/gpt-5-mini", "temperature": 1, "reasoning": "off" }
     ]
   },
-  "repeats": 2,
   "effort": {
     "judge": "high",
     "datagen": "low"

@@ -442,13 +442,12 @@ export function NewRun() {
   const configFileRef = useRef<HTMLInputElement>(null);
 
   // compare: eixo 'models' (modelos distintos) × 'configs' (mesmo modelo,
-  // configs diferentes — compare-llms). `repeats` repete cada cenário (1–3).
+  // configs diferentes — compare-llms).
   const [compareAxis, setCompareAxis] = useState<'models' | 'configs'>('models');
   const [competitorConfigs, setCompetitorConfigs] = useState<ConfigRow[]>([
     { modelId: '', temperature: '', reasoningLevel: '' },
     { modelId: '', temperature: '', reasoningLevel: '' },
   ]);
-  const [repeats, setRepeats] = useState(1);
 
   // Julgamento por referência (gabarito). null = segue o default do modo/eixo
   // (on p/ variation/training e compare-llms; off p/ compare clássico) — a 1ª
@@ -743,20 +742,19 @@ export function NewRun() {
       for (const jid of judge) perStage += costOf(jid, ctxIn + n * maxTokensNum, 350) * passes;
     }
     const iters = mode === 'training' ? iterations : 1;
-    // compare: `repeats` clona cada cenário — o custo escala junto.
-    const stageCount = mode === 'compare' ? plannedStages * repeats : plannedStages;
-    const point = perStage * stageCount * iters;
+    // Cada cenário roda uma única vez — o custo escala só por etapas × iterações.
+    const point = perStage * plannedStages * iters;
     return {
       n,
       stages: plannedStages,
       iters,
-      calls: stageCount * (n + 1 + judgeCalls + extraCalls) * iters,
+      calls: plannedStages * (n + 1 + judgeCalls + extraCalls) * iters,
       low: point * 0.45,
       high: point,
       refTerms: referenceJudging,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, isSingle, competitors, compareAxis, competitorConfigs, contestantModel, variantCount, datagen, judge, twoPassJudge, plannedStages, repeats, referenceJudging, referenceModel, duels, duelTopK, maxTokensNum, iterations, priceById]);
+  }, [mode, isSingle, competitors, compareAxis, competitorConfigs, contestantModel, variantCount, datagen, judge, twoPassJudge, plannedStages, referenceJudging, referenceModel, duels, duelTopK, maxTokensNum, iterations, priceById]);
 
   function step(key: keyof typeof RANGES, current: number, setter: (v: number) => void, dir: 1 | -1) {
     const [min, max, by] = RANGES[key];
@@ -854,7 +852,6 @@ export function NewRun() {
     if (config.training?.feedbackDriven !== undefined) setFeedbackDriven(config.training.feedbackDriven);
     if (config.judging?.reference !== undefined) setRefJudgingChoice(config.judging.reference);
     if (config.judging?.passes !== undefined) setTwoPassJudge(config.judging.passes === 2);
-    if (config.repeats !== undefined) setRepeats(Math.max(1, Math.min(3, Math.round(config.repeats))));
     if (config.limits?.maxOutputTokens !== undefined) setMaxOutputTokens(String(config.limits.maxOutputTokens));
     if (config.limits?.timeoutMs !== undefined) setTimeoutMs(config.limits.timeoutMs);
     if (config.limits?.concurrency !== undefined) setConcurrency(config.limits.concurrency);
@@ -1032,10 +1029,9 @@ export function NewRun() {
                 ...(r.reasoningLevel ? { reasoningLevel: r.reasoningLevel } : {}),
               };
             }),
-          ...(repeats > 1 ? { repeats } : {}),
         };
       } else {
-        config = { mode, ...common, competitorModelIds: competitors, ...(repeats > 1 ? { repeats } : {}) };
+        config = { mode, ...common, competitorModelIds: competitors };
       }
     } else {
       config = {
@@ -1669,19 +1665,6 @@ export function NewRun() {
                     )}
                   </div>
                 )}
-                <div className="card steppers-card">
-                  <div className="steppers-grid">
-                    <Stepper
-                      label="Repetições"
-                      value={repeats}
-                      onStep={(d) => setRepeats(Math.max(1, Math.min(3, repeats + d)))}
-                    />
-                  </div>
-                  <p className="field-hint">
-                    <strong>Repetições</strong> repete cada cenário p/ separar ruído de diferença real entre os
-                    concorrentes (1 = sem repetição).
-                  </p>
-                </div>
               </>
             ) : (
               <>
@@ -2057,12 +2040,6 @@ export function NewRun() {
                     <div className="summary-row">
                       <span className="k">Iterações</span>
                       <span className="v">{estimate.iters}</span>
-                    </div>
-                  )}
-                  {mode === 'compare' && repeats > 1 && (
-                    <div className="summary-row">
-                      <span className="k">Repetições</span>
-                      <span className="v">{repeats}×</span>
                     </div>
                   )}
                   {referenceJudging && (

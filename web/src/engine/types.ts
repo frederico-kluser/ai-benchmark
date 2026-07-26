@@ -133,8 +133,6 @@ export interface RunConfigBase {
   scenarioBrief?: string;
   /** Cenarios importados de pacote JSON (seed); o datagen complementa ate `stages`. */
   scenarioSeed?: StageSpec[];
-  /** compare: repeticoes de cada cenario (1-3) como cenarios distintos. */
-  repeats?: number;
 }
 
 /** Campos comuns aos modos de 1 LLM (variation/training). */
