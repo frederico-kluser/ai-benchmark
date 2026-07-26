@@ -169,31 +169,33 @@ function PromptItem({ prompt: p, onUpdated, onDeleted }: PromptItemProps) {
             <Pencil aria-hidden="true" />
             Renomear
           </Button>
+          {/* variant="icon": o default é uma pílula primary em mono-caixa-alta,
+              que destoa da fileira de botões outline. */}
           <CopyButton
+            variant="icon"
             value={p.text}
             label="Copiar prompt"
             copiedLabel="Prompt copiado"
-            className="h-7 rounded-lg border border-border px-2.5 text-[0.8rem]"
-          >
-            Copiar
-          </CopyButton>
-          {/* Segurar para excluir: sem diálogo de confirmação e sem clique
-              acidental — a barra só completa depois de 1,2 s de pressão. */}
-          <HoldToConfirmButton
-            holdSeconds={1.2}
-            onConfirm={() => void confirmDelete()}
-            className="ml-auto h-7 rounded-lg border border-destructive/30 px-2.5 text-[0.8rem] text-destructive"
-          >
-            Segure para excluir
-          </HoldToConfirmButton>
+            className="h-7 rounded-lg"
+          />
           {link && (
-            <Link
-              to={link.to}
-              className="text-[13px] text-primary underline-offset-4 hover:underline"
-            >
+            <Link to={link.to} className="text-[13px] text-primary underline-offset-4 hover:underline">
               {link.label}
             </Link>
           )}
+          {/* Segurar para excluir: sem diálogo de confirmação e sem clique
+              acidental — a barra de destructive só completa após 1,2 s de
+              pressão. O componente vem `h-[3.25rem] w-60` (alvo de gesto de
+              página inteira); numa fileira de botões pequenos isso domina a
+              tela, daí o override com `!` (a ordem da classe não decide o
+              desempate no Tailwind). */}
+          <HoldToConfirmButton
+            holdSeconds={1.2}
+            onConfirm={() => void confirmDelete()}
+            className="ml-auto !h-7 !w-auto rounded-lg px-3 !text-[0.8rem]"
+          >
+            Segure para excluir
+          </HoldToConfirmButton>
         </div>
 
         {detail && (

@@ -335,11 +335,13 @@ function BestPromptStudio({
           className="mt-4 flex flex-col gap-3"
         >
           <div className="flex flex-wrap items-center justify-between gap-2">
+            {/* nowrap: as abas dividem a largura por igual e "Diff vs. original"
+                quebrava em duas linhas, deixando a lista com o dobro da altura. */}
             <SmoothTabsList ariaLabel="Ver prompt ou diff" className="w-fit">
-              <SmoothTabsTab value="diff" className="px-3 py-1.5 text-[13px]">
+              <SmoothTabsTab value="diff" className="px-3 py-1.5 text-[13px] whitespace-nowrap">
                 Diff vs. original
               </SmoothTabsTab>
-              <SmoothTabsTab value="prompt" className="px-3 py-1.5 text-[13px]">
+              <SmoothTabsTab value="prompt" className="px-3 py-1.5 text-[13px] whitespace-nowrap">
                 Prompt
               </SmoothTabsTab>
             </SmoothTabsList>
@@ -347,14 +349,15 @@ function BestPromptStudio({
               <Button variant="outline" size="sm" onClick={openSaveForm} disabled={saved}>
                 {saved ? 'Salvo' : 'Salvar na biblioteca'}
               </Button>
+              {/* variant="icon": o default é uma pílula primary em mono-caixa-alta,
+                  que gritava ao lado do botão de salvar. */}
               <CopyButton
+                variant="icon"
                 value={selPrompt}
                 label="Copiar prompt"
                 copiedLabel="Prompt copiado"
-                className="h-7 rounded-lg border border-border px-2.5 text-[0.8rem]"
-              >
-                Copiar
-              </CopyButton>
+                className="h-7 rounded-lg"
+              />
             </div>
           </div>
 
