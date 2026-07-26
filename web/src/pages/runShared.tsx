@@ -2,7 +2,7 @@
 // TrainingView (cockpit de treino). A UNICA visualizacao de progresso/resultado
 // e o heatmap (cenario x variante); o bloco de finais so aparece no fim.
 import { useMemo } from 'react';
-import type { KeyboardEvent } from 'react';
+import type { CSSProperties, KeyboardEvent, ReactNode } from 'react';
 import type { RunRecord, StageRecord, Verdict } from '../api';
 import { normalizeContestants } from '../api';
 import { useTheme } from '../theme';
@@ -56,6 +56,36 @@ export function rankColor(pos: number, total: number, dark: boolean): RankColor 
   const frac = (pos - 1) / (total - 1);
   const hue = Math.round(145 - (145 - 6) * frac);
   return { solid: `hsl(${hue} 62% 44%)`, soft: `hsl(${hue} 75% 50% / ${sa})`, text: `hsl(${hue} 58% ${tl}%)` };
+}
+
+// ---------------------------------------------------------------------------
+// Cabecalho de secao no mesmo idioma das listas agrupadas: tile de icone
+// colorido + titulo. Os glifos sao Unicode — SF Symbols e proprietario e nao
+// pode ser embutido; emoji esta fora por decisao de identidade.
+// ---------------------------------------------------------------------------
+
+/** Tom semantico do tile (ver `.tile-*` em styles.css). */
+export type TileTone = 'teal' | 'purple' | 'indigo' | 'blue' | 'orange' | 'gray';
+
+interface SectionHeadProps {
+  /** Glifo do tile — decorativo, entao `aria-hidden` (o titulo ja nomeia). */
+  glyph: string;
+  tone: TileTone;
+  /** Titulo da secao. */
+  children: ReactNode;
+  /** Complemento discreto a direita (link "detalhe →", contagem). */
+  status?: ReactNode;
+  style?: CSSProperties;
+}
+
+export function SectionHead({ glyph, tone, children, status, style }: SectionHeadProps) {
+  return (
+    <div className="ios-head-inline" style={style}>
+      <span className={`ios-tile tile-${tone}`} aria-hidden="true">{glyph}</span>
+      <span className="ios-group-title">{children}</span>
+      {status && <span className="ios-group-status">{status}</span>}
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------

@@ -1,5 +1,5 @@
 import { applyReasoning } from './reasoning.js';
-import type { OpenRouterModel, ReasoningLevel } from './types.js';
+import type { ModelReasoningMeta, OpenRouterModel, ReasoningLevel } from './types.js';
 
 // Permite apontar para um gateway compativel com a OpenRouter (proxy
 // corporativo, mock de teste). Default: API publica da OpenRouter.
@@ -64,6 +64,41 @@ function deterministicSampling(
   }
   // sem metadados de suporte: omite temperature em reasoning (seed desconhecido).
   return looksLikeReasoning(modelId) ? {} : { temperature: desiredTemperature };
+}
+
+/**
+ * Capacidades de ajuste declaradas pelo modelo (`supported_parameters`).
+ * `reasoning` = aceita `reasoning` OU `reasoning_effort`; `effort` = aceita os
+ * degraus discretos de `reasoning_effort` (formato nativo, ver applyReasoning).
+ * Sem metadados: assume temperature (a heuristica looksLikeReasoning ainda
+ * decide se ela vai no body) e nenhum controle de raciocinio.
+ */
+export function modelTuningCaps(m?: {
+  supportedParameters?: string[];
+  reasoning?: ModelReasoningMeta;
+}): {
+  temperature: boolean;
+  reasoning: boolean;
+  effort: boolean;
+  /** Degraus que ESTE modelo aceita (ausente = sem restricao). */
+  supportedEfforts?: string[];
+  defaultEffort?: string;
+  /** true = raciocinio nao pode ser desligado. */
+  mandatory: boolean;
+} {
+  const supported = m?.supportedParameters;
+  if (!supported || supported.length === 0) {
+    return { temperature: true, reasoning: false, effort: false, mandatory: false };
+  }
+  const effort = supported.includes('reasoning_effort');
+  return {
+    temperature: supported.includes('temperature'),
+    reasoning: effort || supported.includes('reasoning'),
+    effort,
+    supportedEfforts: m?.reasoning?.supportedEfforts,
+    defaultEffort: m?.reasoning?.defaultEffort,
+    mandatory: m?.reasoning?.mandatory ?? false,
+  };
 }
 
 /**
@@ -233,6 +268,27 @@ async function guardedFetch(
   }
 }
 
+/**
+ * Le o objeto `reasoning` de um item de /models. E ele que diz QUAIS degraus de
+ * esforco o modelo aceita (`supported_efforts`, ordem decrescente; ausente = sem
+ * restricao) e se raciocinio pode ser desligado (`mandatory`). Sem ele, so daria
+ * para chutar o esforco e levar 400.
+ */
+function parseReasoningMeta(raw: unknown): ModelReasoningMeta | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const r = raw as Record<string, unknown>;
+  const efforts = Array.isArray(r.supported_efforts)
+    ? (r.supported_efforts as unknown[]).map((e) => String(e))
+    : undefined;
+  return {
+    mandatory: typeof r.mandatory === 'boolean' ? r.mandatory : undefined,
+    defaultEnabled: typeof r.default_enabled === 'boolean' ? r.default_enabled : undefined,
+    supportedEfforts: efforts,
+    defaultEffort: typeof r.default_effort === 'string' ? r.default_effort : undefined,
+    supportsMaxTokens: typeof r.supports_max_tokens === 'boolean' ? r.supports_max_tokens : undefined,
+  };
+}
+
 export async function listModels(apiKey: string, force = false): Promise<OpenRouterModel[]> {
   const ck = cacheKey(apiKey);
   const cached = modelsCache.get(ck);
@@ -268,6 +324,7 @@ export async function listModels(apiKey: string, force = false): Promise<OpenRou
       supportedParameters: Array.isArray(item.supported_parameters)
         ? (item.supported_parameters as unknown[]).map((p) => String(p))
         : undefined,
+      reasoning: parseReasoningMeta(item.reasoning),
       raw: item,
     };
   });
@@ -332,9 +389,12 @@ export async function chatCompletion(params: ChatCompletionParams): Promise<Chat
   if (responseFormatJson) {
     body.response_format = { type: 'json_object' };
   }
-  // Depois do max_tokens: applyReasoning sobe o teto para caber o budget
-  // de raciocinio + headroom de resposta (ver reasoning.ts).
-  if (reasoningLevel) applyReasoning(body, reasoningLevel);
+  // O esforco pedido e ENCAIXADO no que este modelo declara aceitar (ver
+  // fitEffort/applyReasoning): allowlist propria por modelo e raciocinio
+  // obrigatorio em alguns (onde 'off' nao pode ser enviado).
+  if (reasoningLevel) {
+    applyReasoning(body, reasoningLevel, cachedModel(apiKey, modelId)?.reasoning);
+  }
 
   const { res, startedAt, finish } = await guardedFetch(
     `${OPENROUTER_BASE}/chat/completions`,
@@ -406,8 +466,10 @@ export async function chatCompletionStream(
   };
   if (typeof maxTokens === 'number' && maxTokens > 0) body.max_tokens = maxTokens;
   if (responseFormatJson) body.response_format = { type: 'json_object' };
-  // Mesma regra do chatCompletion: reasoning depois do max_tokens (headroom).
-  if (reasoningLevel) applyReasoning(body, reasoningLevel);
+  // Mesma regra do chatCompletion: o esforco e encaixado na allowlist do modelo.
+  if (reasoningLevel) {
+    applyReasoning(body, reasoningLevel, cachedModel(apiKey, modelId)?.reasoning);
+  }
 
   const { res, startedAt, finish } = await guardedFetch(
     `${OPENROUTER_BASE}/chat/completions`,

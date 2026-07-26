@@ -12,9 +12,11 @@ export const MAX_LLM_VARIANTS = 12;
 /** Rótulo PT-BR de cada nível de raciocínio (UI e label da variante). */
 export const LEVEL_LABEL_PT: Record<ReasoningLevel, string> = {
   off: 'Sem raciocínio',
+  minimal: 'Raciocínio mínimo',
   low: 'Raciocínio baixo',
   medium: 'Raciocínio médio',
   high: 'Raciocínio alto',
+  xhigh: 'Raciocínio muito alto',
   max: 'Raciocínio máximo',
 };
 

@@ -10,6 +10,7 @@ import {
   applyEvent,
   ScoreHeatmap,
   FinalsPanel,
+  SectionHead,
 } from './runShared';
 
 // Notacao decimal sempre: "$4.00e-4" e ilegivel para quem so quer saber quanto
@@ -254,12 +255,12 @@ export function RunView() {
         <div className="banner banner-neutral">Run interrompida — o servidor reiniciou enquanto ela rodava.</div>
       )}
 
-      <div className="section-label">Resultados</div>
+      <SectionHead glyph="◱" tone="teal">Resultados</SectionHead>
       <ScoreHeatmap record={record} ranked={!isRunning} onStageClick={openStageFromHeatmap} />
 
       {hasFinals && (
         <>
-          <div className="section-label">Final</div>
+          <SectionHead glyph="▲" tone="orange">Final</SectionHead>
           <FinalsPanel record={record} progress={duelProgress} />
         </>
       )}
@@ -272,7 +273,12 @@ export function RunView() {
         open={listOpen ?? !isRunning}
         onToggle={(e) => setListOpen(e.currentTarget.open)}
       >
-        <summary className="section-label">Cenários{stages.length ? ` (${stages.length})` : ''}</summary>
+        {/* O cabecalho vive DENTRO do <summary> (so spans — conteudo valido) para
+            o clique/foco continuarem sendo do proprio summary. */}
+        <summary className="ios-head-inline">
+          <span className="ios-tile tile-indigo" aria-hidden="true">⚖</span>
+          <span className="ios-group-title">Cenários{stages.length ? ` (${stages.length})` : ''}</span>
+        </summary>
         {stages.length === 0 && (
           <div className="card" style={{ color: 'var(--text-3)' }}>Aguardando o primeiro cenário…</div>
         )}
@@ -290,7 +296,7 @@ export function RunView() {
 
       {isSingle && contestants.length > 0 && (
         <>
-          <div className="section-label">Variantes</div>
+          <SectionHead glyph="✎" tone="purple">Variantes</SectionHead>
           <details className="card variants-card">
             <summary className="muted" style={{ cursor: 'pointer', fontSize: 13 }}>
               {contestants.length} variantes

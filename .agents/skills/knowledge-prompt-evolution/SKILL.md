@@ -76,10 +76,16 @@ Sistema portado do ondokai-prompt-arena. Cada módulo vive em `src/` **e** espel
   `llm__<slug>__<level|def>__t<temp|def>` (`llmVariants.ts`). `sanitizeLlmVariants` falha a run
   **cedo** (antes de qualquer LLM); `fairnessWarnings` não-bloqueantes (juiz que também compete).
   A 1ª variante vira `isOriginal` (controle: âncora do `standings`, não mais dos duelos).
-- **Reasoning** (`reasoning.ts`): níveis `off/low/medium/high/max` → budgets 1024/2048/4096/16384
-  + headroom 2048 (`max_tokens = max(atual, budget + 2048)`). Por papel:
-  `reasoning.{competitor, judge, rewriter, datagen}`; `chatCompletion(Stream)` aceitam
-  `reasoningLevel` (ausente = não envia `reasoning`, comportamento antigo idêntico).
+- **Reasoning** (`reasoning.ts`): **7 degraus** `off/minimal/low/medium/high/xhigh/max`, que
+  espelham a escala `effort` do OpenRouter (`off` = `none`). O envio é SEMPRE
+  `reasoning: { effort }` — junto com `max_tokens` o OpenRouter devolve 400, e budget por tokens
+  só 7 de 214 modelos aceitam. Cada modelo declara em `/models` a própria allowlist
+  (`reasoning.supported_efforts`, 20 conjuntos distintos no catálogo) e se raciocínio é
+  `mandatory`; `fitEffort` encaixa o nível pedido no degrau suportado mais próximo (empate → o
+  mais barato) e `applyReasoning` **não envia nada** quando o nível é `off` num modelo mandatory.
+  Validado contra o catálogo real: 1498 combinações (214 modelos × 7 níveis), 0 violações.
+  Por papel: `reasoning.{competitor, judge, rewriter, datagen}`; na UI o esforço é escolhido
+  **por modelo** (ver `knowledge-frontend` → `modelCaps`/`effortOptions`).
   O variator aplica `reasoning.rewriter` via `GenerateContestantsParams.reasoningLevel`.
 
 ## Biblioteca de prompts (client-only)

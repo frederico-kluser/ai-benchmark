@@ -1,6 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import type { OpenRouterModel } from '../api';
-import { fetchModels } from '../api';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import type { ModelCaps, OpenRouterModel, ReasoningLevel } from '../api';
+import { EFFORT_LABEL, effortOptions, fetchModels, modelCaps } from '../api';
+
+/** Ajuste fino de UM modelo escolhido. temperature como TEXTO: '' = padrão do modelo. */
+export interface ModelTuning {
+  effort?: '' | ReasoningLevel;
+  temperature?: string;
+}
 
 interface Props {
   multi?: boolean;
@@ -14,7 +20,15 @@ interface Props {
   loading?: boolean;
   /** Compacto: sem card próprio, para embutir numa linha de outro bloco. Default true. */
   inline?: boolean;
+  /** Ajuste fino por modelo escolhido. Ausente = seletor simples, sem ajustes. */
+  tuning?: Record<string, ModelTuning>;
+  onTuningChange?: (modelId: string, patch: Partial<ModelTuning>) => void;
+  /** Quais ajustes oferecer; a capacidade REAL ainda vem do supported_parameters. */
+  tuningFields?: ('effort' | 'temperature')[];
 }
+
+
+const ALL_TUNING_FIELDS: ('effort' | 'temperature')[] = ['effort', 'temperature'];
 
 function formatPricePerMTok(usdPerToken: number): string {
   const perM = usdPerToken * 1_000_000;
@@ -31,6 +45,86 @@ function priceLabel(model: OpenRouterModel): string {
 function shortName(id: string): string {
   const slash = id.lastIndexOf('/');
   return slash >= 0 ? id.slice(slash + 1) : id;
+}
+
+/** Resumo do ajuste ativo (vai no `title` do chip). Vazio = sem ajuste. */
+function tuneSummary(t?: ModelTuning): string {
+  const partes: string[] = [];
+  const nivel = t?.effort;
+  if (nivel) {
+    const rotulo = EFFORT_LABEL[nivel === 'off' ? 'none' : nivel] ?? nivel;
+    partes.push(`esforço ${rotulo.toLowerCase()}`);
+  }
+  const temp = t?.temperature?.trim();
+  if (temp) partes.push(`temperatura ${temp}`);
+  return partes.join(' · ');
+}
+
+/**
+ * Linhas de ajuste do modelo aberto — SOMENTE os controles que ele aceita
+ * (capacidade real do `supported_parameters`, cruzada com `tuningFields`).
+ */
+function ModelTune(p: {
+  panelId: string;
+  modelId: string;
+  caps: ModelCaps;
+  fields: ('effort' | 'temperature')[];
+  value: ModelTuning;
+  onChange: (patch: Partial<ModelTuning>) => void;
+}) {
+  const temEsforco = p.caps.reasoning && p.fields.includes('effort');
+  const temTemperatura = p.caps.temperature && p.fields.includes('temperature');
+  return (
+    <div className="picker-tune" id={p.panelId} role="group" aria-label={`Ajustes de ${p.modelId}`}>
+      <div className="ios-row-sub">{p.modelId}</div>
+
+      {temEsforco && (
+        <div className="ios-row">
+          <div className="ios-row-main">
+            <span className="ios-row-label">Esforço</span>
+            <span className="ios-row-sub">
+              Quanto o modelo pensa antes de responder. Mais esforço custa mais tokens.
+            </span>
+          </div>
+          <div className="ios-row-ctl">
+            <select
+              className="input"
+              aria-label={`Esforço de ${p.modelId}`}
+              value={p.value.effort ?? ''}
+              onChange={(e) => p.onChange({ effort: e.target.value as '' | ReasoningLevel })}
+            >
+              {effortOptions(p.caps).map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
+
+      {temTemperatura && (
+        <div className="ios-row">
+          <div className="ios-row-main">
+            <span className="ios-row-label">Temperatura</span>
+            <span className="ios-row-sub">
+              0 = sempre a resposta mais provável. Acima disso, mais variação entre execuções.
+            </span>
+          </div>
+          <div className="ios-row-ctl">
+            <input
+              type="number" className="input nr-num" min={0} max={2} step={0.1} placeholder="padrão"
+              aria-label={`Temperatura de ${p.modelId}`}
+              value={p.value.temperature ?? ''}
+              onChange={(e) => p.onChange({ temperature: e.target.value })}
+            />
+          </div>
+        </div>
+      )}
+
+      {!temEsforco && !temTemperatura && (
+        <div className="ios-row-sub">Este modelo não aceita ajuste de esforço nem de temperatura.</div>
+      )}
+    </div>
+  );
 }
 
 // -------- fuzzy search --------
@@ -103,6 +197,9 @@ export function ModelSelector({
   models: sharedModels,
   loading: sharedLoading,
   inline = true,
+  tuning,
+  onTuningChange,
+  tuningFields = ALL_TUNING_FIELDS,
 }: Props) {
   const selfManaged = sharedModels === undefined;
   const [selfModels, setSelfModels] = useState<OpenRouterModel[]>([]);
@@ -110,6 +207,11 @@ export function ModelSelector({
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
+  // Id do modelo com o painel de ajuste aberto (um por vez). null = fechado.
+  const [tuneOpen, setTuneOpen] = useState<string | null>(null);
+  // O painel de ajuste não é irmão do botão que o abre — precisa de aria-controls.
+  const uid = useId();
+  const tunePanelId = `${uid}-tune`;
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
@@ -202,6 +304,11 @@ export function ModelSelector({
 
   const addLabel = loading ? 'carregando…' : !multi && value.length > 0 ? 'trocar' : '+ adicionar';
 
+  // Sem as duas props de ajuste, o seletor é o de sempre: chips + adicionar.
+  const tunable = !!(tuning && onTuningChange);
+  // Modelo removido enquanto o painel dele estava aberto: não renderiza órfão.
+  const tuneModelId = tunable && tuneOpen && value.includes(tuneOpen) ? tuneOpen : null;
+
   return (
     <div className={inline ? 'picker' : 'picker card'} ref={wrapperRef}>
       <span className="picker-label" title={hint}>
@@ -209,18 +316,34 @@ export function ModelSelector({
       </span>
 
       <div className="picker-chips">
-        {selected.map(({ id, model }) => (
-          <span
-            key={id}
-            className="picker-chip"
-            title={model ? `${id} — ${priceLabel(model)}` : loading ? `${id} — carregando…` : `${id} — fora do catálogo`}
-          >
-            {shortName(id)}
-            <button type="button" className="picker-chip-x" aria-label={`Remover ${id}`} onClick={() => remove(id)}>
-              ×
-            </button>
-          </span>
-        ))}
+        {selected.map(({ id, model }) => {
+          const resumo = tunable ? tuneSummary(tuning?.[id]) : '';
+          const base = model ? `${id} — ${priceLabel(model)}` : loading ? `${id} — carregando…` : `${id} — fora do catálogo`;
+          return (
+            <span
+              key={id}
+              className={resumo ? 'picker-chip tuned' : 'picker-chip'}
+              title={resumo ? `${base} · ${resumo}` : base}
+            >
+              {shortName(id)}
+              {tunable && (
+                <button
+                  type="button"
+                  className="picker-chip-tune"
+                  aria-label={`Ajustar ${id}`}
+                  aria-expanded={tuneOpen === id}
+                  aria-controls={tunePanelId}
+                  onClick={() => setTuneOpen((v) => (v === id ? null : id))}
+                >
+                  ⌥
+                </button>
+              )}
+              <button type="button" className="picker-chip-x" aria-label={`Remover ${id}`} onClick={() => remove(id)}>
+                ×
+              </button>
+            </span>
+          );
+        })}
       </div>
 
       <div className="picker-wrap">
@@ -273,6 +396,17 @@ export function ModelSelector({
           </div>
         )}
       </div>
+
+      {tuneModelId && (
+        <ModelTune
+          panelId={tunePanelId}
+          modelId={tuneModelId}
+          caps={modelCaps(models.find((m) => m.id === tuneModelId) ?? { id: tuneModelId })}
+          fields={tuningFields}
+          value={tuning?.[tuneModelId] ?? {}}
+          onChange={(patch) => onTuningChange?.(tuneModelId, patch)}
+        />
+      )}
     </div>
   );
 }

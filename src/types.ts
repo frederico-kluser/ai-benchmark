@@ -15,7 +15,27 @@ export interface OpenRouterModel {
    * respondem vazio (HTTP 400) se ela for enviada. Ausente = desconhecido.
    */
   supportedParameters?: string[];
+  /** Metadados de raciocinio declarados pelo modelo (campo `reasoning` de /models). */
+  reasoning?: ModelReasoningMeta;
   raw?: unknown;
+}
+
+/**
+ * O que o modelo declara sobre raciocinio em `GET /models`. E a fonte de verdade
+ * para saber QUAIS degraus de esforco ele aceita — sem isto so daria para chutar
+ * (medido: 20 conjuntos distintos de `supported_efforts` no catalogo).
+ */
+export interface ModelReasoningMeta {
+  /** true = raciocinio nao pode ser desligado (o degrau 'none' e rejeitado). */
+  mandatory?: boolean;
+  /** Raciocinio ja vem ligado por default neste modelo. */
+  defaultEnabled?: boolean;
+  /** Degraus permitidos, em ordem decrescente. AUSENTE = sem restricao. */
+  supportedEfforts?: string[];
+  /** Degrau usado quando nao mandamos `effort`. */
+  defaultEffort?: string;
+  /** Aceita budget por `reasoning.max_tokens` (raro: 7 de 214 modelos). */
+  supportsMaxTokens?: boolean;
 }
 
 // ----------------------------------------------------------------------------
@@ -77,8 +97,13 @@ export type PublicTechnique = Omit<PromptTechnique, 'metaInstruction'>;
 // Reasoning (esforco de raciocinio por papel)
 // ----------------------------------------------------------------------------
 
-/** Nivel de esforco de raciocinio: off = desligado; low..max = budgets crescentes. */
-export type ReasoningLevel = 'off' | 'low' | 'medium' | 'high' | 'max';
+/**
+ * Nivel de esforco de raciocinio. Espelha a escala de `effort` do OpenRouter
+ * (none < minimal < low < medium < high < xhigh < max), com `off` no lugar de
+ * 'none'. Cada modelo aceita so um SUBCONJUNTO destes degraus — ver
+ * `ModelReasoningMeta.supportedEfforts` e `fitEffort` em reasoning.ts.
+ */
+export type ReasoningLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
 /** Reasoning por papel da run (secao avancada do assistente); papel ausente = desligado. */
 export interface ReasoningConfig {
@@ -153,6 +178,8 @@ export interface SingleModelFields {
   techniqueIds?: string[];
   /** Variacoes verbatim (quando promptOptimization=false). */
   manualVariants?: ManualVariant[];
+  /** Temperatura aplicada ao modelo sob teste em TODAS as variantes. Ausente = 0. */
+  temperature?: number;
 }
 
 export interface CompareConfig extends RunConfigBase {

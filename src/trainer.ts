@@ -210,6 +210,8 @@ function variationConfigFrom(cfg: TrainingConfig): VariationConfig {
     basePrompt: cfg.basePrompt,
     techniqueIds: cfg.techniqueIds,
     manualVariants: cfg.manualVariants,
+    // Sem repassar, a temperatura do modelo sob teste sumiria em toda iteracao.
+    temperature: cfg.temperature,
   };
 }
 

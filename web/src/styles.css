@@ -11,13 +11,25 @@
   --text: #1d1d1f; --text-2: #6e6e73; --text-3: #86868b; --text-soft: #3a3a3c; --faint: #c7c7cc;
   --nav-bg: rgba(251, 251, 253, 0.8); --nav-border: rgba(0, 0, 0, 0.08); --nav-active: #e8e8ed;
   --scroll-thumb: rgba(0, 0, 0, 0.18); --chip-x-bg: rgba(0, 0, 0, 0.06); --chip-x-hover: rgba(0, 0, 0, 0.12);
-  --spin-track: rgba(0, 0, 0, 0.15); --ring-track: #e8e8ed;
+  --spin-track: rgba(0, 0, 0, 0.15); --ring-track: #e8e8ed; --switch-off: rgba(120, 120, 128, 0.16);
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 14px 34px -20px rgba(0, 0, 0, 0.16);
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04); --shadow-pop: 0 16px 44px -8px rgba(0, 0, 0, 0.24);
+  /* Tons de texto de status: as versoes HIG (--sys-green/red/orange) nao passam
+     contraste sobre fundo claro, entao aqui ficam as variantes escurecidas. */
   --ok: #248a3d; --err: #c1271d; --warn: #b25e00;
 
+  /* Paleta semantica da Apple (valores light do HIG). Cor = significado:
+     blue acao/gerador, teal cenarios, purple prompts, indigo juizes,
+     orange treino/parcial, green resolve, red nao resolve, gray sistema. */
+  --sys-blue: #007aff; --sys-teal: #30b0c7; --sys-purple: #af52de; --sys-indigo: #5856d6;
+  --sys-orange: #ff9500; --sys-green: #34c759; --sys-red: #ff3b30; --sys-gray: #8e8e93;
+  --sys-blue-soft: rgba(0, 122, 255, 0.14); --sys-teal-soft: rgba(48, 176, 199, 0.14);
+  --sys-purple-soft: rgba(175, 82, 222, 0.14); --sys-indigo-soft: rgba(88, 86, 214, 0.14);
+  --sys-orange-soft: rgba(255, 149, 0, 0.14); --sys-green-soft: rgba(52, 199, 89, 0.14);
+  --sys-red-soft: rgba(255, 59, 48, 0.14); --sys-gray-soft: rgba(142, 142, 147, 0.14);
+
   /* constant across themes */
-  --accent: #0a84ff; --accent-hover: #0071e3; --accent-strong: #0a6bd8;
+  --accent: var(--sys-blue); --accent-hover: #0071e3; --accent-strong: #0a6bd8;
   --accent-soft: rgba(10, 132, 255, 0.12); --accent-ring: rgba(10, 132, 255, 0.12);
   --ok-soft: rgba(52, 199, 89, 0.15); --err-soft: rgba(255, 59, 48, 0.13); --warn-soft: rgba(255, 159, 10, 0.14);
   --err-bg: rgba(255, 59, 48, 0.08); --err-bd: rgba(255, 59, 48, 0.25);
@@ -34,11 +46,36 @@
   --text: #f5f5f7; --text-2: #a1a1a6; --text-3: #8a8a8e; --text-soft: #c7c7cc; --faint: #5a5a5e;
   --nav-bg: rgba(22, 22, 23, 0.72); --nav-border: rgba(255, 255, 255, 0.1); --nav-active: #3a3a3c;
   --scroll-thumb: rgba(255, 255, 255, 0.22); --chip-x-bg: rgba(255, 255, 255, 0.1); --chip-x-hover: rgba(255, 255, 255, 0.18);
-  --spin-track: rgba(255, 255, 255, 0.18); --ring-track: #3a3a3c;
+  --spin-track: rgba(255, 255, 255, 0.18); --ring-track: #3a3a3c; --switch-off: #39393d;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 14px 34px -20px rgba(0, 0, 0, 0.8);
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4); --shadow-pop: 0 16px 44px -8px rgba(0, 0, 0, 0.7);
-  --ok: #30d158; --err: #ff453a; --warn: #ff9f0a;
+  /* Paleta semantica da Apple (valores dark do HIG). */
+  --sys-blue: #0a84ff; --sys-teal: #40c8e0; --sys-purple: #bf5af2; --sys-indigo: #5e5ce6;
+  --sys-orange: #ff9f0a; --sys-green: #30d158; --sys-red: #ff453a; --sys-gray: #8e8e93;
+  --sys-blue-soft: rgba(10, 132, 255, 0.14); --sys-teal-soft: rgba(64, 200, 224, 0.14);
+  --sys-purple-soft: rgba(191, 90, 242, 0.14); --sys-indigo-soft: rgba(94, 92, 230, 0.14);
+  --sys-orange-soft: rgba(255, 159, 10, 0.14); --sys-green-soft: rgba(48, 209, 88, 0.14);
+  --sys-red-soft: rgba(255, 69, 58, 0.14); --sys-gray-soft: rgba(142, 142, 147, 0.14);
+  /* No escuro os tons de status JA sao os do HIG: aponte para a fonte unica. */
+  --ok: var(--sys-green); --err: var(--sys-red); --warn: var(--sys-orange);
   color-scheme: dark;
+}
+
+/* ----------------------------------------------------------------------
+   Escala de tipo (SF). Uso: `font: var(--t-headline)` e, quando houver
+   tracking, `letter-spacing: var(--t-headline-tr)`.
+   Atencao: o shorthand `font` zera font-variant-*; declare
+   `font-variant-numeric: tabular-nums` DEPOIS dele.
+   ---------------------------------------------------------------------- */
+:root {
+  --t-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', system-ui, sans-serif;
+  --t-large: 600 34px/1.15 var(--t-sans);       --t-large-tr: -0.021em;
+  --t-title2: 600 22px/1.2 var(--t-sans);       --t-title2-tr: -0.016em;
+  --t-headline: 600 17px/1.3 var(--t-sans);     --t-headline-tr: -0.01em;
+  --t-body: 400 17px/1.45 var(--t-sans);
+  --t-sub: 400 15px/1.4 var(--t-sans);
+  --t-foot: 400 13px/1.38 var(--t-sans);        /* a EXPLICACAO do ajuste */
+  --t-cap: 600 11px/1.2 var(--t-sans);          --t-cap-tr: 0.06em;
 }
 
 * { box-sizing: border-box; }
@@ -47,7 +84,7 @@ html { background: var(--bg); }
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', system-ui, sans-serif;
+  font-family: var(--t-sans);
   font-size: 14px;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
@@ -128,7 +165,7 @@ code, .mono { font-family: ui-monospace, 'SF Mono', Menlo, monospace; }
 .screen { animation: bmrise .4s ease both; }
 
 /* ---------------------------------------------------------------- type */
-.page-title { font-size: 40px; line-height: 1.05; font-weight: 600; letter-spacing: -0.025em; margin: 0 0 10px; }
+.page-title { font: var(--t-large); letter-spacing: var(--t-large-tr); margin: 0 0 10px; }
 .page-sub { font-size: 18px; color: var(--text-2); margin: 0 0 28px; max-width: 620px; line-height: 1.45; }
 .kicker { font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); }
 .label-mini { font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-3); }
@@ -263,7 +300,10 @@ code, .mono { font-family: ui-monospace, 'SF Mono', Menlo, monospace; }
 }
 .export-btn:hover { background: var(--hover); color: var(--accent); }
 
-.section-label { font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); margin: 0 0 14px; }
+.section-label {
+  font: var(--t-cap); letter-spacing: var(--t-cap-tr); text-transform: uppercase;
+  color: var(--text-3); margin: 0 0 14px;
+}
 
 /* scoreboard */
 .score-head, .score-row { display: grid; grid-template-columns: 54px minmax(0, 1fr) 76px 56px 96px 188px 64px; gap: 10px; align-items: center; }
@@ -396,12 +436,6 @@ code, .mono { font-family: ui-monospace, 'SF Mono', Menlo, monospace; }
 .pill-variation { background: var(--accent-soft); color: var(--accent-strong); }
 .pill-training { background: var(--warn-soft); color: var(--warn); }
 
-/* toggle (otimização, juiz 2-ordens) */
-.toggle-field { margin: 16px 0; }
-.toggle { display: inline-flex; align-items: center; gap: 9px; cursor: pointer; font-size: 14px; font-weight: 500; color: var(--text); }
-.toggle input { width: 17px; height: 17px; accent-color: var(--accent); cursor: pointer; }
-.toggle-label { font-size: 14px; font-weight: 500; }
-.toggle-hint { font-size: 13px; color: var(--text-3); line-height: 1.5; margin-top: 7px; }
 
 /* technique selector */
 .technique-item.selected { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 3px var(--accent-ring); }
@@ -440,7 +474,6 @@ code, .mono { font-family: ui-monospace, 'SF Mono', Menlo, monospace; }
 /* propósito / conformidade LGPD */
 .proposito-chip.selected { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 3px var(--accent-ring); }
 .proposito-chip.selected .proposito-chip-sub { color: var(--accent-strong); }
-.proposito-card .toggle-field { margin-top: 12px; }
 
 /* filtro de preço (participantes) */
 .price-field .input { font-weight: 400; }
@@ -528,6 +561,28 @@ code, .mono { font-family: ui-monospace, 'SF Mono', Menlo, monospace; }
   display: flex; align-items: center; justify-content: center; transition: background .15s, color .15s;
 }
 .picker-chip-x:hover { background: var(--chip-x-hover); color: var(--text); }
+/* Chip com ajuste ativo: anel accent (o resumo do ajuste vai no title). */
+.picker-chip.tuned { box-shadow: 0 0 0 1.5px var(--accent); }
+/* Disclosure de ajuste: mesma forma do -x, sem o hover destrutivo. */
+.picker-chip-tune {
+  appearance: none; border: none; cursor: pointer; flex: none; font-family: inherit;
+  background: var(--chip-x-bg); color: var(--text-2);
+  width: 18px; height: 18px; border-radius: 50%; font-size: 11px; line-height: 1;
+  display: flex; align-items: center; justify-content: center; transition: background .15s, color .15s;
+}
+.picker-chip-tune:hover { background: var(--chip-x-hover); color: var(--text); }
+.picker-chip-tune[aria-expanded='true'] { background: var(--accent-soft); color: var(--accent); }
+/* Painel de ajuste: ocupa a linha inteira sob os chips (o .picker faz wrap). */
+.picker-tune {
+  flex: 1 1 100%; min-width: 0; margin-top: 8px;
+  border-top: 1px solid var(--line); padding-top: 8px;
+}
+/* Dentro do painel o recuo lateral ja vem do .picker: nao repita. */
+.picker-tune .ios-row { padding: 8px 0; }
+/* A 1a linha do painel e o id do modelo ajustado: mono, como nos chips. */
+.picker-tune > .ios-row-sub:first-child {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace; letter-spacing: -0.02em;
+}
 /* estático de proposito: o popup ancora em .picker (linha inteira), nunca vaza pra fora */
 .picker-wrap { position: static; flex: none; }
 .picker-add {
@@ -582,13 +637,13 @@ code, .mono { font-family: ui-monospace, 'SF Mono', Menlo, monospace; }
 /* ---------------------------------------------------------------- Nova Run (página única) */
 .nr { max-width: 840px; margin: 0 auto; }
 .nr-top { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; margin-bottom: 16px; }
-.nr-top .page-title { margin: 0; font-size: 32px; }
+.nr-top .page-title { margin: 0; }
 .nr-block {
   background: var(--card); border: 1px solid var(--card-border); border-radius: 16px;
   box-shadow: var(--shadow-sm); padding: 18px 20px; margin-bottom: 14px;
 }
 .nr-block-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
-.nr-block-title { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; color: var(--text); }
+.nr-block-title { font: var(--t-headline); letter-spacing: var(--t-headline-tr); color: var(--text); }
 .nr-block-status { font-size: 12.5px; color: var(--text-3); font-variant-numeric: tabular-nums; }
 .nr-block-body { display: flex; flex-direction: column; gap: 14px; }
 .nr-block-body > .link-toggle { margin-top: 0; align-self: flex-start; }
@@ -633,11 +688,100 @@ code, .mono { font-family: ui-monospace, 'SF Mono', Menlo, monospace; }
 /* Pendencia ANTES de o usuario tentar submeter: informativa, nunca vermelha. */
 .nr-hint { margin-right: auto; flex: 1 1 200px; font-size: 13px; line-height: 1.45; color: var(--text-3); }
 .nr-hint:empty { display: none; }
+/* Aviso: laranja em texto no lugar do emoji ⚠️ (--warn = laranja do HIG,
+   com a variante escurecida no tema claro para nao perder contraste). */
+.nr-warn { font: var(--t-foot); color: var(--warn); }
+.nr-warn:empty { display: none; }
 .nr-cost {
   display: inline-flex; align-items: baseline; gap: 6px; white-space: nowrap;
   font-size: 13px; font-weight: 600; color: var(--text-2); font-variant-numeric: tabular-nums;
 }
 .nr-cost-label { font-size: 10.5px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-3); }
+
+/* ========================================================================
+   Lista agrupada (iOS Settings) — a ASSINATURA do desenho.
+   Tile de icone colorido de 28px + linha de ajuste com a EXPLICACAO embaixo.
+   Cor do tile carrega significado (ver a paleta --sys-* no topo).
+   ======================================================================== */
+.ios-group {
+  background: var(--card); border: 1px solid var(--card-border); border-radius: 18px;
+  box-shadow: var(--shadow-sm); overflow: hidden; margin-bottom: 14px;
+}
+.ios-group-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 14px 16px; }
+/* Risco so quando ha linhas embaixo: cabecalho sozinho nao ganha separador. */
+.ios-group-head:has(+ .ios-rows) { border-bottom: 1px solid var(--line); }
+/* O mesmo cabecalho serve de <summary> quando o grupo recolhe (Avancado). */
+summary.ios-group-head { cursor: pointer; list-style: none; }
+summary.ios-group-head::-webkit-details-marker { display: none; }
+summary.ios-group-head::after { content: '›'; color: var(--faint); font-size: 17px; line-height: 1; transition: transform .2s; }
+details[open] > summary.ios-group-head::after { transform: rotate(90deg); }
+
+.ios-tile {
+  flex: none; width: 28px; height: 28px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 15px; line-height: 1;
+}
+.tile-blue { background: var(--sys-blue); }
+.tile-teal { background: var(--sys-teal); }
+.tile-purple { background: var(--sys-purple); }
+.tile-indigo { background: var(--sys-indigo); }
+.tile-orange { background: var(--sys-orange); }
+.tile-green { background: var(--sys-green); }
+.tile-red { background: var(--sys-red); }
+.tile-gray { background: var(--sys-gray); }
+
+/* O auto no titulo empurra status (e caret) para a direita, com ou sem eles. */
+.ios-group-title { min-width: 0; margin-right: auto; font: var(--t-headline); letter-spacing: var(--t-headline-tr); color: var(--text); }
+.ios-group-status { font: var(--t-foot); color: var(--text-3); font-variant-numeric: tabular-nums; text-align: right; }
+
+.ios-rows { display: flex; flex-direction: column; }
+.ios-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; align-items: center; padding: 12px 16px; }
+/* Separador INSET, nao border-top: recua com o padding sem cortar o card. */
+.ios-row + .ios-row { box-shadow: inset 0 1px 0 var(--line); }
+.ios-row-main { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.ios-row-label { font: var(--t-headline); font-size: 15px; letter-spacing: var(--t-headline-tr); color: var(--text); }
+/* A explicacao do ajuste — o que a tela ganhou nesta rodada. */
+.ios-row-sub { font: var(--t-foot); color: var(--text-3); }
+.ios-row-ctl { flex: none; display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.ios-row-ctl .input { width: 108px; }
+.ios-row-ctl .nr-num { width: 96px; }
+.ios-row-ctl select.input { width: auto; min-width: 132px; }
+/* Toggle na coluna do controle: o rotulo ja e o .ios-row-label, entao o
+   <span> vazio do Toggle nao pode deixar um gap solto ao lado do checkbox. */
+/* Variante larga: o controle desce para baixo do texto (textarea, picker...). */
+.ios-row-wide { grid-template-columns: 1fr; align-items: stretch; }
+.ios-row-wide > .ios-row-ctl { justify-content: flex-start; flex-wrap: wrap; }
+.ios-row-wide > .ios-row-ctl > .input,
+.ios-row-wide > .ios-row-ctl > .textarea { width: 100%; }
+.ios-footer { padding: 10px 16px 14px; font: var(--t-foot); color: var(--text-3); }
+/* Seletor de modelo como linha do grupo: mesmo recuo, mesmo separador.
+   Se vier com .card, dissolve o card — grupo dentro de grupo nao existe no iOS. */
+.ios-rows > .picker { padding: 10px 16px; }
+.ios-rows > .picker.card { background: none; border: none; box-shadow: none; border-radius: 0; }
+.ios-rows > .picker + .picker,
+.ios-rows > .picker + .ios-row,
+.ios-rows > .ios-row + .picker { box-shadow: inset 0 1px 0 var(--line); }
+/* Cabecalho de secao com tile, fora de card (telas de resultado). */
+.ios-head-inline { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 14px; }
+
+
+/* Switch do iOS: na Apple um booleano e um SWITCH, nunca um checkbox nativo.
+   Medidas do UISwitch: trilho 51x31, knob 27. O verde do estado ligado e o
+   padrao do sistema (--sys-green), nao o accent do app. */
+.ios-switch {
+  appearance: none; -webkit-appearance: none; margin: 0; flex: none; cursor: pointer;
+  position: relative; width: 51px; height: 31px; border: none; border-radius: 980px;
+  background: var(--switch-off); transition: background .22s ease;
+}
+.ios-switch::after {
+  content: ''; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px;
+  border-radius: 50%; background: #fff;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.28), 0 1px 1px rgba(0, 0, 0, 0.16);
+  transition: transform .22s cubic-bezier(.2, .8, .2, 1);
+}
+.ios-switch:checked { background: var(--sys-green); }
+.ios-switch:checked::after { transform: translateX(20px); }
+.ios-switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 
 /* ---------------------------------------------------------------- heatmap de vereditos */
 .hm {
@@ -678,9 +822,12 @@ code, .mono { font-family: ui-monospace, 'SF Mono', Menlo, monospace; }
   position: sticky; right: 0; z-index: 2; flex: none; width: 90px; padding-left: 12px;
   background: var(--card); box-shadow: -4px 0 0 var(--card); text-align: right;
 }
+/* Metrica no estilo Health: o numero grande, a contagem miuda embaixo.
+   line-height apertado porque isto ainda e uma linha de tabela. */
 .hm-score {
   display: flex; flex-direction: column; align-items: flex-end; gap: 1px;
-  font-size: 14px; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums;
+  font: var(--t-title2); line-height: 1.05; letter-spacing: var(--t-title2-tr);
+  color: var(--text); font-variant-numeric: tabular-nums;
 }
 .hm-score-head { font-size: 10.5px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-3); }
 .hm-counts { font-size: 10.5px; font-weight: 500; color: var(--text-3); white-space: nowrap; letter-spacing: -0.01em; }
@@ -729,6 +876,11 @@ code, .mono { font-family: ui-monospace, 'SF Mono', Menlo, monospace; }
   .nr-field-label { padding-top: 0; }
   .nr-block { padding: 16px; }
   .nr-adv { padding: 0 16px; }
+  .ios-group-head { padding: 12px 14px; }
+  .ios-row { padding: 12px 14px; }
+  .ios-rows > .picker { padding: 10px 14px; }
+  .ios-footer { padding: 8px 14px 12px; }
+  .hm-score { font-size: 18px; }
   .nr-top .page-title { font-size: 26px; }
   .picker-label { width: 100%; }
   .picker-pop { width: min(100%, 360px); max-height: 66vh; overflow: auto; }
@@ -827,6 +979,10 @@ code, .mono { font-family: ui-monospace, 'SF Mono', Menlo, monospace; }
   .page-title { font-size: 24px; }
   .page-sub { font-size: 15px; }
 
+  /* Linha de ajuste empilha: rotulo + explicacao e, embaixo, o controle. */
+  .ios-row { grid-template-columns: 1fr; align-items: stretch; }
+  .ios-row-ctl { justify-content: flex-start; flex-wrap: wrap; }
+
   /* history card layout */
   .runs-row { grid-template-columns: 1fr; gap: 6px 0; }
   .runs-row .r-id,
@@ -865,6 +1021,7 @@ code, .mono { font-family: ui-monospace, 'SF Mono', Menlo, monospace; }
 /* Navegacao por teclado visivel em todo alvo interativo. */
 .btn-primary:focus-visible, .btn-secondary:focus-visible, .seg-btn:focus-visible,
 .tech-chip:focus-visible, .picker-add:focus-visible, .picker-chip-x:focus-visible,
+.picker-chip-tune:focus-visible,
 .icon-btn:focus-visible, .nav-link:focus-visible, .tab:focus-visible, .link-toggle:focus-visible,
 .export-btn:focus-visible, .hm-clickable:focus-visible, summary:focus-visible {
   outline: 2px solid var(--accent);

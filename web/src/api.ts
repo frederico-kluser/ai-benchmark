@@ -1,4 +1,5 @@
 import { idbGet, idbGetAll, idbPut, idbPutMany } from './idb';
+import type { ModelReasoningMeta } from './modelCaps';
 import type { LgpdData } from './lgpd';
 import lgpdData from './data/lgpd-compliance.json';
 import { startRun } from './engine/orchestrator';
@@ -32,12 +33,19 @@ export interface OpenRouterModel {
   pricing: { prompt: number; completion: number };
   /** `supported_parameters` do OpenRouter — usado p/ determinismo por modelo. */
   supportedParameters?: string[];
+  /** Metadados de raciocínio: quais degraus de esforço este modelo aceita. */
+  reasoning?: ModelReasoningMeta;
 }
+
+// Capacidades de ajuste por modelo (temperatura/esforço) — a UI consome pela
+// porta única (api.ts), a regra mora em modelCaps.ts.
+export type { ModelCaps, ModelReasoningMeta } from './modelCaps';
+export { modelCaps, effortOptions, EFFORT_LABEL } from './modelCaps';
 
 export type RunMode = 'compare' | 'variation' | 'training';
 
-/** Nivel de esforco de raciocinio: off = desligado; low..max = budgets crescentes. */
-export type ReasoningLevel = 'off' | 'low' | 'medium' | 'high' | 'max';
+/** Nivel de esforco: espelha a escala `effort` do OpenRouter (7 degraus). */
+export type ReasoningLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
 /** Reasoning por papel da run; papel ausente = desligado. */
 export interface ReasoningConfig {

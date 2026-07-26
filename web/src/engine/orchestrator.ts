@@ -334,7 +334,11 @@ async function runLoop(record: RunRecord, apiKey: string, opts: StartRunOpts): P
               maxOutputTokens: record.config.maxOutputTokens,
               // compare-llms: temperatura/reasoning da tripla de identidade.
               // Prioridade do reasoning: override do contestant, senao o do papel.
-              temperature: contestant.temperature,
+              // Temperatura: override do contestant, senao a do modelo sob teste
+              // (variation/training aplicam a mesma a TODAS as variantes).
+              temperature:
+                contestant.temperature ??
+                ('temperature' in record.config ? record.config.temperature : undefined),
               reasoningLevel: contestant.reasoningLevel ?? record.config.reasoning?.competitor,
             });
 

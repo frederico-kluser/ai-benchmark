@@ -84,8 +84,8 @@ export interface ArenaConfigFile {
 // ----------------------------------------------------------------------------
 
 const reasoningLevelSchema = z.enum(
-  ['off', 'low', 'medium', 'high', 'max'],
-  "deve ser 'off', 'low', 'medium', 'high' ou 'max'",
+  ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
+  "deve ser 'off', 'minimal', 'low', 'medium', 'high', 'xhigh' ou 'max'",
 );
 
 // Mensagens inline já citam o nome do campo — o prefixo 'cenário N:' é

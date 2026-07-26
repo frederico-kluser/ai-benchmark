@@ -16,7 +16,7 @@ const router = Router();
 
 // Nivel de esforco de raciocinio (ReasoningLevel de types.ts / REASONING_LEVELS
 // de reasoning.ts), repetido aqui como literal para o enum do Zod.
-const reasoningLevelSchema = z.enum(['off', 'low', 'medium', 'high', 'max']);
+const reasoningLevelSchema = z.enum(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
 
 // Schema Zod de StageSpec (types.ts), compartilhado por customStages e
 // scenarioSeed. Em customStages o preprocess preenche maxTokens ausente
@@ -90,6 +90,8 @@ const singleModelFields = {
   basePrompt: z.string().optional(),
   techniqueIds: z.array(z.string().min(1)).optional(),
   manualVariants: z.array(manualVariantSchema).optional(),
+  // Temperatura do modelo sob teste, aplicada a TODAS as variantes. Ausente = 0.
+  temperature: z.number().min(0).max(2).optional(),
 };
 
 const compareObj = z.object({

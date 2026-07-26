@@ -162,15 +162,22 @@ arquivo final):
 | `competitorConfigs` | array | compare (eixo configs) | — | 2..12 configs `{model, temperature?, reasoning?}`. A identidade do competidor é a **tripla** modelo+temperatura+reasoning (3 configs do mesmo modelo = 3 competidores). **XOR com `competitors`**. |
 | `competitorConfigs[].model` | slug | **sim** (na config) | — | Slug do modelo da config. |
 | `competitorConfigs[].temperature` | number | não | padrão do modelo | 0..2. |
-| `competitorConfigs[].reasoning` | string | não | padrão do modelo | Nível de effort (`off`/`low`/`medium`/`high`/`max`) só daquela config. |
+| `competitorConfigs[].reasoning` | string | não | padrão do modelo | Nível de effort só daquela config (ver 3.5). |
 | `rewriter` | slug | não | `datagen` | Reescreve as variantes (aplica as técnicas ao prompt base). |
 
 ### 3.5 `effort` (nível de raciocínio por papel)
 
-Níveis válidos: `off` (desliga o raciocínio explicitamente), `low` (1024), `medium` (2048),
-`high` (4096), `max` (16384) — budgets de tokens de raciocínio. **Campo ausente = padrão do
-modelo** (nada é enviado). A engine garante automaticamente margem de resposta (budget + 2048)
-no `max_tokens` da chamada.
+Níveis válidos, do mais barato ao mais caro: `off`, `minimal`, `low`, `medium`, `high`,
+`xhigh`, `max` — os sete degraus de `effort` do OpenRouter (`off` = o degrau `none`).
+**Campo ausente = padrão do modelo** (nada é enviado).
+
+**Cada modelo aceita só um subconjunto destes degraus** e declara isso em `GET /models`
+(`reasoning.supported_efforts`). A engine ENCAIXA o nível pedido no que o modelo aceita
+(`fitEffort`), escolhendo o degrau mais próximo e, em empate, o mais barato — pedir `max` num
+modelo que só tem `[xhigh, high]` vira `xhigh`, nunca um erro. Modelos com
+`reasoning.mandatory` não podem ser desligados: neles `off` é ignorado (o provedor rejeita
+`none`). O esforço vai sempre como `reasoning: { effort }` — nunca junto de `max_tokens`, que o
+OpenRouter recusa com HTTP 400.
 
 | Campo | Tipo | Obrigatório? | Default | O que faz |
 |---|---|---|---|---|

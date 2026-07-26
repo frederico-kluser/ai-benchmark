@@ -13,7 +13,7 @@ import {
   downloadScenarioPack,
 } from '../api';
 import { useTheme } from '../theme';
-import { applyEvent, denseStages, rankColor, ScoreHeatmap, FinalsPanel } from './runShared';
+import { applyEvent, denseStages, rankColor, ScoreHeatmap, FinalsPanel, SectionHead } from './runShared';
 import { diffLines } from '../diff';
 
 // ---------------------------------------------------------------------------
@@ -576,14 +576,14 @@ export function TrainingView() {
 
       {roundShown ? (
         <>
-          <div className="section-label">
+          <SectionHead
+            glyph="◱"
+            tone="teal"
+            status={<Link to={`/runs/${roundShown.id}`}>detalhe →</Link>}
+          >
             {roundLabel}
             {isRunning && ' — ao vivo'}
-            <span className="section-label-note">
-              {' · '}
-              <Link to={`/runs/${roundShown.id}`}>detalhe →</Link>
-            </span>
-          </div>
+          </SectionHead>
           <ScoreHeatmap
             record={roundShown}
             ranked={roundShown.status === 'finished'}
@@ -592,7 +592,7 @@ export function TrainingView() {
 
           {showFinals && (
             <>
-              <div className="section-label" style={{ marginTop: 30 }}>Final da rodada</div>
+              <SectionHead glyph="▲" tone="orange" style={{ marginTop: 30 }}>Final da rodada</SectionHead>
               <FinalsPanel record={roundShown} progress={duelProgress} />
             </>
           )}
@@ -603,14 +603,14 @@ export function TrainingView() {
 
       {rounds.length > 1 && (
         <>
-          <div className="section-label" style={{ marginTop: 30 }}>Evolução</div>
+          <SectionHead glyph="↗" tone="blue" style={{ marginTop: 30 }}>Evolução</SectionHead>
           <EvolutionHeatmap rounds={rounds} dark={dark} holdoutAt={holdoutAt} />
         </>
       )}
 
       {rounds.length > 0 && (
         <>
-          <div className="section-label" style={{ marginTop: 30 }}>Melhor prompt</div>
+          <SectionHead glyph="✓" tone="purple" style={{ marginTop: 30 }}>Melhor prompt</SectionHead>
           <BestPromptStudio
             rounds={rounds}
             originalPrompt={originalPrompt}

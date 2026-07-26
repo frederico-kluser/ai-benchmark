@@ -1,7 +1,6 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ModelSelector } from '../components/ModelSelector';
-import { Toggle } from '../components/Toggle';
+import { ModelSelector, type ModelTuning } from '../components/ModelSelector';
 import { ManualVariantsEditor } from '../components/ManualVariantsEditor';
 import {
   arenaConfigSummary,
@@ -23,6 +22,8 @@ import {
   type ScenarioPack,
   type StageSpec,
   type Technique,
+  effortOptions,
+  modelCaps,
 } from '../api';
 import { AREA_LIVRE, creatorPrefix, familiaFor, filterModels, type LgpdData } from '../lgpd';
 
@@ -41,6 +42,17 @@ const DEFAULT_MAX_OUTPUT_TOKENS = 500;
 /** Nº de finalistas que disputam os duelos no fim (0 = sem finais). */
 const DEFAULT_FINALISTS = 3;
 
+// Ajustes oferecidos por papel. A capacidade REAL de cada modelo continua vindo
+// do `supported_parameters` (o seletor cruza as duas coisas).
+/** Quem responde sob teste: esforço e temperatura. */
+const TUNE_FULL: ('effort' | 'temperature')[] = ['effort', 'temperature'];
+/** Gerador, juízes, gabarito e reescritor: temperatura fixa por determinismo. */
+const TUNE_EFFORT: ('effort' | 'temperature')[] = ['effort'];
+
+// O popup do seletor de modelos é absoluto e desce para FORA do card; sem isto o
+// `overflow: hidden` do .ios-group cortaria a lista de modelos.
+const PICKER_SAFE: CSSProperties = { overflow: 'visible' };
+
 const MODES: { id: RunMode; label: string }[] = [
   { id: 'compare', label: 'Comparar modelos' },
   { id: 'variation', label: 'Testar prompts' },
@@ -53,17 +65,6 @@ const MODE_DESCRIPTIONS: Record<RunMode, string> = {
   variation: 'Um modelo, vários system prompts — descubra qual prompt funciona melhor.',
   training: 'O prompt evolui a cada rodada até convergir no melhor.',
 };
-
-// Opções de reasoning (esforço). '' = "padrão": não envia nada — cada modelo
-// usa o seu próprio default. 'off' = sem raciocínio.
-const REASONING_OPTIONS: { value: '' | ReasoningLevel; label: string }[] = [
-  { value: '', label: 'Padrão' },
-  { value: 'off', label: 'Sem raciocínio' },
-  { value: 'low', label: 'Baixo' },
-  { value: 'medium', label: 'Médio' },
-  { value: 'high', label: 'Alto' },
-  { value: 'max', label: 'Máximo' },
-];
 
 // Linha do editor de configs do compare-llms. A identidade do concorrente é a
 // TRIPLA modelo+temperatura+reasoning. temperature como texto: '' = padrão.
@@ -82,22 +83,6 @@ function fmtUsd(x: number): string {
 
 // --- campos compactos reusados nos blocos e no Avançado ---
 
-/** Campo numérico com valor NUMBER. Sem clamp na digitação — o clamp é no envio. */
-function NumField(p: { label: string; value: number; onChange: (v: number) => void; min: number; max: number; step?: number }) {
-  return (
-    <label className="nr-field">
-      <span className="nr-field-label">{p.label}</span>
-      <input
-        type="number" className="input nr-num" min={p.min} max={p.max} step={p.step ?? 1} value={p.value}
-        onChange={(e) => {
-          const v = e.target.valueAsNumber;
-          if (!Number.isNaN(v)) p.onChange(v);
-        }}
-      />
-    </label>
-  );
-}
-
 /** Campo numérico com valor TEXTO (vazio = default/sem limite). */
 function TxtNumField(p: {
   label: string; value: string; onChange: (v: string) => void;
@@ -114,24 +99,20 @@ function TxtNumField(p: {
   );
 }
 
-function AreaField(p: { label: string; value: string; onChange: (v: string) => void; rows?: number; placeholder?: string }) {
-  return (
-    <label className="nr-field">
-      <span className="nr-field-label">{p.label}</span>
-      <textarea
-        className="textarea" rows={p.rows ?? 3} value={p.value} placeholder={p.placeholder}
-        onChange={(e) => p.onChange(e.target.value)}
-      />
-    </label>
-  );
-}
-
-function EffortField(p: { label: string; value: '' | ReasoningLevel; onChange: (v: '' | ReasoningLevel) => void }) {
+// Esforço de UM modelo: as opções vêm da allowlist DELE (`supported_efforts` do
+// catálogo). Sem o modelo escolhido ainda, cai na lista completa.
+function EffortField(p: {
+  label: string;
+  value: '' | ReasoningLevel;
+  onChange: (v: '' | ReasoningLevel) => void;
+  model?: OpenRouterModel;
+}) {
+  const opcoes = effortOptions(modelCaps(p.model));
   return (
     <label className="nr-field">
       <span className="nr-field-label">{p.label}</span>
       <select className="input" value={p.value} onChange={(e) => p.onChange(e.target.value as '' | ReasoningLevel)}>
-        {REASONING_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        {opcoes.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
     </label>
   );
@@ -152,6 +133,112 @@ function ImportedLine(p: { text: string; action: string; onAction: () => void })
       <span>✓ {p.text}</span>
       <button type="button" className="link-toggle" onClick={p.onAction}>{p.action}</button>
     </div>
+  );
+}
+
+// --- lista agrupada (iOS Settings): tile colorido + linha com a explicação ---
+
+/** Cabeçalho do grupo: tile colorido (a cor é o significado) + título + status. */
+function GroupHead(p: { tile: string; glyph: string; title: string; status?: string }) {
+  return (
+    <div className="ios-group-head">
+      <span className={`ios-tile ${p.tile}`} aria-hidden="true">{p.glyph}</span>
+      <span className="ios-group-title">{p.title}</span>
+      {p.status && <span className="ios-group-status">{p.status}</span>}
+    </div>
+  );
+}
+
+/**
+ * Linha de ajuste: rótulo + explicação à esquerda, controle à direita. `wide`
+ * desce o controle para baixo do texto (caixas de texto, grades de chips).
+ */
+function Row(p: { label: string; sub?: string; wide?: boolean; children: ReactNode }) {
+  return (
+    <div className={p.wide ? 'ios-row ios-row-wide' : 'ios-row'}>
+      <div className="ios-row-main">
+        <span className="ios-row-label">{p.label}</span>
+        {p.sub && <span className="ios-row-sub">{p.sub}</span>}
+      </div>
+      <div className="ios-row-ctl">{p.children}</div>
+    </div>
+  );
+}
+
+/**
+ * Linha de conteúdo livre (seletor de modelo, editor de variantes): só o recuo e
+ * o separador do grupo. O rótulo vem de dentro (o picker tem o seu), e a
+ * explicação fica embaixo, como footnote.
+ */
+function RowBlock(p: { sub?: string; children?: ReactNode }) {
+  return (
+    <div className="ios-row ios-row-wide">
+      {p.children}
+      {p.sub && <span className="ios-row-sub">{p.sub}</span>}
+    </div>
+  );
+}
+
+/** Linha numérica (valor NUMBER). Sem clamp na digitação — o clamp é no envio. */
+function NumRow(p: {
+  label: string; sub?: string; value: number; onChange: (v: number) => void;
+  min: number; max: number; step?: number;
+}) {
+  return (
+    <Row label={p.label} sub={p.sub}>
+      <input
+        type="number" className="input nr-num" aria-label={p.label}
+        min={p.min} max={p.max} step={p.step ?? 1} value={p.value}
+        onChange={(e) => {
+          const v = e.target.valueAsNumber;
+          if (!Number.isNaN(v)) p.onChange(v);
+        }}
+      />
+    </Row>
+  );
+}
+
+/** Linha numérica com valor TEXTO (vazio = default/sem limite). */
+function TxtNumRow(p: {
+  label: string; sub?: string; value: string; onChange: (v: string) => void;
+  min?: number; max?: number; step?: number; placeholder?: string;
+}) {
+  return (
+    <Row label={p.label} sub={p.sub}>
+      <input
+        type="number" className="input nr-num" aria-label={p.label}
+        min={p.min} max={p.max} step={p.step} placeholder={p.placeholder}
+        value={p.value} onChange={(e) => p.onChange(e.target.value)}
+      />
+    </Row>
+  );
+}
+
+/** Linha booleana. O rótulo visível é o da linha, daí o aria-label no checkbox. */
+function SwitchRow(p: { label: string; sub: string; checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <Row label={p.label} sub={p.sub}>
+      <input
+        type="checkbox" className="ios-switch" role="switch" aria-label={p.label}
+        checked={p.checked} onChange={(e) => p.onChange(e.target.checked)}
+      />
+    </Row>
+  );
+}
+
+/** Linha de texto longo: a caixa ocupa a largura toda, sob o rótulo. */
+function AreaRow(p: {
+  label: string; sub?: string; value: string; onChange: (v: string) => void;
+  rows?: number; placeholder?: string; children?: ReactNode;
+}) {
+  return (
+    <Row label={p.label} sub={p.sub} wide>
+      <textarea
+        className="textarea" rows={p.rows ?? 3} aria-label={p.label}
+        value={p.value} placeholder={p.placeholder} onChange={(e) => p.onChange(e.target.value)}
+      />
+      {p.children}
+    </Row>
   );
 }
 
@@ -214,13 +301,11 @@ export function NewRun() {
   const [holdoutRatio, setHoldoutRatio] = useState(0.2);
   const [feedbackDriven, setFeedbackDriven] = useState(true);
 
-  // Reasoning (esforço) por papel ('' = padrão, não envia). `referenceModel`
-  // escreve os gabaritos (vazio = 1º juiz); `rewriterModel` reescreve os prompts
-  // por técnica (vazio = mesmo do gerador) → optimizerModelId.
-  const [reasoningCompetitor, setReasoningCompetitor] = useState<'' | ReasoningLevel>('');
-  const [reasoningJudge, setReasoningJudge] = useState<'' | ReasoningLevel>('');
-  const [reasoningRewriter, setReasoningRewriter] = useState<'' | ReasoningLevel>('');
-  const [reasoningDatagen, setReasoningDatagen] = useState<'' | ReasoningLevel>('');
+  // Ajuste fino POR MODELO (esforço/temperatura): o esforço mora no modelo, não
+  // num campo global — cada modelo aceita o que o `supported_parameters` diz.
+  const [tuning, setTuning] = useState<Record<string, ModelTuning>>({});
+  // `referenceModel` escreve os gabaritos (vazio = 1º juiz); `rewriterModel`
+  // reescreve os prompts por técnica (vazio = mesmo do gerador) → optimizerModelId.
   const [referenceModel, setReferenceModel] = useState<string[]>([]);
   const [rewriterModel, setRewriterModel] = useState<string[]>([]);
 
@@ -449,6 +534,22 @@ export function NewRun() {
     setCompetitorConfigs((rows) => rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
   }
 
+  function patchTuning(modelId: string, patch: Partial<ModelTuning>) {
+    setTuning((prev) => ({ ...prev, [modelId]: { ...prev[modelId], ...patch } }));
+  }
+
+  /** Esforço ajustado no modelo ('' / ausente = padrão do provedor, não envia). */
+  function effortOf(modelId?: string): ReasoningLevel | undefined {
+    const level = modelId ? tuning[modelId]?.effort : undefined;
+    return level ? level : undefined;
+  }
+
+  /** Temperatura ajustada no modelo (texto → número, com clamp). */
+  function tempOf(modelId?: string): number | undefined {
+    const t = parseFloat((modelId ? tuning[modelId]?.temperature : undefined) ?? '');
+    return Number.isFinite(t) ? Math.max(0, Math.min(2, t)) : undefined;
+  }
+
   // Aplica uma configuração importada (arena-config@1) no estado da tela.
   // Campos AUSENTES no arquivo não pisam o estado atual.
   function applyArenaConfig(config: ArenaConfigFile) {
@@ -501,10 +602,30 @@ export function NewRun() {
       setCompareAxis('configs');
     }
     if (config.models.rewriter !== undefined) setRewriterModel(config.models.rewriter ? [config.models.rewriter] : []);
-    if (config.effort?.competitor !== undefined) setReasoningCompetitor(config.effort.competitor);
-    if (config.effort?.judge !== undefined) setReasoningJudge(config.effort.judge);
-    if (config.effort?.rewriter !== undefined) setReasoningRewriter(config.effort.rewriter);
-    if (config.effort?.datagen !== undefined) setReasoningDatagen(config.effort.datagen);
+    // O esforço do arquivo é por PAPEL; na tela ele mora no modelo daquele papel
+    // — traduz na entrada para o usuário VER no chip o que veio no JSON.
+    const tuned: Record<string, ModelTuning> = {};
+    const putEffort = (ids: string[], effort?: ReasoningLevel) => {
+      if (!effort) return;
+      for (const id of ids) if (id) tuned[id] = { ...tuned[id], effort };
+    };
+    const fileContestant = config.models.contestant !== undefined ? [config.models.contestant] : contestantModel;
+    putEffort(
+      config.mode === 'compare' ? config.models.competitors ?? competitors : fileContestant,
+      config.effort?.competitor,
+    );
+    putEffort([config.models.datagen], config.effort?.datagen);
+    putEffort(config.models.judges, config.effort?.judge);
+    putEffort(config.models.rewriter !== undefined ? [config.models.rewriter] : rewriterModel, config.effort?.rewriter);
+    // Configs do compare-llms: além das linhas do editor, o ajuste aparece no chip.
+    for (const c of config.models.competitorConfigs ?? []) {
+      tuned[c.model] = {
+        ...tuned[c.model],
+        ...(c.reasoning !== undefined ? { effort: c.reasoning } : {}),
+        ...(c.temperature !== undefined ? { temperature: String(c.temperature) } : {}),
+      };
+    }
+    if (Object.keys(tuned).length) setTuning((prev) => ({ ...prev, ...tuned }));
     if (config.variation?.optimize !== undefined) setOptimize(config.variation.optimize);
     if (config.variation?.techniques) setTechniques(config.variation.techniques);
     if (config.variation?.manualVariants) setManualVariants(config.variation.manualVariants);
@@ -613,12 +734,23 @@ export function NewRun() {
       return setError(faltas[0]);
     }
 
-    // Reasoning por papel: só papéis com escolha explícita.
+    // Reasoning por papel: sai do ajuste do modelo daquele papel (o esforço mora
+    // no modelo). No compare por modelos ele é POR competidor — vai lá embaixo,
+    // em competitorConfigs.
     const reasoning: ReasoningConfig = {};
-    if (reasoningCompetitor) reasoning.competitor = reasoningCompetitor;
-    if (reasoningJudge) reasoning.judge = reasoningJudge;
-    if (reasoningRewriter) reasoning.rewriter = reasoningRewriter;
-    if (reasoningDatagen) reasoning.datagen = reasoningDatagen;
+    const competitorEffort = isSingle ? effortOf(contestantModel[0]) : undefined;
+    if (competitorEffort) reasoning.competitor = competitorEffort;
+    // O engine usa um nível só para juiz e gabarito (`reasoning.judge`); com o
+    // juiz no padrão, o ajuste do modelo de gabarito é quem manda.
+    const judgeEffort = effortOf(judge[0]) ?? effortOf(referenceModel[0]);
+    if (judgeEffort) reasoning.judge = judgeEffort;
+    const datagenEffort = effortOf(datagen[0]);
+    if (datagenEffort) reasoning.datagen = datagenEffort;
+    const rewriterEffort = effortOf(rewriterModel[0]);
+    if (rewriterEffort) reasoning.rewriter = rewriterEffort;
+    // Temperatura do modelo sob teste: vale para TODAS as variantes (o que se
+    // compara são os prompts, não as configs).
+    const contestantTemp = isSingle ? tempOf(contestantModel[0]) : undefined;
 
     const finalistsNum = Math.max(0, Math.min(12, Math.round(finalists)));
     const semFinais = !duelsOn || finalistsNum === 0;
@@ -648,6 +780,8 @@ export function NewRun() {
       judgePasses: (twoPassJudge ? 2 : 1) as 1 | 2,
       ...(referenceModel[0] ? { referenceModelId: referenceModel[0] } : {}),
       ...(Object.keys(reasoning).length ? { reasoning } : {}),
+      // Só nos modos de 1 modelo (no compare a temperatura é por concorrente).
+      ...(contestantTemp !== undefined ? { temperature: contestantTemp } : {}),
     };
 
     let config: RunConfig;
@@ -669,7 +803,24 @@ export function NewRun() {
               };
             }),
         };
+      } else if (competitors.some((id) => effortOf(id) || tempOf(id) !== undefined)) {
+        // Ajuste por competidor: uma lista de ids não representa mais a run —
+        // promove para competitorConfigs, NA ORDEM dos chips.
+        config = {
+          mode,
+          ...common,
+          competitorConfigs: competitors.map((id) => {
+            const t = tempOf(id);
+            const e = effortOf(id);
+            return {
+              modelId: id,
+              ...(t !== undefined ? { temperature: t } : {}),
+              ...(e ? { reasoningLevel: e } : {}),
+            };
+          }),
+        };
       } else {
+        // Sem ajuste nenhum: ids puros (preserva os rótulos atuais do placar).
         config = { mode, ...common, competitorModelIds: competitors };
       }
     } else {
@@ -736,67 +887,83 @@ export function NewRun() {
       {draftNotice && <ImportedLine text={draftNotice} action="dispensar" onAction={() => setDraftNotice(null)} />}
 
       {/* ------------------------------------------------------------- cenários */}
-      <section className="nr-block">
-        <div className="nr-block-head">
-          <span className="nr-block-title">Cenários</span>
-          <span className="nr-block-status">
-            {importedCount > 0
+      <section className="ios-group" style={PICKER_SAFE}>
+        <GroupHead
+          tile="tile-teal" glyph="◱" title="Cenários"
+          status={
+            importedCount > 0
               ? `${importedCount} importados${precisaGerar ? ` · +${plannedStages - seedCount} a gerar` : ''}`
-              : `${plannedStages} a gerar`}
-          </span>
-        </div>
-        <div className="nr-block-body">
+              : `${plannedStages} a gerar`
+          }
+        />
+        <div className="ios-rows">
           {importedCount > 0 ? (
             <>
-              <ImportedLine
-                text={`${importedCount} cenários importados${importedRefs ? ` (${importedRefs} com gabarito)` : ''}`}
-                action="remover"
-                onAction={() => {
-                  setPack(null);
-                  setCustomStages(null);
-                }}
-              />
+              <RowBlock>
+                <ImportedLine
+                  text={`${importedCount} cenários importados${importedRefs ? ` (${importedRefs} com gabarito)` : ''}`}
+                  action="remover"
+                  onAction={() => {
+                    setPack(null);
+                    setCustomStages(null);
+                  }}
+                />
+              </RowBlock>
               {/* Tema continua sendo enviado e guia o datagen/reescritor. Só some
                   quando veio pronto no arquivo E não faz mais falta — senão um
                   pacote com tema vazio travaria a run sem campo para corrigir. */}
               {(rawStages || !theme.trim() || precisaGerar) && (
-                <AreaField label="Tema" value={theme} onChange={setTheme} />
+                <AreaRow label="Tema" value={theme} onChange={setTheme} />
               )}
               {!rawStages && (
                 <>
                   {/* Mantido montado mesmo com seedCount >= stages: desmontar o
                       campo enquanto o usuário digita nele é um beco sem saída. */}
-                  <div className="nr-inline">
-                    {precisaGerar && (
-                      <ModelSelector multi={false} title="Gerador" value={datagen} onChange={setDatagen} models={models} loading={modelsLoading} />
-                    )}
-                    <NumField label="Quantos" value={stages} onChange={setStages} min={1} max={50} />
-                  </div>
-                  <p className="field-hint">
-                    {precisaGerar
-                      ? `Serão gerados mais ${plannedStages - seedCount} para completar ${plannedStages}.`
-                      : `Os ${seedCount} cenários do arquivo já cobrem o total — nada a gerar.`}
-                  </p>
+                  {precisaGerar && (
+                    <RowBlock>
+                      <ModelSelector
+                        multi={false} title="Gerador" value={datagen} onChange={setDatagen}
+                        models={models} loading={modelsLoading}
+                        tuning={tuning} onTuningChange={patchTuning} tuningFields={TUNE_EFFORT}
+                      />
+                    </RowBlock>
+                  )}
+                  <NumRow
+                    label="Quantos" value={stages} onChange={setStages} min={1} max={50}
+                    sub={
+                      precisaGerar
+                        ? `Serão gerados mais ${plannedStages - seedCount} para completar ${plannedStages}.`
+                        : `Os ${seedCount} cenários do arquivo já cobrem o total — nada a gerar.`
+                    }
+                  />
                 </>
               )}
             </>
           ) : (
             <>
-              <AreaField
+              <AreaRow
                 label="Tema" value={theme} onChange={setTheme}
                 placeholder="Ex.: atendimento de clínica de exames — FAQs, preparo e agendamento"
               />
-              <div className="nr-inline">
-                <ModelSelector multi={false} title="Gerador" value={datagen} onChange={setDatagen} models={models} loading={modelsLoading} />
-                <NumField label="Quantos" value={stages} onChange={setStages} min={1} max={50} />
-              </div>
+              <RowBlock>
+                <ModelSelector
+                  multi={false} title="Gerador" value={datagen} onChange={setDatagen}
+                  models={models} loading={modelsLoading}
+                  tuning={tuning} onTuningChange={patchTuning} tuningFields={TUNE_EFFORT}
+                />
+              </RowBlock>
+              <NumRow label="Quantos" value={stages} onChange={setStages} min={1} max={50} />
               {briefOpen ? (
-                <AreaField
+                <AreaRow
                   label="O que testar" value={scenarioBrief} onChange={setScenarioBrief}
                   placeholder="Ex.: se respeitam as regras de jejum de cada exame e não inventam orientação médica."
                 />
               ) : (
-                <button type="button" className="link-toggle" onClick={() => setBriefOpen(true)}>detalhar o que testar</button>
+                <RowBlock>
+                  <div className="nr-inline">
+                    <button type="button" className="link-toggle" onClick={() => setBriefOpen(true)}>detalhar o que testar</button>
+                  </div>
+                </RowBlock>
               )}
             </>
           )}
@@ -805,23 +972,26 @@ export function NewRun() {
 
       {/* ------------------------------------------------------ modelos (compare) */}
       {mode === 'compare' && (
-        <section className="nr-block">
-          <div className="nr-block-head">
-            <span className="nr-block-title">Modelos</span>
-            <span className="nr-block-status">
-              {compareAxis === 'configs'
+        <section className="ios-group" style={PICKER_SAFE}>
+          <GroupHead
+            tile="tile-blue" glyph="⌘" title="Modelos"
+            status={
+              compareAxis === 'configs'
                 ? `${competitorConfigs.filter((r) => r.modelId).length} configs`
-                : `${competitors.length} competidores`}
-            </span>
-          </div>
-          <div className="nr-block-body">
+                : `${competitors.length} competidores`
+            }
+          />
+          <div className="ios-rows">
             {compareAxis === 'configs' ? (
-              <p className="field-hint">Comparando configs do mesmo modelo — edite as linhas em Avançado.</p>
+              <RowBlock sub="Comparando configs do mesmo modelo — edite as linhas em Avançado." />
             ) : (
-              <ModelSelector
-                multi title="Competidores" value={competitors} onChange={setCompetitors}
-                excludeIds={[...datagen, ...judge]} models={participantModels} loading={modelsLoading}
-              />
+              <RowBlock>
+                <ModelSelector
+                  multi title="Competidores" value={competitors} onChange={setCompetitors}
+                  excludeIds={[...datagen, ...judge]} models={participantModels} loading={modelsLoading}
+                  tuning={tuning} onTuningChange={patchTuning} tuningFields={TUNE_FULL}
+                />
+              </RowBlock>
             )}
           </div>
         </section>
@@ -829,51 +999,51 @@ export function NewRun() {
 
       {/* ------------------------------------------ prompts (variation/training) */}
       {isSingle && (
-        <section className="nr-block">
-          <div className="nr-block-head">
-            <span className="nr-block-title">Prompts</span>
-            <span className="nr-block-status">{variantCount} variações</span>
-          </div>
-          <div className="nr-block-body">
-            <ModelSelector
-              multi={false} title="Modelo sob teste" value={contestantModel} onChange={setContestantModel}
-              excludeIds={[...datagen, ...judge]} models={participantModels} loading={modelsLoading}
-            />
+        <section className="ios-group" style={PICKER_SAFE}>
+          <GroupHead tile="tile-purple" glyph="✎" title="Prompts" status={`${variantCount} variações`} />
+          <div className="ios-rows">
+            <RowBlock>
+              <ModelSelector
+                multi={false} title="Modelo sob teste" value={contestantModel} onChange={setContestantModel}
+                excludeIds={[...datagen, ...judge]} models={participantModels} loading={modelsLoading}
+                tuning={tuning} onTuningChange={patchTuning} tuningFields={TUNE_FULL}
+              />
+            </RowBlock>
 
             {promptImported ? (
-              <ImportedLine text="Prompt base importado" action="editar" onAction={() => setPromptImported(false)} />
+              <RowBlock>
+                <ImportedLine text="Prompt base importado" action="editar" onAction={() => setPromptImported(false)} />
+              </RowBlock>
             ) : (
               <>
-                <AreaField
+                <AreaRow
                   label="Prompt base" value={basePrompt} onChange={setBasePrompt} rows={4}
                   placeholder="System prompt de partida (opcional) — roda como controle."
-                />
-                {genOpen ? (
-                  <>
-                    <AreaField
-                      label="Descreva a tarefa" value={taskDescription} onChange={setTaskDescription} rows={2}
-                      placeholder="O gerador redige um prompt base a partir desta descrição."
-                    />
-                    <div className="nr-inline">
-                      <button
-                        type="button" className="btn-secondary"
-                        disabled={!taskDescription.trim() || genBaseLoading}
-                        onClick={() => void gerarPromptBase()}
-                      >
-                        {genBaseLoading ? 'Gerando…' : 'Gerar prompt base'}
-                      </button>
-                      {genBaseError && <span className="nr-err">{genBaseError}</span>}
-                    </div>
-                  </>
-                ) : (
-                  <button type="button" className="link-toggle" onClick={() => setGenOpen(true)}>gerar com IA</button>
+                >
+                  {!genOpen && (
+                    <button type="button" className="link-toggle" onClick={() => setGenOpen(true)}>gerar com IA</button>
+                  )}
+                </AreaRow>
+                {genOpen && (
+                  <AreaRow
+                    label="Descreva a tarefa" value={taskDescription} onChange={setTaskDescription} rows={2}
+                    placeholder="O gerador redige um prompt base a partir desta descrição."
+                  >
+                    <button
+                      type="button" className="btn-secondary"
+                      disabled={!taskDescription.trim() || genBaseLoading}
+                      onClick={() => void gerarPromptBase()}
+                    >
+                      {genBaseLoading ? 'Gerando…' : 'Gerar prompt base'}
+                    </button>
+                    {genBaseError && <span className="nr-err">{genBaseError}</span>}
+                  </AreaRow>
                 )}
               </>
             )}
 
             {optimize ? (
-              <div className="nr-field">
-                <span className="nr-field-label">Variações</span>
+              <Row label="Variações" wide>
                 <div className="tech-grid">
                   <Chip
                     on={techs.length > 0 && techniques.length === techs.length}
@@ -891,148 +1061,204 @@ export function NewRun() {
                   ))}
                 </div>
                 <button type="button" className="link-toggle" onClick={() => setOptimize(false)}>escrever manualmente</button>
-              </div>
+              </Row>
             ) : (
-              <>
+              <RowBlock>
                 <ManualVariantsEditor value={manualVariants} onChange={setManualVariants} />
-                <button type="button" className="link-toggle" onClick={() => setOptimize(true)}>usar técnicas</button>
-              </>
+                <div className="nr-inline">
+                  <button type="button" className="link-toggle" onClick={() => setOptimize(true)}>usar técnicas</button>
+                </div>
+              </RowBlock>
             )}
 
             {mode === 'training' && (
-              <div className="nr-inline">
-                <NumField label="Rodadas" value={iterations} onChange={setIterations} min={2} max={10} />
-              </div>
+              <NumRow label="Rodadas" value={iterations} onChange={setIterations} min={2} max={10} />
             )}
           </div>
         </section>
       )}
 
       {/* --------------------------------------------------------------- juízes */}
-      <section className="nr-block">
-        <div className="nr-block-head">
-          <span className="nr-block-title">Juízes</span>
-          <span className="nr-block-status">{judge.length === 1 ? '1 juiz' : `${judge.length} juízes`}</span>
+      <section className="ios-group" style={PICKER_SAFE}>
+        <GroupHead
+          tile="tile-indigo" glyph="⚖" title="Juízes"
+          status={judge.length === 1 ? '1 juiz' : `${judge.length} juízes`}
+        />
+        <div className="ios-rows">
+          <RowBlock>
+            <ModelSelector
+              multi title="Juízes" value={judge} onChange={setJudge}
+              excludeIds={mode === 'compare' ? competitors : contestantModel} models={models} loading={modelsLoading}
+              tuning={tuning} onTuningChange={patchTuning} tuningFields={TUNE_EFFORT}
+            />
+            {panelWarnings.map((w, i) => <span key={i} className="nr-warn">{w}</span>)}
+          </RowBlock>
         </div>
-        <div className="nr-block-body">
-          <ModelSelector
-            multi title="Juízes" value={judge} onChange={setJudge}
-            excludeIds={mode === 'compare' ? competitors : contestantModel} models={models} loading={modelsLoading}
-          />
-          {panelWarnings.map((w, i) => <p key={i} className="field-hint">⚠️ {w}</p>)}
-        </div>
+        <div className="ios-footer">Gerador e juízes rodam com temperatura fixa para o resultado ser reproduzível.</div>
       </section>
 
       {/* ------------------------------------------------------------- avançado */}
-      <details className="nr-adv">
-        <summary>Avançado</summary>
+      <details className="ios-group" style={PICKER_SAFE}>
+        <summary className="ios-group-head">
+          <span className="ios-tile tile-gray" aria-hidden="true">⚙</span>
+          <span className="ios-group-title">Avançado</span>
+        </summary>
 
-        <div className="nr-inline">
-          <NumField label="Finalistas" value={finalists} onChange={setFinalists} min={0} max={12} />
-          <TxtNumField
-            label="Máx. tokens" value={maxOutputTokens} onChange={setMaxOutputTokens} min={50}
+        <div className="ios-rows">
+          <NumRow
+            label="Finalistas"
+            sub="Quantas variantes disputam o duelo final. As melhores por score entram; 0 desliga a final."
+            value={finalists} onChange={setFinalists} min={0} max={12}
+          />
+          <TxtNumRow
+            label="Máx. tokens por resposta"
+            sub="Teto de tamanho de cada resposta. Modelos de raciocínio precisam de folga: deixe alto."
+            value={maxOutputTokens} onChange={setMaxOutputTokens} min={50}
             placeholder={String(DEFAULT_MAX_OUTPUT_TOKENS)}
           />
-          <NumField label="Timeout (ms)" value={timeoutMs} onChange={setTimeoutMs} min={1000} max={300000} step={1000} />
-          <NumField label="Concorrência" value={concurrency} onChange={setConcurrency} min={1} max={32} />
-        </div>
-        <p className="field-hint">Finalistas = quantas variantes duelam no fim (0 = sem finais).</p>
-
-        {/* Vale nos 3 modos: quem consome `judgePasses` e o juiz listwise, que e
-            justamente o default do compare classico. */}
-        <Toggle checked={twoPassJudge} onChange={setTwoPassJudge} label="Juiz em 2 ordens" hint="Reduz viés de posição; dobra o custo do juiz (só no julgamento listwise)." />
-
-        <ModelSelector
-          multi={false} title="Gabarito" hint="Quem escreve a resposta de referência. Vazio = o 1º juiz."
-          value={referenceModel} onChange={setReferenceModel} models={models} loading={modelsLoading}
-        />
-
-        {isSingle && optimize && (
-          <ModelSelector
-            multi={false} title="Reescritor" hint="Vazio = o gerador." value={rewriterModel} onChange={setRewriterModel}
-            excludeIds={contestantModel} models={models} loading={modelsLoading}
+          <NumRow
+            label="Timeout (ms)"
+            sub="Quanto esperar por uma resposta antes de desistir dela."
+            value={timeoutMs} onChange={setTimeoutMs} min={1000} max={300000} step={1000}
           />
-        )}
+          <NumRow
+            label="Concorrência"
+            sub="Quantas chamadas seguem em paralelo. Mais é mais rápido e bate no limite do provedor mais cedo."
+            value={concurrency} onChange={setConcurrency} min={1} max={32}
+          />
 
-        <div className="nr-inline">
-          <EffortField label="Esforço · competidor" value={reasoningCompetitor} onChange={setReasoningCompetitor} />
-          <EffortField label="Esforço · juiz" value={reasoningJudge} onChange={setReasoningJudge} />
-          <EffortField label="Esforço · reescritor" value={reasoningRewriter} onChange={setReasoningRewriter} />
-          <EffortField label="Esforço · gerador" value={reasoningDatagen} onChange={setReasoningDatagen} />
-        </div>
+          {/* Vale nos 3 modos: quem consome `judgePasses` e o juiz listwise, que e
+              justamente o default do compare classico. */}
+          <SwitchRow
+            label="Juiz em 2 ordens"
+            sub="Julga cada cenário duas vezes, invertendo a ordem das respostas. Corrige o viés de posição e dobra o custo do juiz."
+            checked={twoPassJudge} onChange={setTwoPassJudge}
+          />
 
-        {mode === 'compare' && (
-          <>
-            <Toggle
-              checked={compareAxis === 'configs'}
-              onChange={(v) => setCompareAxis(v ? 'configs' : 'models')}
-              label="Mesmo modelo, configs diferentes"
-              hint="A identidade do concorrente é a tripla modelo + temperatura + reasoning."
+          <RowBlock sub="Escreve a resposta ideal de cada cenário; o juiz compara as respostas com ela. Vazio = o primeiro juiz.">
+            <ModelSelector
+              multi={false} title="Gabarito" value={referenceModel} onChange={setReferenceModel}
+              models={models} loading={modelsLoading}
+              tuning={tuning} onTuningChange={patchTuning} tuningFields={TUNE_EFFORT}
             />
-            {compareAxis === 'configs' && (
-              <>
-                {competitorConfigs.map((row, i) => (
-                  <div key={i} className="nr-inline">
-                    <ModelSelector
-                      multi={false} title={`Config ${i + 1}`} value={row.modelId ? [row.modelId] : []}
-                      onChange={(ids) => updateConfigRow(i, { modelId: ids[0] ?? '' })}
-                      excludeIds={[...datagen, ...judge]} models={participantModels} loading={modelsLoading}
-                    />
-                    <TxtNumField
-                      label="Temp." value={row.temperature} onChange={(v) => updateConfigRow(i, { temperature: v })}
-                      min={0} max={2} step={0.1} placeholder="padrão"
-                    />
-                    <EffortField label="Reasoning" value={row.reasoningLevel} onChange={(v) => updateConfigRow(i, { reasoningLevel: v })} />
+          </RowBlock>
+
+          {isSingle && optimize && (
+            <RowBlock sub="Aplica cada técnica ao seu prompt base para criar as variações. Vazio = o mesmo modelo do gerador.">
+              <ModelSelector
+                multi={false} title="Reescritor" value={rewriterModel} onChange={setRewriterModel}
+                excludeIds={contestantModel} models={models} loading={modelsLoading}
+                tuning={tuning} onTuningChange={patchTuning} tuningFields={TUNE_EFFORT}
+              />
+            </RowBlock>
+          )}
+
+          {mode === 'compare' && (
+            <>
+              <SwitchRow
+                label="Mesmo modelo, configs diferentes"
+                sub="Compara um mesmo modelo em temperaturas e esforços diferentes. A identidade de cada concorrente passa a ser modelo + temperatura + esforço."
+                checked={compareAxis === 'configs'}
+                onChange={(v) => setCompareAxis(v ? 'configs' : 'models')}
+              />
+              {compareAxis === 'configs' && (
+                <RowBlock>
+                  {competitorConfigs.map((row, i) => (
+                    <div key={i} className="nr-inline">
+                      <ModelSelector
+                        multi={false} title={`Config ${i + 1}`} value={row.modelId ? [row.modelId] : []}
+                        onChange={(ids) => updateConfigRow(i, { modelId: ids[0] ?? '' })}
+                        excludeIds={[...datagen, ...judge]} models={participantModels} loading={modelsLoading}
+                      />
+                      <TxtNumField
+                        label="Temp." value={row.temperature} onChange={(v) => updateConfigRow(i, { temperature: v })}
+                        min={0} max={2} step={0.1} placeholder="padrão"
+                      />
+                      <EffortField
+                        label="Reasoning" value={row.reasoningLevel}
+                        onChange={(v) => updateConfigRow(i, { reasoningLevel: v })}
+                        model={models.find((m) => m.id === row.modelId)}
+                      />
+                      <button
+                        type="button" className="btn-secondary" disabled={competitorConfigs.length <= 2}
+                        onClick={() => setCompetitorConfigs((rows) => rows.filter((_, idx) => idx !== i))}
+                      >
+                        Remover
+                      </button>
+                    </div>
+                  ))}
+                  <div className="nr-inline">
                     <button
-                      type="button" className="btn-secondary" disabled={competitorConfigs.length <= 2}
-                      onClick={() => setCompetitorConfigs((rows) => rows.filter((_, idx) => idx !== i))}
+                      type="button" className="btn-secondary" disabled={competitorConfigs.length >= 12}
+                      onClick={() => setCompetitorConfigs((rows) => [...rows, { modelId: '', temperature: '', reasoningLevel: '' }])}
                     >
-                      Remover
+                      + config
                     </button>
                   </div>
-                ))}
-                <button
-                  type="button" className="btn-secondary" disabled={competitorConfigs.length >= 12}
-                  onClick={() => setCompetitorConfigs((rows) => [...rows, { modelId: '', temperature: '', reasoningLevel: '' }])}
-                >
-                  + config
-                </button>
-                {dupConfigWarning && <p className="field-hint">⚠️ {dupConfigWarning}</p>}
-              </>
-            )}
-          </>
-        )}
-
-        {mode === 'training' && (
-          <>
-            <div className="nr-inline">
-              <NumField label="Margem p/ promover" value={minGain} onChange={setMinGain} min={0} max={100} step={0.5} />
-              <NumField
-                label="Validação (%)" value={Math.round(holdoutRatio * 100)}
-                onChange={(v) => setHoldoutRatio(v / 100)} min={0} max={50} step={5}
-              />
-            </div>
-            <Toggle checked={feedbackDriven} onChange={setFeedbackDriven} label="Aprender com as falhas da rodada anterior" />
-          </>
-        )}
-
-        <div className="nr-field">
-          <span className="nr-field-label">Conformidade LGPD (consultivo)</span>
-          <div className="tech-grid">
-            <Chip on={isLivre} label="Livre" onClick={() => setComplianceArea(AREA_LIVRE)} />
-            {lgpd?.areas.map((a) => (
-              <Chip key={a.id} on={complianceArea === a.id} label={a.label} title={a.descricao} onClick={() => setComplianceArea(a.id)} />
-            ))}
-          </div>
-          {!isLivre && (
-            <Toggle checked={includeRessalvas} onChange={setIncludeRessalvas} label="Incluir modelos permitidos com ressalvas" />
+                  {dupConfigWarning && <span className="nr-warn">{dupConfigWarning}</span>}
+                </RowBlock>
+              )}
+            </>
           )}
-          {prunedNotice && <p className="field-hint">⚠️ {prunedNotice}</p>}
-        </div>
 
-        <div className="nr-inline">
-          <TxtNumField label="Preço input máx. ($/1M)" value={maxInputPrice} onChange={setMaxInputPrice} min={0} step={0.1} placeholder="sem limite" />
-          <TxtNumField label="Preço output máx. ($/1M)" value={maxOutputPrice} onChange={setMaxOutputPrice} min={0} step={0.1} placeholder="sem limite" />
+          {mode === 'training' && (
+            <>
+              <NumRow
+                label="Margem p/ promover"
+                sub="Quanto a vencedora precisa superar a campeã atual para virar a base da próxima rodada. Sem essa margem, o treino para."
+                value={minGain} onChange={setMinGain} min={0} max={100} step={0.5}
+              />
+              <NumRow
+                label="Validação (%)"
+                sub="Fatia dos cenários que fica fora do treino. No fim, campeã e base são reavaliadas nela para flagrar overfit."
+                value={Math.round(holdoutRatio * 100)} onChange={(v) => setHoldoutRatio(v / 100)}
+                min={0} max={50} step={5}
+              />
+              <SwitchRow
+                label="Aprender com as falhas da rodada anterior"
+                sub="O reescritor recebe onde a campeã errou na rodada anterior antes de gerar as próximas variações."
+                checked={feedbackDriven} onChange={setFeedbackDriven}
+              />
+            </>
+          )}
+
+          <Row
+            label="Conformidade LGPD"
+            sub="Filtra o catálogo de modelos pela área de uso. É consultivo: orienta a escolha, não muda o roteamento no OpenRouter."
+            wide
+          >
+            <div className="tech-grid">
+              <Chip on={isLivre} label="Livre" onClick={() => setComplianceArea(AREA_LIVRE)} />
+              {lgpd?.areas.map((a) => (
+                <Chip key={a.id} on={complianceArea === a.id} label={a.label} title={a.descricao} onClick={() => setComplianceArea(a.id)} />
+              ))}
+            </div>
+            {prunedNotice && <span className="nr-warn">{prunedNotice}</span>}
+          </Row>
+
+          {!isLivre && (
+            <SwitchRow
+              label="Incluir modelos permitidos com ressalvas"
+              sub="Também oferece modelos liberados sob condições (ZDR, DPA, cláusulas contratuais)."
+              checked={includeRessalvas} onChange={setIncludeRessalvas}
+            />
+          )}
+
+          <Row
+            label="Preço input/output máx. ($/1M)"
+            sub="Esconde dos participantes os modelos acima do preço. Não afeta gerador nem juízes."
+          >
+            <input
+              type="number" className="input nr-num" min={0} step={0.1} placeholder="input"
+              aria-label="Preço input máx. ($/1M)" title="Vazio = sem limite."
+              value={maxInputPrice} onChange={(e) => setMaxInputPrice(e.target.value)}
+            />
+            <input
+              type="number" className="input nr-num" min={0} step={0.1} placeholder="output"
+              aria-label="Preço output máx. ($/1M)" title="Vazio = sem limite."
+              value={maxOutputPrice} onChange={(e) => setMaxOutputPrice(e.target.value)}
+            />
+          </Row>
         </div>
       </details>
 
