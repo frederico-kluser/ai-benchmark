@@ -1,6 +1,6 @@
 ---
 name: meta-skill-consolidate
-description: Faz o "garbage collection" periódico da biblioteca de skills do ai-benchmark — deduplica aprendizados redundantes, detecta contradições, aplica versionamento temporal e poda entradas obsoletas. Use semanalmente, ou quando os LEARNINGS.md incharem, ou quando a qualidade das respostas estagnar/cair apesar de aprendizados acumulados (sinal de guidance contraditório).
+description: Faz o "garbage collection" periódico da biblioteca de skills do prompt-builder — deduplica aprendizados redundantes, detecta contradições, aplica versionamento temporal e poda entradas obsoletas. Use semanalmente, ou quando os LEARNINGS.md incharem, ou quando a qualidade das respostas estagnar/cair apesar de aprendizados acumulados (sinal de guidance contraditório).
 metadata:
   version: 0.1.0
   type: meta

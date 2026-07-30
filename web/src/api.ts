@@ -23,7 +23,7 @@ import {
   listPrompts as engineListPrompts,
   deletePrompt as engineDeletePrompt,
 } from './engine/promptStore';
-import { parseScenarioPack, SCENARIO_PACK_FORMAT } from './engine/scenarioPack';
+import { parseScenarioPack, SCENARIO_PACK_FORMAT, SCENARIO_PACK_FORMAT_LEGACY } from './engine/scenarioPack';
 import { parseArenaConfig, ARENA_CONFIG_FORMAT, type ArenaConfigFile } from './engine/configFile';
 
 export interface OpenRouterModel {
@@ -531,7 +531,8 @@ export interface SavedPrompt {
 
 /** Pacote JSON de cenarios+gabaritos exportado ao fim da run (importavel como seed). */
 export interface ScenarioPack {
-  format: 'ai-benchmark-pack@1';
+  /** Escrita usa `prompt-builder-pack@1`; o nome antigo segue aceito na leitura. */
+  format: 'prompt-builder-pack@1' | 'ai-benchmark-pack@1';
   theme: string;
   exportedAt: string;
   /** Prompt escolhido na exportacao (campeao ou base). */
@@ -748,7 +749,7 @@ function parseRawStages(
 
 /**
  * Le UM arquivo JSON e descobre sozinho o que e: `arena-config@1` (config completa),
- * `ai-benchmark-pack@1` (pacote de cenarios) ou um array cru de etapas
+ * `prompt-builder-pack@1`/`ai-benchmark-pack@1` (pacote de cenarios) ou um array cru de etapas
  * (`[{question, productContext, rubric?, maxTokens?, reference?}]`, ou `{stages:[…]}`).
  * NUNCA lanca: erro vira `{ ok: false, error }` em PT-BR.
  */
@@ -770,7 +771,9 @@ export async function readImportFile(
     const r = parseArenaConfig(json);
     return r.ok ? { ok: true, data: { kind: 'config', config: r.config } } : r;
   }
-  if (formato === SCENARIO_PACK_FORMAT) {
+  // Aceita tambem o nome legado: pacotes ja exportados pelo usuario nao podem
+  // deixar de abrir por causa de uma troca de marca.
+  if (formato === SCENARIO_PACK_FORMAT || formato === SCENARIO_PACK_FORMAT_LEGACY) {
     const r = parseScenarioPack(json);
     return r.ok ? { ok: true, data: { kind: 'pack', pack: r.pack } } : r;
   }
@@ -786,7 +789,7 @@ export async function readImportFile(
   return {
     ok: false,
     error:
-      'Arquivo não reconhecido: esperado arena-config@1, ai-benchmark-pack@1 ou um array de cenários.',
+      'Arquivo não reconhecido: esperado arena-config@1, prompt-builder-pack@1 ou um array de cenários.',
   };
 }
 

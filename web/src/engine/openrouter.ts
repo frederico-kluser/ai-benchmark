@@ -6,7 +6,7 @@ import type { ModelReasoningMeta, OpenRouterModel, ReasoningLevel } from './type
 // Client-side: chama o OpenRouter direto do navegador (CORS liberado).
 const OPENROUTER_BASE = 'https://openrouter.ai/api/v1';
 const APP_ORIGIN =
-  typeof window !== 'undefined' ? window.location.origin : 'https://ai-benchmark';
+  typeof window !== 'undefined' ? window.location.origin : 'https://prompt-builder';
 const MODELS_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 function defaultHeaders(apiKey: string): Record<string, string> {

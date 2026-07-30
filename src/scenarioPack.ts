@@ -7,8 +7,18 @@ import { z } from 'zod';
 import { rougeL } from './dedup.js';
 import type { ScenarioPack, StageSpec } from './types.js';
 
-/** Valor do campo `format` do pacote — versão do contrato de export/import. */
-export const SCENARIO_PACK_FORMAT = 'ai-benchmark-pack@1';
+/** Valor do campo `format` gravado ao EXPORTAR — versão do contrato. */
+export const SCENARIO_PACK_FORMAT = 'prompt-builder-pack@1';
+
+/**
+ * Nome antigo do formato, de quando o projeto se chamava ai-benchmark. Continua
+ * ACEITO na leitura: pacotes de cenários são arquivos que o usuário exporta,
+ * guarda e compartilha — recusá-los por causa de uma troca de marca seria
+ * quebrar dado alheio de graça. Só a escrita usa o nome novo.
+ */
+export const SCENARIO_PACK_FORMAT_LEGACY = 'ai-benchmark-pack@1';
+
+const FORMATOS_ACEITOS = [SCENARIO_PACK_FORMAT, SCENARIO_PACK_FORMAT_LEGACY] as const;
 
 // Limiar de quase-duplicata por ROUGE-L (F1): a partir daqui o cenário gerado
 // é considerado repetido em relação a um já aceito (mesmo valor do datagen).
@@ -54,7 +64,7 @@ const scenarioSchema = z.object({
 });
 
 const packSchema = z.object({
-  format: z.literal(SCENARIO_PACK_FORMAT),
+  format: z.union([z.literal(SCENARIO_PACK_FORMAT), z.literal(SCENARIO_PACK_FORMAT_LEGACY)]),
   theme: z.string('theme deve ser texto'),
   exportedAt: z.string('exportedAt deve ser texto'),
   prompt: z.object(
@@ -97,11 +107,11 @@ export function parseScenarioPack(
   // mensagem exata quando o arquivo não é um pacote (ou é de outra versão).
   const formato =
     json && typeof json === 'object' ? (json as Record<string, unknown>).format : undefined;
-  if (formato !== SCENARIO_PACK_FORMAT) {
+  if (!(FORMATOS_ACEITOS as readonly unknown[]).includes(formato)) {
     const desc = typeof formato === 'string' && formato.trim() ? formato : 'desconhecido';
     return {
       ok: false,
-      error: `Arquivo não é um pacote de cenários do ai-benchmark (formato ${desc})`,
+      error: `Arquivo não é um pacote de cenários do prompt-builder (formato ${desc})`,
     };
   }
   const result = packSchema.safeParse(json);

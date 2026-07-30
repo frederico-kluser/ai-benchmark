@@ -1,11 +1,11 @@
 ---
 name: knowledge-code-style
-description: Convenções de código do ai-benchmark — idioma, módulos ESM, tipagem, componentes React e CSS. Use em PRATICAMENTE TODA edição de código neste repositório para escrever no mesmo estilo do que já existe, evitando refações por inconsistência.
+description: Convenções de código do prompt-builder — idioma, módulos ESM, tipagem, componentes React e CSS. Use em PRATICAMENTE TODA edição de código neste repositório para escrever no mesmo estilo do que já existe, evitando refações por inconsistência.
 metadata:
   version: 0.2.0
   type: knowledge
 ---
-# Estilo de código — ai-benchmark
+# Estilo de código — prompt-builder
 
 Escreva código que se pareça com o que já está em volta. Pontos não-óbvios:
 

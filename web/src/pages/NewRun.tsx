@@ -614,7 +614,7 @@ export function NewRun() {
       const tokensFallback = config.limits?.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS;
       setCustomStages(null);
       setPack({
-        format: 'ai-benchmark-pack@1',
+        format: 'prompt-builder-pack@1',
         theme: config.theme,
         exportedAt: new Date().toISOString(),
         prompt: { text: config.prompt?.text ?? '', source: 'base' },
@@ -709,7 +709,7 @@ export function NewRun() {
   }
 
   // Import unificado: UM arquivo, três formatos possíveis (arena-config@1,
-  // ai-benchmark-pack@1 ou array cru de cenários) — `readImportFile` detecta.
+  // prompt-builder-pack@1 (ou o legado ai-benchmark-pack@1) ou array cru — `readImportFile` detecta.
   async function handleImport(file: File) {
     setError(null);
     const res = await readImportFile(file);

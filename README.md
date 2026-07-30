@@ -1,4 +1,4 @@
-# AI Benchmark — Prompt Builder
+# Prompt Builder
 
 Arena de benchmark **paralelo** de LLMs sobre a [OpenRouter](https://openrouter.ai). Em três
 modos: **comparar** vários modelos no mesmo desafio, **testar** vários prompts em um modelo, ou
@@ -304,7 +304,7 @@ contra o gabarito**; no listwise, vem do próprio juiz.
 ## Estrutura do projeto
 
 ```
-ai-benchmark/
+prompt-builder/
 ├─ src/                      # Backend (TypeScript → dist/)
 │  ├─ server.ts              # Express, /health, monta /v1/benchmark, serve web/dist, aborta órfãs
 │  ├─ routes.ts              # Endpoints /v1/benchmark/* + validação Zod + SSE + CSV

@@ -1,11 +1,11 @@
 ---
 name: knowledge-architecture
-description: Mapa do repositório ai-benchmark — layout do monorepo (incl. os módulos do sistema de evolução de prompts em src/ e web/src/engine/), separação backend/frontend, fluxo de dados ponta a ponta e comandos exatos de build/run. Use no início de qualquer tarefa para saber ONDE mora cada coisa antes de varrer o codebase, ou quando precisar entender como as peças se conectam.
+description: Mapa do repositório prompt-builder — layout do monorepo (incl. os módulos do sistema de evolução de prompts em src/ e web/src/engine/), separação backend/frontend, fluxo de dados ponta a ponta e comandos exatos de build/run. Use no início de qualquer tarefa para saber ONDE mora cada coisa antes de varrer o codebase, ou quando precisar entender como as peças se conectam.
 metadata:
   version: 0.4.0
   type: knowledge
 ---
-# Arquitetura — ai-benchmark
+# Arquitetura — prompt-builder
 
 Ferramenta de benchmark de LLMs via OpenRouter. Monorepo TypeScript: backend Express
 (`src/`) + frontend React/Vite (`web/`). UI e comentários em **PT-BR**. Sem framework de testes.

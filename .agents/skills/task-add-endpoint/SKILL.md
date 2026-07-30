@@ -1,6 +1,6 @@
 ---
 name: task-add-endpoint
-description: Procedimento para adicionar ou alterar um endpoint na API /v1/benchmark do ai-benchmark, do schema Zod no backend até o wrapper fetch no frontend. Use sempre que a tarefa envolver uma nova rota HTTP, um novo campo de RunConfig, ou expor dados novos para a UI.
+description: Procedimento para adicionar ou alterar um endpoint na API /v1/benchmark do prompt-builder, do schema Zod no backend até o wrapper fetch no frontend. Use sempre que a tarefa envolver uma nova rota HTTP, um novo campo de RunConfig, ou expor dados novos para a UI.
 metadata:
   version: 0.1.0
   type: task

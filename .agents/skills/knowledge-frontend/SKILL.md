@@ -1,11 +1,11 @@
 ---
 name: knowledge-frontend
-description: Padrões do frontend React/Vite do ai-benchmark — stack Tailwind v4 + shadcn + Motion UI, o AppShell (header que condensa, paleta ⌘K, transição de rota, toasts), camada api.ts, cache IndexedDB (v2, com a biblioteca de prompts), o ModelSelector em modal, a Nova Run em abas animadas, o import unificado de JSON, o heatmap/painel de finais de runShared.tsx e SSE. Use ao adicionar/alterar qualquer coisa em web/src/ (telas, componentes, chamadas de API, estilos).
+description: Padrões do frontend React/Vite do prompt-builder — stack Tailwind v4 + shadcn + Motion UI, o AppShell (header que condensa, paleta ⌘K, transição de rota, toasts), camada api.ts, cache IndexedDB (v2, com a biblioteca de prompts), o ModelSelector em modal, a Nova Run em abas animadas, o import unificado de JSON, o heatmap/painel de finais de runShared.tsx e SSE. Use ao adicionar/alterar qualquer coisa em web/src/ (telas, componentes, chamadas de API, estilos).
 metadata:
   version: 0.7.0
   type: knowledge
 ---
-# Frontend — ai-benchmark
+# Frontend — prompt-builder
 
 React **19** + Vite + TypeScript. Roteamento com `react-router-dom` v6. Sem testes.
 Dev em `:5173` com proxy de `/v1` e `/health` → `:3001` (`vite.config.ts`).
@@ -67,7 +67,7 @@ Dev em `:5173` com proxy de `/v1` e `/health` → `:3001` (`vite.config.ts`).
 ## Import/export de JSON
 - **Import unificado:** UM botão `[Importar JSON]` no topo do NewRun → `readImportFile` (`api.ts`),
   que detecta o formato sozinho pelo campo `format` e devolve
-  `{ kind: 'config' | 'pack' | 'stages' }` — `arena-config@1`, `ai-benchmark-pack@1` ou **array cru
+  `{ kind: 'config' | 'pack' | 'stages' }` — `arena-config@1`, `prompt-builder-pack@1 (legado: ai-benchmark-pack@1)` ou **array cru
   de cenários** (também aceita `{ stages: [...] }`; teto de 200). **Nunca lança** — erro vira
   `{ ok:false, error }` em PT-BR. `readArenaConfigFile`/`readScenarioPackFile` continuam exportados
   mas a UI não os usa mais.

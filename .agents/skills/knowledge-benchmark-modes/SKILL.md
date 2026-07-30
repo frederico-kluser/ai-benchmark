@@ -1,11 +1,11 @@
 ---
 name: knowledge-benchmark-modes
-description: Os três modos de benchmark do ai-benchmark (compare, variation, training — incluindo o eixo compare-llms), o conceito de "contestant" e o pipeline gerador→competidores→julgamento (por referência + duelos, com listwise de fallback). Use ao mexer em orchestrator/trainer/variator/datagen/competitor/judge, ao alterar RunConfig, ou ao trabalhar com placar, iterações e a tela de resultados.
+description: Os três modos de benchmark do prompt-builder (compare, variation, training — incluindo o eixo compare-llms), o conceito de "contestant" e o pipeline gerador→competidores→julgamento (por referência + duelos, com listwise de fallback). Use ao mexer em orchestrator/trainer/variator/datagen/competitor/judge, ao alterar RunConfig, ou ao trabalhar com placar, iterações e a tela de resultados.
 metadata:
   version: 0.5.0
   type: knowledge
 ---
-# Modos de benchmark — ai-benchmark
+# Modos de benchmark — prompt-builder
 
 `RunConfig` é uma **union discriminada por `mode`** (`src/types.ts`). Os três modos compartilham
 o pipeline, mas diferem no que é o "contestant".

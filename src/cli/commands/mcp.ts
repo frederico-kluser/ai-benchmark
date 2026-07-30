@@ -13,7 +13,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
-import { PKG_DOCS_DIR, PKG_ROOT } from '../../paths.js';
+import { PKG_DOCS_DIR, PKG_ROOT, pkgVersion } from '../../paths.js';
 import { setDataDir, loadRun, loadSession } from '../../storage.js';
 import { ensureCatalog } from '../../modelsCache.js';
 import { toExportRow } from '../../modelCaps.js';
@@ -29,7 +29,7 @@ import { EXIT } from '../output.js';
 import type { RunConfig } from '../../types.js';
 
 const PROTOCOL_VERSION = '2025-06-18';
-const SERVER_INFO = { name: 'prompt-builder', version: '0.1.0' };
+const SERVER_INFO = { name: 'prompt-builder', version: pkgVersion() };
 
 interface JsonRpcRequest {
   jsonrpc: '2.0';

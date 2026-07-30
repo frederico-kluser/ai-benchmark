@@ -1,11 +1,11 @@
 ---
 name: knowledge-backend
-description: Padrões do backend Express do ai-benchmark — rotas /v1/benchmark, validação Zod, autenticação por header de key, persistência atômica, eventos SSE e o pipeline do orquestrador. Use ao adicionar/alterar qualquer coisa em src/ (endpoints, validação, storage, streaming, etapas de run).
+description: Padrões do backend Express do prompt-builder — rotas /v1/benchmark, validação Zod, autenticação por header de key, persistência atômica, eventos SSE e o pipeline do orquestrador. Use ao adicionar/alterar qualquer coisa em src/ (endpoints, validação, storage, streaming, etapas de run).
 metadata:
   version: 0.1.0
   type: knowledge
 ---
-# Backend — ai-benchmark
+# Backend — prompt-builder
 
 Express + TypeScript (ESM NodeNext). Entrypoint `src/server.ts` monta o router em
 `app.use('/v1/benchmark', benchmarkRouter)` e serve `web/dist` com fallback SPA. Na subida,

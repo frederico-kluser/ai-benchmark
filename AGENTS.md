@@ -1,8 +1,10 @@
-# AGENTS.md — ai-benchmark
+# AGENTS.md — prompt-builder
 
 Monorepo TypeScript: backend Express + motor + **CLI** (`src/`) + frontend React/Vite (`web/`).
-UI/comentários em PT-BR. O pacote npm publicado é **`prompt-builder`** (o nome `ai-benchmark`
-está ocupado no registry).
+UI/comentários em PT-BR. O pacote npm publicado é **`prompt-builder-cli`** — `prompt-builder`
+está ocupado no registry por uma biblioteca de terceiros. ⚠️ `prompt-builder-cli` também precisa
+existir como `bin` (além de `prompt-builder` e `pbuilder`): com dois ou mais bins e nenhum homônimo
+do pacote, `npx prompt-builder-cli` falha com "could not determine executable to run".
 
 ## Comandos (exatos)
 - dev: `npm run dev` — backend `:3001` (tsx watch) + frontend `:5173` (Vite, com proxy de `/v1` e `/health`)

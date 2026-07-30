@@ -1,4 +1,4 @@
-# Catálogo de Skills — ai-benchmark
+# Catálogo de Skills — prompt-builder
 
 > Índice da biblioteca de *knowledge skills*. Toda tarefa passa primeiro pelo
 > **[project-router](project-router/SKILL.md)**, que seleciona e encadeia as skills

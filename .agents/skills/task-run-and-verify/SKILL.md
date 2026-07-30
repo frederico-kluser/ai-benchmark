@@ -1,6 +1,6 @@
 ---
 name: task-run-and-verify
-description: Procedimento para rodar o ai-benchmark e verificar uma mudança ponta a ponta, já que não há framework de testes. Use ANTES de dar qualquer tarefa por concluída — type-check dos dois lados, build, e smoke test (curl nos endpoints ou a UI no navegador).
+description: Procedimento para rodar o prompt-builder e verificar uma mudança ponta a ponta, já que não há framework de testes. Use ANTES de dar qualquer tarefa por concluída — type-check dos dois lados, build, e smoke test (curl nos endpoints ou a UI no navegador).
 metadata:
   version: 0.2.0
   type: task

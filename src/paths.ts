@@ -9,6 +9,7 @@
 // NAO troque por `process.cwd()`: instalado como CLI, o cwd e o projeto do
 // usuario, e a leitura da base LGPD falha com ENOENT.
 
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -23,3 +24,17 @@ export const PKG_DOCS_DIR = path.join(PKG_ROOT, 'agent-docs');
 
 /** Skills instalaveis pelo comando `init`. */
 export const PKG_SKILLS_DIR = path.join(PKG_ROOT, 'skills');
+
+/**
+ * Versao do pacote, lida do package.json em vez de chumbada no codigo.
+ * Chumbar significava manter o mesmo numero em tres lugares (CLI, MCP e
+ * package.json) — e eles ja tinham divergido no primeiro bump.
+ */
+export function pkgVersion(): string {
+  try {
+    const raw = readFileSync(path.join(PKG_ROOT, 'package.json'), 'utf-8');
+    return (JSON.parse(raw) as { version?: string }).version ?? '0.0.0';
+  } catch {
+    return '0.0.0';
+  }
+}

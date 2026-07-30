@@ -1,11 +1,11 @@
 ---
 name: knowledge-openrouter
-description: Integração com o OpenRouter no ai-benchmark — quais endpoints são públicos vs autenticados, a API de chatCompletion/streaming, o cache de modelos de 24h e como funciona (ou funcionaria) o roteamento de provider/ZDR. Use ao mexer em src/openrouter.ts, ao chamar modelos, ou ao trabalhar com catálogo de modelos, custo e roteamento.
+description: Integração com o OpenRouter no prompt-builder — quais endpoints são públicos vs autenticados, a API de chatCompletion/streaming, o cache de modelos de 24h e como funciona (ou funcionaria) o roteamento de provider/ZDR. Use ao mexer em src/openrouter.ts, ao chamar modelos, ou ao trabalhar com catálogo de modelos, custo e roteamento.
 metadata:
   version: 0.2.0
   type: knowledge
 ---
-# OpenRouter — ai-benchmark
+# OpenRouter — prompt-builder
 
 Todo acesso ao OpenRouter é centralizado em `src/openrouter.ts`. Base configurável por
 `OPENROUTER_BASE_URL` (default `https://openrouter.ai/api/v1`). Header de auth montado em

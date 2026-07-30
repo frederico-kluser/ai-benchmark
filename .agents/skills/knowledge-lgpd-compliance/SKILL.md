@@ -1,11 +1,11 @@
 ---
 name: knowledge-lgpd-compliance
-description: O filtro consultivo de conformidade LGPD do ai-benchmark — a base de conhecimento JSON, a lógica de classificação por família/origem, o passo de propósito no assistente, como regenerar o snapshot e o gancho para enforcement de roteamento (fase 2). Use ao mexer em conformidade, no filtro de modelos por área, ou nos arquivos src/data/lgpd-*.json, src/lgpd.ts e web/src/lgpd.ts.
+description: O filtro consultivo de conformidade LGPD do prompt-builder — a base de conhecimento JSON, a lógica de classificação por família/origem, o passo de propósito no assistente, como regenerar o snapshot e o gancho para enforcement de roteamento (fase 2). Use ao mexer em conformidade, no filtro de modelos por área, ou nos arquivos src/data/lgpd-*.json, src/lgpd.ts e web/src/lgpd.ts.
 metadata:
   version: 0.1.0
   type: knowledge
 ---
-# Conformidade LGPD — ai-benchmark
+# Conformidade LGPD — prompt-builder
 
 Filtra o catálogo de modelos por **propósito/área** de uso conforme adequação à LGPD. É
 **consultivo**: orienta e esconde modelos, mas **NÃO força** o roteamento de providers no

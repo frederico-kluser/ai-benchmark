@@ -5,6 +5,7 @@
 // interativo, `--json` em tudo, codigos de saida distintos e auto-documentacao
 // versionada dentro do proprio pacote (`docs`).
 
+import { pkgVersion } from '../paths.js';
 import { CliError, EXIT, Output } from './output.js';
 import { buildContext, parse } from './context.js';
 import { cmdModels } from './commands/models.js';
@@ -22,7 +23,7 @@ import {
   cmdTechniques,
 } from './commands/misc.js';
 
-const VERSION = '0.1.0';
+const VERSION = pkgVersion();
 
 const HELP = `prompt-builder ${VERSION} — benchmark de LLMs e evolução de system prompts.
 

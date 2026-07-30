@@ -3,7 +3,6 @@ name: prompt-builder
 description: Benchmark de LLMs e evolução de system prompts pelo terminal, com controle de orçamento. Use ao comparar modelos, testar variações de um prompt, escolher o nível de raciocínio (think level) de um modelo, estimar o custo de uma chamada de LLM antes de gastar, ou treinar automaticamente um system prompt contra cenários gerados. Use também para listar ou exportar o catálogo de modelos do OpenRouter com os níveis de raciocínio que cada um aceita.
 license: MIT
 metadata:
-  version: 0.1.0
   homepage: https://www.npmjs.com/package/prompt-builder-cli
 ---
 

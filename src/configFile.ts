@@ -382,7 +382,7 @@ export function parseArenaConfig(
     const desc = typeof formato === 'string' && formato.trim() ? formato : 'desconhecido';
     return {
       ok: false,
-      error: `Arquivo não é uma configuração do ai-benchmark (formato ${desc})`,
+      error: `Arquivo não é uma configuração do prompt-builder (formato ${desc})`,
     };
   }
   const result = arenaConfigSchema.safeParse(json);

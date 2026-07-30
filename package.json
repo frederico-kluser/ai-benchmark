@@ -1,6 +1,6 @@
 {
   "name": "prompt-builder-cli",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Benchmark LLMs and evolve system prompts from the terminal. Built for coding agents: self-documenting, budget-aware, model/think-level aware.",
   "type": "module",
   "license": "MIT",

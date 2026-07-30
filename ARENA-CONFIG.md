@@ -1,7 +1,7 @@
 # ARENA-CONFIG — Gerador de `arena-config@1.json`
 
 Instruções para uma IA externa (ChatGPT, Claude, Gemini etc.) gerar o arquivo de configuração
-da página **Nova Run** do ai-benchmark. Cole **este documento inteiro** + a descrição do que
+da página **Nova Run** do prompt-builder. Cole **este documento inteiro** + a descrição do que
 você quer testar; a IA devolve um JSON puro que a página importa de uma vez.
 
 ---

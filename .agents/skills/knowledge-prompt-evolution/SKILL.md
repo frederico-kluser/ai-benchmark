@@ -1,11 +1,11 @@
 ---
 name: knowledge-prompt-evolution
-description: O sistema de evolução de prompts do ai-benchmark (portado do prompt-arena) — julgamento por referência (gabarito + refJudge pointwise + duelos Copeland), rank/pickWinner com minGain, reflection GEPA, holdout + significância bootstrap, datagen em lotes, pacote de cenários JSON, reasoning por papel e a biblioteca de prompts. Use ao mexer em gabarito/refJudge/duels/rank/holdout/stats/trainer/datagen/llmVariants/scenarioPack/reasoning/dedup/promptStore, ou em qualquer fluxo de treino/julgamento — leia junto com knowledge-benchmark-modes.
+description: O sistema de evolução de prompts do prompt-builder (portado do prompt-arena) — julgamento por referência (gabarito + refJudge pointwise + duelos Copeland), rank/pickWinner com minGain, reflection GEPA, holdout + significância bootstrap, datagen em lotes, pacote de cenários JSON, reasoning por papel e a biblioteca de prompts. Use ao mexer em gabarito/refJudge/duels/rank/holdout/stats/trainer/datagen/llmVariants/scenarioPack/reasoning/dedup/promptStore, ou em qualquer fluxo de treino/julgamento — leia junto com knowledge-benchmark-modes.
 metadata:
   version: 0.4.0
   type: knowledge
 ---
-# Evolução de prompts — ai-benchmark
+# Evolução de prompts — prompt-builder
 
 Sistema portado do ondokai-prompt-arena. Cada módulo vive em `src/` **e** espelhado em
 `web/src/engine/` (sincronize os dois lados). Visão de modos em `knowledge-benchmark-modes`.
@@ -63,7 +63,7 @@ Sistema portado do ondokai-prompt-arena. Cada módulo vive em `src/` **e** espel
   `dedupeAdvanced`; keep prefere rubric não-vazia), **1 backfill** (`ceil(falta×1.5)`). Falha de
   lote → lote vazio, nunca derruba. `scenarioBrief` entra no **system** com prioridade na
   distribuição. `generateStage` (singular) mantido, mas **sem chamador** em `src/`.
-- **Pacote** (`scenarioPack.ts`): formato `'ai-benchmark-pack@1'` (theme, prompt campeão/base,
+- **Pacote** (`scenarioPack.ts`): formato `'prompt-builder-pack@1 (legado: ai-benchmark-pack@1)'` (theme, prompt campeão/base,
   cenários com `reference`). `parseScenarioPack` **nunca lança** (`{ok, error}` PT-BR). No merge,
   o seed entra inteiro com `origin: 'import'` (**nunca** deduplicado — é curadoria) e os gerados
   só com ROUGE-L < 0.7 (`origin: 'ai'`). Seed ≥ `stages` → datagen não é chamado. Export/import

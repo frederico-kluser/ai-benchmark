@@ -663,7 +663,8 @@ export interface SavedPrompt {
 
 /** Pacote JSON de cenarios+gabaritos exportado ao fim da run (importavel como seed). */
 export interface ScenarioPack {
-  format: 'ai-benchmark-pack@1';
+  /** Escrita usa `prompt-builder-pack@1`; o nome antigo segue aceito na leitura. */
+  format: 'prompt-builder-pack@1' | 'ai-benchmark-pack@1';
   theme: string;
   exportedAt: string;
   /** Prompt escolhido na exportacao (campeao ou base). */

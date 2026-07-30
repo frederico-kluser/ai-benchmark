@@ -1,11 +1,11 @@
 ---
 name: project-router
-description: Roteia TODA tarefa de implementação no repositório ai-benchmark para as skills de conhecimento e tarefa corretas ANTES de qualquer passo. Use sempre que o usuário pedir qualquer mudança, correção, feature, análise ou refactor neste codebase — mesmo que não mencione skills explicitamente. Carregue o conhecimento das skills relevantes antes de editar código.
+description: Roteia TODA tarefa de implementação no repositório prompt-builder para as skills de conhecimento e tarefa corretas ANTES de qualquer passo. Use sempre que o usuário pedir qualquer mudança, correção, feature, análise ou refactor neste codebase — mesmo que não mencione skills explicitamente. Carregue o conhecimento das skills relevantes antes de editar código.
 metadata:
   version: 0.1.0
   type: router
 ---
-# Project Router — ai-benchmark
+# Project Router — prompt-builder
 
 Este repositório adota um sistema de *knowledge skills*: o conhecimento do projeto vive
 em `.agents/skills/` e é injetado sob demanda, em vez de reler docs ou varrer o codebase.
