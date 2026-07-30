@@ -34,7 +34,7 @@ src/            backend (Express, ESM NodeNext — imports com extensão .js)
   data/         JSON ESTÁTICO versionado (techniques não; lgpd-*.json sim)
 web/src/        frontend
   api.ts        wrappers fetch + tipos espelhados do backend
-  idb.ts        cache IndexedDB v2 (db "benchmark-arena", stores runs/sessions/*Summaries/prompts)
+  idb.ts        cache IndexedDB v2 (db "prompt-builder", stores runs/sessions/*Summaries/prompts)
   engine/       CÓPIA client-side do pipeline (ver abaixo) + promptStore.ts (biblioteca de prompts) + configFile.ts (parser arena-config@1)
   diff.ts       diff linha-a-linha (versões de prompt / diff vs. original)
   pages/        NewRun (fluxo em ABAS animadas: segmentado de modo + SmoothTabs),
@@ -100,7 +100,7 @@ copia `.json` para `dist/`. Siga a convenção `process.cwd()` para ler qualquer
   `404 {"error":"Run nao encontrada"}`. É o mesmo motivo de o backend não rodar lá (não é só pela run
   longa: até **ler** uma run falha).
 - **Detectar deploy errado:** na SPA, `GET /health` cai no rewrite e devolve `index.html` (HTML). Se
-  devolver `{"status":"ok","service":"benchmark-arena"}` (= `server.ts:14`), há um deploy ANTIGO do
+  devolver `{"status":"ok","service":"prompt-builder"}` (= `server.ts:14`), há um deploy ANTIGO do
   backend preso em produção — force um novo deploy estático (não é bug de código).
 - **Na SPA, runs vivem no IndexedDB do navegador** que as criou: não são compartilháveis entre
   dispositivos/navegadores (link de `/runs/:id` em outro navegador → `Run nao encontrada` em `api.ts`).

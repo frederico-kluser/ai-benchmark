@@ -1,7 +1,8 @@
 import { z } from 'zod';
 import { chatCompletion } from './openrouter.js';
+import { isControlSignal } from './budget.js';
 import { getTechnique } from './techniques.js';
-import type { Contestant, ManualVariant, PromptTechnique, ReasoningLevel } from './types.js';
+import type { Contestant, ManualVariant, PromptTechnique, ReasoningLevel, RunCtx } from './types.js';
 
 const variantSchema = z.object({ systemPrompt: z.string().min(1) });
 
@@ -64,6 +65,9 @@ export interface GenerateContestantsParams {
   /** Nivel de raciocinio do papel "rewriter" (RunConfig.reasoning.rewriter). */
   reasoningLevel?: ReasoningLevel;
   timeoutMs?: number;
+  /** Sinal de abort + ledger de custo. */
+  ctx?: RunCtx;
+  maxPricePerMTok?: { prompt?: number; completion?: number };
 }
 
 async function generateOneVariant(
@@ -104,6 +108,10 @@ Reescreva o prompt agora, aplicando a tecnica.`;
       temperature: 0.4,
       timeoutMs: p.timeoutMs ?? 90_000,
       reasoningLevel: p.reasoningLevel,
+      role: 'rewriter',
+      signal: p.ctx?.signal,
+      sink: p.ctx?.sink,
+      maxPricePerMTok: p.maxPricePerMTok,
     });
     const text = stripFences(result.text);
     // Gate de usabilidade: reescrita vazia ou colapsada nao vale um benchmark —
@@ -117,6 +125,9 @@ Reescreva o prompt agora, aplicando a tecnica.`;
     }
     return text;
   } catch (err) {
+    // Sem o rethrow, orcamento estourado produziria uma lista de variantes
+    // menor do que o pedido — o treino "converge" por falta de candidatos.
+    if (isControlSignal(err)) throw err;
     console.warn(`[variator] tecnica ${technique.id} falhou: ${(err as Error).message}`);
     return null;
   }
@@ -209,6 +220,7 @@ export interface GenerateBasePromptParams {
   /** Contexto/tema extra opcional. */
   theme?: string;
   timeoutMs?: number;
+  ctx?: RunCtx;
 }
 
 const BASE_PROMPT_SYSTEM = `Voce e um engenheiro de prompts senior. Recebe a DESCRICAO de uma tarefa e produz um SYSTEM PROMPT completo e reutilizavel para um assistente que executa essa tarefa.
@@ -233,6 +245,9 @@ export async function generateBasePrompt(p: GenerateBasePromptParams): Promise<s
     temperature: 0.4,
     timeoutMs: p.timeoutMs ?? 90_000,
     responseFormatJson: true,
+    role: 'rewriter',
+    signal: p.ctx?.signal,
+    sink: p.ctx?.sink,
   });
 
   let parsed;

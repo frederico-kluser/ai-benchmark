@@ -1,0 +1,68 @@
+[
+  {
+    "topic": "quickstart",
+    "title": "Começo rápido",
+    "summary": "o caminho de 6 passos e as 5 regras que evitam erro. COMECE AQUI.",
+    "approxTokens": 700
+  },
+  {
+    "topic": "overview",
+    "title": "Como funciona",
+    "summary": "o pipeline, o conceito de contestant e o laço do treino",
+    "approxTokens": 700
+  },
+  {
+    "topic": "models",
+    "title": "Modelos e think levels",
+    "summary": "filtros, schema de export e como não tomar HTTP 400 no esforço",
+    "approxTokens": 900
+  },
+  {
+    "topic": "budget",
+    "title": "Orçamento e custo",
+    "summary": "como o teto para a run sem corromper o resultado; pré-voo e códigos de saída",
+    "approxTokens": 900
+  },
+  {
+    "topic": "compare",
+    "title": "compare",
+    "summary": "qual modelo (ou qual configuração) responde melhor",
+    "approxTokens": 600
+  },
+  {
+    "topic": "vary",
+    "title": "vary",
+    "summary": "uma rodada de variações de prompt no mesmo modelo",
+    "approxTokens": 450
+  },
+  {
+    "topic": "train",
+    "title": "train",
+    "summary": "evoluir um prompt com holdout e significância estatística",
+    "approxTokens": 800
+  },
+  {
+    "topic": "ndjson",
+    "title": "Saída NDJSON",
+    "summary": "tabela completa de eventos e o que deliberadamente não vem no stream",
+    "approxTokens": 700
+  },
+  {
+    "topic": "results",
+    "title": "Lendo os resultados",
+    "summary": "as duas réguas de ranking e os campos que importam nos records",
+    "approxTokens": 700
+  },
+  {
+    "topic": "troubleshooting",
+    "title": "Problemas comuns",
+    "summary": "400 no esforço, 402 sem crédito, tudo 'parcial', run travada",
+    "approxTokens": 650
+  },
+  {
+    "topic": "config",
+    "title": "Contrato arena-config@1",
+    "summary": "o documento completo do arquivo de configuração declarativo (longo)",
+    "approxTokens": 9000
+  }
+]

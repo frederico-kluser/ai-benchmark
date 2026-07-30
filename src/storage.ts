@@ -4,15 +4,39 @@ import path from 'node:path';
 import { normalizeRunRecord } from './normalize.js';
 import type { RunMode, RunRecord, SessionRecord } from './types.js';
 
-const DATA_DIR = path.resolve(process.cwd(), 'data', 'runs');
-const SESSIONS_DIR = path.resolve(process.cwd(), 'data', 'sessions');
+// Raiz de persistencia. MUTAVEL de proposito: o servidor mantem o default
+// historico (`./data`), enquanto o CLI aponta para `~/.prompt-builder` — se o
+// CLI instalado gravasse em `process.cwd()`, sujaria o repositorio do usuario.
+//
+// Os diretorios sao lidos por GETTER, nunca capturados numa const de topo: assim
+// `setDataDir` funciona independentemente da ordem de import dos modulos ESM.
+let baseDir = process.env.PROMPT_BUILDER_HOME
+  ? path.resolve(process.env.PROMPT_BUILDER_HOME)
+  : path.resolve(process.cwd(), 'data');
+
+/** Troca a raiz de persistencia. Chame ANTES de qualquer save/load. */
+export function setDataDir(dir: string): void {
+  baseDir = path.resolve(dir);
+}
+
+export function getDataDir(): string {
+  return baseDir;
+}
+
+function runsDir(): string {
+  return path.join(baseDir, 'runs');
+}
+
+function sessionsDir(): string {
+  return path.join(baseDir, 'sessions');
+}
 
 async function ensureDir(): Promise<void> {
-  await fs.mkdir(DATA_DIR, { recursive: true });
+  await fs.mkdir(runsDir(), { recursive: true });
 }
 
 function fileFor(runId: string): string {
-  return path.join(DATA_DIR, `${runId}.json`);
+  return path.join(runsDir(), `${runId}.json`);
 }
 
 async function writeAtomic(target: string, data: string): Promise<void> {
@@ -83,12 +107,13 @@ export interface RunSummary {
 
 export async function listRuns(): Promise<RunSummary[]> {
   await ensureDir();
-  const files = await fs.readdir(DATA_DIR);
+  const dir = runsDir();
+  const files = await fs.readdir(dir);
   const summaries: RunSummary[] = [];
   for (const f of files) {
     if (!f.endsWith('.json')) continue;
     try {
-      const data = await fs.readFile(path.join(DATA_DIR, f), 'utf-8');
+      const data = await fs.readFile(path.join(dir, f), 'utf-8');
       const r = normalizeRunRecord(JSON.parse(data));
       summaries.push({
         id: r.id,
@@ -143,11 +168,11 @@ export async function markOrphansAsAborted(): Promise<void> {
 // ---------------------------------------------------------------------------
 
 async function ensureSessionsDir(): Promise<void> {
-  await fs.mkdir(SESSIONS_DIR, { recursive: true });
+  await fs.mkdir(sessionsDir(), { recursive: true });
 }
 
 function sessionFileFor(id: string): string {
-  return path.join(SESSIONS_DIR, `${id}.json`);
+  return path.join(sessionsDir(), `${id}.json`);
 }
 
 const sessionSaveQueues = new Map<string, Promise<unknown>>();
@@ -192,12 +217,13 @@ export interface SessionSummary {
 
 export async function listSessions(): Promise<SessionSummary[]> {
   await ensureSessionsDir();
-  const files = await fs.readdir(SESSIONS_DIR);
+  const dir = sessionsDir();
+  const files = await fs.readdir(dir);
   const summaries: SessionSummary[] = [];
   for (const f of files) {
     if (!f.endsWith('.json')) continue;
     try {
-      const data = await fs.readFile(path.join(SESSIONS_DIR, f), 'utf-8');
+      const data = await fs.readFile(path.join(dir, f), 'utf-8');
       const r = JSON.parse(data) as SessionRecord;
       summaries.push({
         id: r.id,

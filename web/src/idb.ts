@@ -2,7 +2,7 @@
 // ao fechar/reabrir o navegador — e para visualizar runs/sessões mesmo se o
 // servidor não as tiver mais. Degrada para no-op se o IndexedDB estiver indisponível.
 
-const DB_NAME = 'benchmark-arena';
+const DB_NAME = 'prompt-builder';
 // v2: adiciona a store 'prompts' (biblioteca de prompts salvos/evoluídos).
 // O upgrade de clientes existentes já está coberto: o onupgradeneeded itera
 // STORES e cria apenas as stores que faltam, então quem vem da v1 ganha a

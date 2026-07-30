@@ -11,7 +11,18 @@ import { judgeScoreFromVerdicts } from './rank.js';
 import { emitEvent } from './events.js';
 import { saveRun } from './storage.js';
 import { contestantsFromConfig } from './normalize.js';
-import type { Contestant, RunConfig, RunRecord, StageRecord, StageSpec } from './types.js';
+import { BudgetLedger, isControlSignal } from './budget.js';
+import { estimateInputFromConfig, estimateRunCost, makeCallEstimator } from './estimate.js';
+import { listModels } from './openrouter.js';
+import type {
+  Contestant,
+  RunConfig,
+  RunCtx,
+  RunPhase,
+  RunRecord,
+  StageRecord,
+  StageSpec,
+} from './types.js';
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -19,7 +30,9 @@ function nowIso(): string {
 
 function log(runId: string, msg: string, extra?: Record<string, unknown>): void {
   const payload = extra ? ` ${JSON.stringify(extra)}` : '';
-  console.log(`[bench ${runId}] ${msg}${payload}`);
+  // stderr, nao stdout: num CLI o stdout e PAYLOAD (NDJSON/JSON) e uma
+  // linha de log no meio corrompe o stream de quem esta consumindo.
+  console.error(`[bench ${runId}] ${msg}${payload}`);
 }
 
 function applyScoreboard(
@@ -54,6 +67,15 @@ export interface StartRunOpts {
   sessionId?: string;
   iteration?: number;
   parentRunId?: string;
+  /** Sinal de abort (Ctrl-C, timeout global) — chega ao fetch de cada chamada. */
+  signal?: AbortSignal;
+  /**
+   * Ledger EXTERNO (sessao de treino): a run reporta o proprio total e escreve
+   * no pai. Ausente => a run cria o proprio ledger a partir de config.budgetUsd.
+   */
+  parentLedger?: BudgetLedger;
+  /** Contexto pronto (usado por prepareOptsFor). Tem precedencia sobre signal. */
+  ctx?: RunCtx;
 }
 
 /**
@@ -99,21 +121,89 @@ function buildRecord(config: RunConfig, opts: StartRunOpts): RunRecord {
   };
 }
 
+/**
+ * Persistencia com THROTTLE: as etapas paralelas geram MUITAS escritas, entao
+ * coalescemos em no max. 1x/SAVE_INTERVAL_MS (trailing) e damos flush nos
+ * marcos. `dispose` existe porque o timer armado mantinha o event loop vivo por
+ * ate 800ms depois do fim — imperceptivel num servidor, mas num CLI parece
+ * travamento.
+ */
+const SAVE_INTERVAL_MS = 800;
+
+interface Saver {
+  schedule(): void;
+  flush(): Promise<void>;
+}
+
+function createSaver(record: RunRecord): Saver {
+  let saveTimer: ReturnType<typeof setTimeout> | null = null;
+  let lastSave = 0;
+  return {
+    schedule(): void {
+      if (saveTimer) return;
+      const delay = Math.max(0, SAVE_INTERVAL_MS - (Date.now() - lastSave));
+      saveTimer = setTimeout(() => {
+        saveTimer = null;
+        lastSave = Date.now();
+        void saveRun(record).catch(() => undefined);
+      }, delay);
+      saveTimer.unref?.();
+    },
+    async flush(): Promise<void> {
+      if (saveTimer) {
+        clearTimeout(saveTimer);
+        saveTimer = null;
+      }
+      lastSave = Date.now();
+      await saveRun(record).catch(() => undefined);
+    },
+  };
+}
+
 /** Executa o loop e SEMPRE resolve com o record final (status finished/error). */
 async function executeRun(
   record: RunRecord,
   apiKey: string,
   opts: StartRunOpts,
 ): Promise<RunRecord> {
+  const saver = createSaver(record);
   try {
-    await runLoop(record, apiKey, opts);
+    await runLoop(record, apiKey, opts, saver);
+    // As portas suaves de orcamento saem do runLoop com `return`, sem lancar —
+    // e o que preserva o resultado parcial. Mas o record ficaria eternamente
+    // 'running' (e um agente que faz polling esperaria para sempre), entao o
+    // fechamento terminal acontece aqui.
+    if (record.status === 'running') {
+      record.status = record.stoppedReason ? 'aborted' : 'finished';
+      record.finishedAt = nowIso();
+      emitEvent({ type: 'run.finished', runId: record.id, record });
+      log(record.id, `run encerrada cedo (${record.stoppedReason ?? 'sem fase executavel'})`, {
+        totalCostUsd: record.totalCostUsd,
+      });
+    }
   } catch (err) {
-    console.error(`[bench ${record.id}] run.error:`, err);
-    record.status = 'error';
-    record.error = err instanceof Error ? err.message : String(err);
-    record.finishedAt = nowIso();
-    await saveRun(record).catch(() => undefined);
-    emitEvent({ type: 'run.error', runId: record.id, error: record.error });
+    if (isControlSignal(err)) {
+      // Orcamento/cancelamento NAO sao erro: a run tem resultado parcial valido.
+      // Reusa o status 'aborted' que ja existe (SSE, listagem e
+      // markOrphansAsAborted ja o tratam) e discrimina em `stoppedReason`.
+      record.status = 'aborted';
+      record.stoppedReason = err.benchControl === 'budget' ? 'budget' : 'cancelled';
+      if (err.benchControl === 'budget') record.budgetExhausted = true;
+      record.finishedAt = nowIso();
+      log(record.id, `run interrompida (${record.stoppedReason})`, {
+        totalCostUsd: record.totalCostUsd,
+      });
+      emitEvent({ type: 'run.finished', runId: record.id, record });
+    } else {
+      console.error(`[bench ${record.id}] run.error:`, err);
+      record.status = 'error';
+      record.error = err instanceof Error ? err.message : String(err);
+      record.finishedAt = nowIso();
+      emitEvent({ type: 'run.error', runId: record.id, error: record.error });
+    }
+  } finally {
+    // UMA escrita terminal, sem timer orfao — vale para os tres desfechos.
+    await saver.flush();
   }
   return record;
 }
@@ -135,32 +225,78 @@ export function runToCompletion(
   return executeRun(record, apiKey, opts);
 }
 
-async function runLoop(record: RunRecord, apiKey: string, opts: StartRunOpts): Promise<void> {
+async function runLoop(
+  record: RunRecord,
+  apiKey: string,
+  opts: StartRunOpts,
+  saver: Saver,
+): Promise<void> {
   const { id: runId } = record;
+  const scheduleSave = (): void => saver.schedule();
 
-  // --- Persistencia com THROTTLE: as etapas paralelas geram MUITAS escritas;
-  // coalescemos em no max. 1x/SAVE_INTERVAL_MS (trailing) e damos flush nos
-  // marcos. O estado ao vivo ja vai por SSE, entao o disco nao precisa de cada
-  // delta. storage.saveRun continua serializando por run (escrita atomica). ---
-  const SAVE_INTERVAL_MS = 800;
-  let saveTimer: ReturnType<typeof setTimeout> | null = null;
-  let lastSave = 0;
-  const scheduleSave = (): void => {
-    if (saveTimer) return;
-    const delay = Math.max(0, SAVE_INTERVAL_MS - (Date.now() - lastSave));
-    saveTimer = setTimeout(() => {
-      saveTimer = null;
-      lastSave = Date.now();
-      void saveRun(record).catch(() => undefined);
-    }, delay);
+  // Catalogo QUENTE antes do primeiro gasto. Sem isto `computeCost` devolve 0 e
+  // `fitEffort` ignora a allowlist de esforco (HTTP 400 em 83 modelos). Antes o
+  // cache so esquentava dentro do competidor — depois de o datagen ja ter gasto.
+  const catalogo = await listModels(apiKey).catch((err: unknown) => {
+    console.warn(`[bench ${runId}] catalogo indisponivel: ${(err as Error).message}`);
+    return [];
+  });
+
+  // Ledger: filho do da sessao (treino) ou proprio, a partir de config.budgetUsd.
+  const ledger =
+    opts.parentLedger?.fork() ??
+    new BudgetLedger({
+      budgetUsd: record.config.budgetUsd,
+      signal: opts.ctx?.signal ?? opts.signal,
+      estimateCall: makeCallEstimator(catalogo),
+    });
+  const ctx: RunCtx = { signal: opts.ctx?.signal ?? opts.signal ?? ledger.signal, sink: ledger };
+  const maxPricePerMTok = record.config.maxPricePerMTok;
+  record.budgetUsd = ledger.remainingUsd() !== undefined ? ledger.snapshot().budgetUsd : undefined;
+
+  // Estimativa por papel — base das PORTAS SUAVES de orcamento.
+  const est = estimateRunCost(
+    estimateInputFromConfig(record.config, {
+      contestantIds: record.contestants.map((c) => c.id),
+    }),
+    catalogo,
+  );
+
+  /**
+   * Porta suave. A unidade NAO e "uma fase", e um GRUPO que produz resultado
+   * coerente: competidores+julgamento sao atomicos, porque autorizar respostas
+   * sem poder paga-las de volta produz etapas com resposta e sem nota — o
+   * resultado-lixo-com-cara-de-sucesso que este design existe para evitar.
+   * Devolver false NAO lanca: o controle cai na finalizacao normal.
+   */
+  const gate = (phase: RunPhase, projectedUsd: number): boolean => {
+    ledger.throwIfCancelled();
+    if (ledger.canAfford(projectedUsd)) return true;
+    record.budgetExhausted = true;
+    record.stoppedAtPhase = phase;
+    record.stoppedReason = 'budget';
+    emitEvent({
+      type: 'run.budget',
+      runId,
+      phase,
+      projectedUsd,
+      remainingUsd: ledger.remainingUsd() ?? 0,
+      decision: 'stop',
+    });
+    log(runId, `orcamento insuficiente para ${phase}`, {
+      projectedUsd,
+      remainingUsd: ledger.remainingUsd(),
+    });
+    return false;
   };
-  const flushSave = async (): Promise<void> => {
-    if (saveTimer) {
-      clearTimeout(saveTimer);
-      saveTimer = null;
-    }
-    lastSave = Date.now();
-    await saveRun(record);
+
+  /** Copia o ledger para o record (chamado nos marcos e no fim). */
+  const syncLedger = (): void => {
+    const snap = ledger.snapshot();
+    record.totalCostUsd = snap.spentUsd;
+    record.costByRole = snap.byRole;
+    record.costAccuracy = snap.accuracy;
+    if (snap.upstreamUsd > 0) record.upstreamCostUsd = snap.upstreamUsd;
   };
 
   await saveRun(record);
@@ -185,6 +321,11 @@ async function runLoop(record: RunRecord, apiKey: string, opts: StartRunOpts): P
 
   // Resolve contestants on-demand (variacao: gera as variantes via optimizer).
   if (opts.prepare) {
+    if (!gate('variants', est.byRole.rewriter)) {
+      record.stages = [];
+      syncLedger();
+      return;
+    }
     emitEvent({ type: 'variants.generating', runId });
     const contestants = await opts.prepare();
     if (contestants.length < 2) {
@@ -241,6 +382,13 @@ async function runLoop(record: RunRecord, apiKey: string, opts: StartRunOpts): P
     emitEvent({ type: 'stage.generating', runId, stageIndex: i });
   }
 
+  // G1 = datagen + gabaritos: descartavel inteiro, antes de gastar com respostas.
+  const custoG1 = est.byRole.datagen + est.byRole.gabarito;
+  if (custoG1 > 0 && !gate('datagen', custoG1)) {
+    syncLedger();
+    return;
+  }
+
   let specs: StageSpec[];
   if (pinado) {
     specs = pinnedStages!;
@@ -261,6 +409,7 @@ async function runLoop(record: RunRecord, apiKey: string, opts: StartRunOpts): P
       excludePrompts: seed.map((s) => s.question),
       reasoningLevel: record.config.reasoning?.datagen,
       timeoutMs: datagenTimeout,
+      ctx,
     });
     specs = mergeScenarios(seed, gerados).map(saneMaxTokens);
     if (specs.length === 0) {
@@ -281,6 +430,8 @@ async function runLoop(record: RunRecord, apiKey: string, opts: StartRunOpts): P
       modelId: record.config.referenceModelId ?? record.config.judgeModelIds[0],
       reasoningLevel: record.config.reasoning?.judge,
       timeoutMs: datagenTimeout,
+      ctx,
+      maxPricePerMTok,
       // stageIndex -1 = progresso AGREGADO do lote (done/total de gabaritos
       // concluidos), nao de uma etapa especifica.
       onProgress: (done, total) =>
@@ -310,10 +461,25 @@ async function runLoop(record: RunRecord, apiKey: string, opts: StartRunOpts): P
     record.contestants[0]?.id;
   const labelOf = (id: string): string => record.contestants.find((c) => c.id === id)?.label ?? id;
 
-  // === FASE 2: rodar TODAS as etapas (com spec) EM PARALELO. ===
+  // === FASE 2+3: G2 — respostas E julgamento sao UM grupo indivisivel. ===
+  // Autorizar os competidores sem reservar o julgamento na MESMA decisao
+  // produziria etapas com resposta e sem nota (ou metade julgada), que e o
+  // resultado incompleto com aparencia de completo.
+  const custoG2 = est.byRole.competitor + est.byRole.judge;
+  if (custoG2 > 0 && !gate('competitors', custoG2)) {
+    for (const st of record.stages) {
+      if (st.spec && !st.error) st.incomplete = true;
+    }
+    syncLedger();
+    return;
+  }
+
   // Cada etapa e isolada (try/catch): uma falha nao derruba a run nem as outras.
   // O placar e ADITIVO (applyScoreboard) — independe da ordem de termino.
-  await Promise.all(
+  // allSettled em vez de all: com `all`, a primeira rejeicao desenrola o loop
+  // enquanto as irmas seguem gastando, e o resultado delas se perde DEPOIS de o
+  // dinheiro sair. Aqui todas terminam e so entao o sinal de controle sobe.
+  const etapasSettled = await Promise.allSettled(
     record.stages.map(async (stageRecord) => {
       const i = stageRecord.index;
       const stageSpec = stageRecord.spec;
@@ -321,7 +487,7 @@ async function runLoop(record: RunRecord, apiKey: string, opts: StartRunOpts): P
 
       try {
         // Competidores em paralelo — SEM cap local; o limitador global throttla.
-        await Promise.all(
+        const respSettled = await Promise.allSettled(
           record.contestants.map(async (contestant) => {
             const response = await runCompetitor({
               apiKey,
@@ -340,19 +506,27 @@ async function runLoop(record: RunRecord, apiKey: string, opts: StartRunOpts): P
                 contestant.temperature ??
                 ('temperature' in record.config ? record.config.temperature : undefined),
               reasoningLevel: contestant.reasoningLevel ?? record.config.reasoning?.competitor,
+              ctx,
+              maxPricePerMTok,
             });
 
             stageRecord.responses.push(response);
-            record.totalCostUsd += response.costUsd;
+            // `costByContestant` continua sendo a FATIA dos competidores; o
+            // total verdadeiro vem do ledger (juiz/duelo/datagen nao sao
+            // atribuiveis a um contestant e nao devem ser espalhados neles).
             if (record.costByContestant) {
               record.costByContestant[contestant.id] =
                 (record.costByContestant[contestant.id] ?? 0) + response.costUsd;
             }
+            syncLedger();
             scheduleSave();
             emitEvent({ type: 'competitor.finished', runId, stageIndex: i, response });
             return response;
           }),
         );
+        for (const r of respSettled) {
+          if (r.status === 'rejected' && isControlSignal(r.reason)) throw r.reason;
+        }
 
         // === FASE 3: julgamento POINTWISE. Com gabarito: cada resposta contra
         // a referencia (os duelos sairam daqui — viraram a fase 4 de finais).
@@ -370,6 +544,8 @@ async function runLoop(record: RunRecord, apiKey: string, opts: StartRunOpts): P
               apiKey,
               reasoningLevel: record.config.reasoning?.judge,
               timeoutMs: record.config.timeoutMs,
+              ctx,
+              maxPricePerMTok,
             });
             stageRecord.referenceJudge = refJudge;
 
@@ -412,9 +588,15 @@ async function runLoop(record: RunRecord, apiKey: string, opts: StartRunOpts): P
               judgeModelIds: record.config.judgeModelIds,
               timeoutMs: record.config.timeoutMs,
               passes: record.config.judgePasses,
+              reasoningLevel: record.config.reasoning?.judge,
+              ctx,
+              maxPricePerMTok,
             });
           }
         } catch (judgeErr) {
+          // Sem isto, orcamento estourado viraria "juiz inconclusivo" e a etapa
+          // entraria no placar como se tivesse sido avaliada.
+          if (isControlSignal(judgeErr)) throw judgeErr;
           stageRecord.judge = {
             rankedContestantIds: [],
             acceptableByContestant: {},
@@ -450,8 +632,21 @@ async function runLoop(record: RunRecord, apiKey: string, opts: StartRunOpts): P
           scoreboard: { ...record.scoreboard },
           totalCostUsd: record.totalCostUsd,
         });
+        emitEvent({
+          type: 'run.spend',
+          runId,
+          spentUsd: ledger.spentUsd,
+          budgetUsd: ledger.snapshot().budgetUsd,
+          byRole: ledger.byRole,
+        });
       } catch (stageErr) {
-        // rede de seguranca: qualquer imprevisto na etapa NAO mata a run
+        // rede de seguranca: qualquer imprevisto na etapa NAO mata a run —
+        // MENOS orcamento/cancelamento, que sao decisao, nao acidente.
+        if (isControlSignal(stageErr)) {
+          stageRecord.incomplete = true;
+          stageRecord.finishedAt = nowIso();
+          throw stageErr;
+        }
         const msg = stageErr instanceof Error ? stageErr.message : String(stageErr);
         stageRecord.error = stageRecord.error ?? msg;
         stageRecord.finishedAt = nowIso();
@@ -460,9 +655,15 @@ async function runLoop(record: RunRecord, apiKey: string, opts: StartRunOpts): P
       }
     }),
   );
+  for (const r of etapasSettled) {
+    if (r.status === 'rejected' && isControlSignal(r.reason)) throw r.reason;
+  }
+  syncLedger();
 
   // === Agregados do julgamento por referencia (trainer/UI consomem). ===
-  const stagesComRef = record.stages.filter((s) => s.referenceJudge);
+  // Etapas `incomplete` (cortadas por orcamento) ficam de fora: contar uma
+  // etapa sem julgamento como 'nao' rebaixaria todo mundo por falta de dinheiro.
+  const stagesComRef = record.stages.filter((s) => s.referenceJudge && !s.incomplete);
   if (stagesComRef.length > 0) {
     // judge-score = (resolve + 0.5*parcial) / total * 100, por contestant,
     // sobre as etapas com juiz de referencia (ausente conta como 'nao').
@@ -480,8 +681,12 @@ async function runLoop(record: RunRecord, apiKey: string, opts: StartRunOpts): P
   // conjunto de finalistas em todas as etapas). ===
   const finalsOn = record.config.duels !== false;
   const finalistCount = record.config.finalists ?? 3;
-  const stagesParaDuelo = record.stages.filter((s) => s.spec?.reference?.trim() && !s.error);
+  const stagesParaDuelo = record.stages.filter(
+    (s) => s.spec?.reference?.trim() && !s.error && !s.incomplete,
+  );
+  const podeFinais = est.byRole.duel === 0 || gate('finals', est.byRole.duel);
   if (
+    podeFinais &&
     finalsOn &&
     finalistCount !== 0 &&
     stagesParaDuelo.length > 0 &&
@@ -513,7 +718,7 @@ async function runLoop(record: RunRecord, apiKey: string, opts: StartRunOpts): P
       let duelosDone = 0;
       const total = stagesParaDuelo.length;
       emitEvent({ type: 'duel.progress', runId, done: 0, total });
-      await Promise.all(
+      const dueloSettled = await Promise.allSettled(
         stagesParaDuelo.map(async (st) => {
           try {
             st.duels = await runStageDuels({
@@ -527,9 +732,12 @@ async function runLoop(record: RunRecord, apiKey: string, opts: StartRunOpts): P
               apiKey,
               reasoningLevel: record.config.reasoning?.judge,
               timeoutMs: record.config.timeoutMs,
+              ctx,
+              maxPricePerMTok,
             });
             emitEvent({ type: 'stage.dueled', runId, stageIndex: st.index, duels: st.duels });
           } catch (err) {
+            if (isControlSignal(err)) throw err;
             // Degrada: a etapa fica sem duelo; a final NUNCA derruba a run.
             log(runId, `duelo da etapa ${st.index + 1} falhou`, {
               error: err instanceof Error ? err.message : String(err),
@@ -541,6 +749,10 @@ async function runLoop(record: RunRecord, apiKey: string, opts: StartRunOpts): P
           }
         }),
       );
+      for (const r of dueloSettled) {
+        if (r.status === 'rejected' && isControlSignal(r.reason)) throw r.reason;
+      }
+      syncLedger();
     }
   }
 
@@ -586,9 +798,10 @@ async function runLoop(record: RunRecord, apiKey: string, opts: StartRunOpts): P
       .sort((a, b) => b.points - a.points || b.winRate - a.winRate);
   }
 
+  syncLedger();
   record.status = 'finished';
   record.finishedAt = nowIso();
-  await flushSave();
+  await saver.flush();
   emitEvent({ type: 'run.finished', runId, record });
   log(runId, 'finished', { totalCostUsd: record.totalCostUsd });
 }

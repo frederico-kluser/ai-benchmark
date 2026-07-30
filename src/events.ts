@@ -24,8 +24,10 @@ export function emitEvent(event: RunEvent): void {
   const bus = getBus(event.runId);
   bus.emit('event', event);
   if (event.type === 'run.finished' || event.type === 'run.error') {
-    // mantemos o bus por um curto periodo para SSE consumir o ultimo evento
-    setTimeout(() => runBuses.delete(event.runId), 5_000);
+    // mantemos o bus por um curto periodo para SSE consumir o ultimo evento.
+    // .unref(): sem isto o timer segura o event loop por 5s depois do fim —
+    // invisivel num servidor, mas num CLI parece que o comando travou.
+    setTimeout(() => runBuses.delete(event.runId), 5_000).unref?.();
   }
 }
 
@@ -47,7 +49,7 @@ export function emitSessionEvent(event: SessionEvent): void {
   const bus = getSessionBus(event.sessionId);
   bus.emit('event', event);
   if (event.type === 'session.finished' || event.type === 'session.error') {
-    setTimeout(() => sessionBuses.delete(event.sessionId), 5_000);
+    setTimeout(() => sessionBuses.delete(event.sessionId), 5_000).unref?.();
   }
 }
 

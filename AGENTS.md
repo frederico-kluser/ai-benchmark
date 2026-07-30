@@ -1,15 +1,22 @@
 # AGENTS.md — ai-benchmark
 
-Monorepo TypeScript: backend Express (`src/`) + frontend React/Vite (`web/`). UI/comentários em PT-BR.
+Monorepo TypeScript: backend Express + motor + **CLI** (`src/`) + frontend React/Vite (`web/`).
+UI/comentários em PT-BR. O pacote npm publicado é **`prompt-builder`** (o nome `ai-benchmark`
+está ocupado no registry).
 
 ## Comandos (exatos)
 - dev: `npm run dev` — backend `:3001` (tsx watch) + frontend `:5173` (Vite, com proxy de `/v1` e `/health`)
+- CLI em dev: `npm run cli -- <comando>` (ex.: `npm run cli -- models show <id>`)
 - build: `npm run build` — `tsc -p tsconfig.json` (backend → `dist/`) + `tsc -b && vite build` (web → `web/dist/`)
 - start (prod): `npm start` — `node dist/server.js` (serve `web/dist` na raiz)
 - SPA estática (client-side, deploy Vercel): `npm run web:build` → `web/dist` (roda sem backend; ver `vercel.json`)
 - type-check backend: `npx tsc -p tsconfig.json --noEmit` · frontend: `cd web && npx tsc -b`
 - **Não há** `test` nem `lint` configurados. Verifique por type-check + execução manual.
-- ⚠️ **`npm install` exige `MOTION_TOKEN` no ambiente.** `web/.npmrc` aponta o escopo `@motionplus`
+- ⚠️ **`npm install` da RAIZ não instala mais o `web/`** — o `postinstall` virou `npm run setup`.
+  Ele tinha de sair: o npm roda o `postinstall` de toda dependência instalada, então publicar com
+  ele quebraria `npm i prompt-builder-cli` para qualquer usuário (o `web/.npmrc` exige `MOTION_TOKEN`).
+  Fluxo local: `npm install && npm run setup`.
+- ⚠️ **`npm run setup` (e qualquer comando dentro de `web/`) exige `MOTION_TOKEN` no ambiente.** `web/.npmrc` aponta o escopo `@motionplus`
   para o registry privado da Motion, e `motion-plus` (`@motionplus/core`) é dependência de runtime
   real — `stagger-reveal` e `skeleton` a importam. Sem a variável, o npm falha com
   `Failed to replace env in config` em **qualquer** comando, até offline. Vale para todo mundo do
@@ -18,7 +25,10 @@ Monorepo TypeScript: backend Express (`src/`) + frontend React/Vite (`web/`). UI
 
 ## Regras (só o não-óbvio)
 - Backend é **ESM NodeNext**: imports relativos terminam em **`.js`** mesmo para arquivos `.ts`.
-- `tsc` não copia `.json` para `dist/` → leia dados estáticos por `path.resolve(process.cwd(), 'src/data/...')` (padrão de `storage.ts`/`lgpd.ts`), nunca por import estático.
+- `tsc` não copia `.json` para `dist/` → leia dados estáticos por **`PKG_DATA_DIR` (`src/paths.ts`)**,
+  que resolve por `import.meta.url`. **Não use `process.cwd()`**: instalado como pacote npm o cwd é o
+  projeto do usuário e a leitura falha com ENOENT. Pelo mesmo motivo, `storage.ts` tem
+  `setDataDir()` — o servidor mantém `./data`, o CLI aponta para `~/.prompt-builder`.
 - Tipos de domínio são **duplicados** em `src/types.ts`, `web/src/engine/types.ts` e `web/src/api.ts` — mantenha sincronizados.
 - Em SSE, feche o `EventSource` em eventos terminais (senão o browser reconecta infinitamente).
 - OpenRouter: `/models` e `/endpoints/zdr` são **públicos**; valide a key por `/key`.
@@ -35,6 +45,10 @@ Monorepo TypeScript: backend Express (`src/`) + frontend React/Vite (`web/`). UI
   `max_tokens` = HTTP 400) e é encaixado na allowlist por `fitEffort`; em modelo `mandatory` o
   nível `off` não é enviado. Ao mexer nisso, revalide com o catálogo real (ver
   `scratchpad/smoke/fit-test.ts` no histórico: 214 modelos × 7 níveis, 0 violações).
+  Há um espelho no backend em **`src/modelCaps.ts`** (`modelCaps`/`effortOptions`/`thinkLevelsFor`),
+  que é o que o CLI exporta. ⚠️ `thinkLevelsFor` **não** roda `fitEffort` no nível `off`: desligar
+  raciocínio usa `{ enabled: false }`, não um degrau — rodar `fitEffort` ali devolveria o degrau
+  mais baixo da allowlist e faria um agente ler "off vira low", o oposto do que acontece.
 - **UI = Tailwind v4 + shadcn + Motion UI (React 19).** `web/src/styles.css` e a linguagem visual
   iOS (`.ios-*`, `.nr-*`, `.picker-*`, `.hm-*`, `--sys-*`) **não existem mais** — não as ressuscite.
   Estilo é utilitário no JSX, **só com classe semântica** (`bg-card`, `text-muted-foreground`,
@@ -54,7 +68,45 @@ Monorepo TypeScript: backend Express (`src/`) + frontend React/Vite (`web/`). UI
 - No **training**, promoção exige margem `minGain` sobre a campeã (`rank.ts`); `analyzeIteration` **não existe mais** (feedback = lições GEPA determinísticas) e o evento `iteration.analyzing` não é mais emitido. Holdout (piso 5) + significância bootstrap fecham a sessão.
 - IndexedDB do cliente é **v2** (store `prompts` — biblioteca `/prompts` via `web/src/engine/promptStore.ts`, client-only). Eventos agregados `stage.gabarito` (`stageIndex: -1`) e `duel.progress` (sem índice) **não** entram no reducer de etapas.
 - Há um **modo client-side** (`web/src/engine/`) que **duplica** o pipeline de `src/` para rodar no navegador (SPA estática/Vercel). Ao mudar a lógica do pipeline, **sincronize os dois lados**. Ver `knowledge-architecture`.
+- **Dinheiro é medido, nunca inferido.** O custo de cada chamada sai de `usage.cost` da resposta
+  (o valor cobrado, já com cache/raciocínio/faixas de preço); o catálogo é só fallback e
+  `source: 'unknown'` **não** é o mesmo que "custou zero". A contabilidade é feita em UM ponto,
+  dentro de `chatCompletion`/`chatCompletionStream`, via `role` + `sink` (`src/budget.ts`) — antes
+  só `competitor.ts` contava, subcontando o total por um múltiplo (medido: 80×).
+- ⚠️ **`BudgetExceeded`/`RunCancelled` são CONTROLE, não erro.** O pipeline degrada exceção por
+  design (`refJudge.ts` → veredito `'parcial'`, `duels.ts` → empate, `competitor.ts` → status
+  `error`); sem o rethrow, um estouro de orçamento sairia como run "concluída" com notas
+  inventadas. Todo catch que degrada começa com `if (isControlSignal(err)) throw err`. Use
+  `isControlSignal`, **nunca `instanceof`** — ESM com instância dupla do módulo daria `false` em
+  silêncio e o bug voltaria como heisenbug.
+- As portas de orçamento agem em **grupos de fase**, não em fases: `competidores + julgamento` é
+  **atômico**. Separá-los produz etapas com resposta e sem nota — resultado incompleto com cara de
+  completo. Etapa cortada é marcada `incomplete` e fica FORA do placar e das médias.
+- ⚠️ `variationConfigFrom` (`trainer.ts`) **não copia `budgetUsd` de propósito** — copiar daria a
+  cada uma das N iterações o teto inteiro da sessão. Quem controla é o ledger, via `parentLedger`.
+- **`console.log` no motor vai para o stderr** (`orchestrator.ts`/`trainer.ts`): no CLI o stdout é
+  PAYLOAD (NDJSON/JSON) e uma linha de log no meio corrompe o stream de quem consome.
 - **Não rode o backend `src/` em serverless (Vercel):** ele grava runs no filesystem (`storage.ts`), efêmero/isolado no serverless → `GET /v1/benchmark/runs/:id` vira `Run nao encontrada`. Produção = **SPA estática** (`npm run web:build`); o backend é só dev/self-host. Deploy errado se denuncia quando `/health` responde JSON em vez do `index.html`. Ver `knowledge-architecture`.
+
+## CLI (`src/cli/`, publicado como `prompt-builder`)
+- Mora em `src/cli/` e compila pelo MESMO `tsconfig.json` → `dist/cli/`. **Não** é uma terceira
+  cópia do motor: importa `../orchestrator.js` como qualquer arquivo de `src/`.
+- `bin` aponta para `dist/cli/index.js` — **sem `./` no começo**, senão o npm remove o prefixo e a
+  entrada some do pacote instalado.
+- Argumentos por `node:util` `parseArgs`, zero dependência: a vantagem do CLI sobre MCP é custar
+  ~0 token de contexto **e** abrir rápido. O servidor MCP (`src/cli/commands/mcp.ts`) também é
+  JSON-RPC escrito à mão, pelo mesmo motivo.
+- Contrato de saída: **stdout é payload, stderr é narração**. `--json` = um objeto no fim;
+  `--output-format ndjson` = um evento por linha (liga sozinho sem TTY ou com `CLAUDECODE`/`CI`).
+- ⚠️ Nunca transmita `RunEvent` verbatim em NDJSON: `run.started`/`run.finished` embutem
+  `RunRecord`s inteiros e `competitor.finished` carrega o texto completo da resposta — o mapeamento
+  enxuto vive em `src/cli/ndjson.ts`.
+- Sem `--budget` e sem TTY, os comandos de run **recusam** (exit 2, nada gasto). Códigos: `0` ok ·
+  `2` uso · `3` config · `4` auth · `5` sem crédito · `7` **parcial por orçamento** · `8` rede ·
+  `130` SIGINT.
+- Docs para agentes viajam no tarball (`agent-docs/`, `skills/`) e são lidas do pacote instalado —
+  sempre casadas com a versão do binário. `files` do package.json controla o que vai; confira com
+  `npm pack --dry-run` (server/routes ficam de fora por glob de negação).
 
 ## Skills (leia primeiro)
 Toda tarefa passa por **`.agents/skills/project-router`**, que carrega as skills de conhecimento/tarefa

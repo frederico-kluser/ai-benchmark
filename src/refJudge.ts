@@ -1,12 +1,12 @@
 import { chatCompletion } from './openrouter.js';
+import { isControlSignal } from './budget.js';
 import type {
   CompetitorResponse,
   Contestant,
   ReasoningLevel,
   ReferenceJudgeResult,
   StageSpec,
-  Verdict,
-} from './types.js';
+  Verdict, RunCtx } from './types.js';
 
 // Juiz POINTWISE contra o gabarito (`StageSpec.reference`), portado do
 // referenceJudge.mjs do prompt-arena (vocabulario local: resolve/parcial/nao).
@@ -99,6 +99,9 @@ export interface JudgeStageReferenceParams {
   apiKey: string;
   reasoningLevel?: ReasoningLevel;
   timeoutMs?: number;
+  /** Sinal de abort + ledger de custo. */
+  ctx?: RunCtx;
+  maxPricePerMTok?: { prompt?: number; completion?: number };
 }
 
 interface SingleVerdict {
@@ -117,8 +120,11 @@ async function judgeOne(params: {
   response: CompetitorResponse;
   reasoningLevel?: ReasoningLevel;
   timeoutMs: number;
+  ctx?: RunCtx;
+  maxPricePerMTok?: { prompt?: number; completion?: number };
 }): Promise<SingleVerdict> {
-  const { apiKey, judgeModelId, stage, reference, response, reasoningLevel, timeoutMs } = params;
+  const { apiKey, judgeModelId, stage, reference, response, reasoningLevel, timeoutMs, ctx, maxPricePerMTok } =
+    params;
   try {
     const result = await chatCompletion({
       apiKey,
@@ -132,10 +138,18 @@ async function judgeOne(params: {
       responseFormatJson: true,
       reasoningLevel,
       timeoutMs,
+      role: 'judge',
+      signal: ctx?.signal,
+      sink: ctx?.sink,
+      maxPricePerMTok,
     });
     const parsed = parseJudgeReply(result.text);
     return { judgeModelId, contestantId: response.contestantId, ...parsed };
   } catch (err) {
+    // ESTE e o catch mais perigoso do repositorio: sem o rethrow, um estouro de
+    // orcamento viraria veredito 'parcial' em TODO competidor e a run sairia
+    // "concluida" com notas inventadas. Sinal de controle sobe.
+    if (isControlSignal(err)) throw err;
     const msg = (err instanceof Error ? err.message : String(err)).slice(0, 160);
     return {
       judgeModelId,
@@ -155,7 +169,7 @@ async function judgeOne(params: {
 export async function judgeStageReference(
   opts: JudgeStageReferenceParams,
 ): Promise<ReferenceJudgeResult> {
-  const { stage, responses, contestants, apiKey, reasoningLevel } = opts;
+  const { stage, responses, contestants, apiKey, reasoningLevel, ctx, maxPricePerMTok } = opts;
   const timeoutMs = opts.timeoutMs ?? 90_000;
   // dedup: um mesmo juiz duas vezes distorceria a media ordinal.
   const judgeIds = [...new Set(opts.judgeModelIds ?? [])];
@@ -234,6 +248,8 @@ export async function judgeStageReference(
           response: r,
           reasoningLevel,
           timeoutMs,
+          ctx,
+          maxPricePerMTok,
         }),
       ),
     ),

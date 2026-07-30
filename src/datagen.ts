@@ -1,7 +1,8 @@
 import { z } from 'zod';
 import { chatCompletion } from './openrouter.js';
+import { isControlSignal } from './budget.js';
 import { dedupeAdvanced } from './dedup.js';
-import type { ReasoningLevel, StageSpec } from './types.js';
+import type { ReasoningLevel, StageSpec, RunCtx } from './types.js';
 
 const stageSchema = z.object({
   question: z.string().min(1),
@@ -28,6 +29,7 @@ export interface DatagenParams {
   totalStages: number;
   modelId: string;
   timeoutMs?: number;
+  ctx?: RunCtx;
 }
 
 function extractJson(text: string): string {
@@ -48,7 +50,7 @@ function extractJson(text: string): string {
 }
 
 export async function generateStage(params: DatagenParams): Promise<StageSpec> {
-  const { apiKey, theme, stageIndex, totalStages, modelId, timeoutMs } = params;
+  const { apiKey, theme, stageIndex, totalStages, modelId, timeoutMs, ctx } = params;
 
   const userPrompt = `TEMA: ${theme}
 ETAPA: ${stageIndex + 1} de ${totalStages}
@@ -65,6 +67,9 @@ Gere o cenario desta etapa em JSON conforme as regras.`;
     temperature: 0,
     timeoutMs: timeoutMs ?? 90_000,
     responseFormatJson: true,
+    role: 'datagen',
+    signal: ctx?.signal,
+    sink: ctx?.sink,
   });
 
   let parsed: unknown;
@@ -112,6 +117,7 @@ export interface GenerateStagesParams {
   excludePrompts?: string[];
   timeoutMs?: number;
   reasoningLevel?: ReasoningLevel;
+  ctx?: RunCtx;
 }
 
 function batchSystemPrompt(scenarioBrief?: string): string {
@@ -138,6 +144,7 @@ async function runBatch(params: {
   extraInstruction?: string;
   timeoutMs?: number;
   reasoningLevel?: ReasoningLevel;
+  ctx?: RunCtx;
 }): Promise<StageSpec[]> {
   const {
     apiKey,
@@ -151,6 +158,7 @@ async function runBatch(params: {
     extraInstruction,
     timeoutMs,
     reasoningLevel,
+    ctx,
   } = params;
 
   const sliceLine =
@@ -178,6 +186,9 @@ Gere os ${count} cenarios em JSON conforme as regras.`;
     timeoutMs: timeoutMs ?? 120_000,
     responseFormatJson: true,
     reasoningLevel,
+    role: 'datagen',
+    signal: ctx?.signal,
+    sink: ctx?.sink,
   });
 
   const parsed: unknown = JSON.parse(extractJson(result.text));
@@ -207,7 +218,7 @@ export function batchCountFor(count: number): number {
  * nunca derruba. Itens voltam SEM id (o consumidor atribui) e com origin 'ai'.
  */
 export async function generateStages(opts: GenerateStagesParams): Promise<StageSpec[]> {
-  const { apiKey, theme, scenarioBrief, count, modelId, excludePrompts, timeoutMs, reasoningLevel } =
+  const { apiKey, theme, scenarioBrief, count, modelId, excludePrompts, timeoutMs, reasoningLevel, ctx } =
     opts;
   if (count <= 0) return [];
 
@@ -230,7 +241,11 @@ export async function generateStages(opts: GenerateStagesParams): Promise<StageS
         scenarioBrief,
         timeoutMs,
         reasoningLevel,
+        ctx,
       }).catch((err: unknown) => {
+        // Orcamento/cancelamento nao viram "lote vazio": isso faria a run
+        // seguir com menos cenarios do que o pedido, calada.
+        if (isControlSignal(err)) throw err;
         console.warn(`[datagen] lote ${b + 1}/${batchCount} falhou: ${(err as Error).message}`);
         return [] as StageSpec[];
       });
@@ -254,7 +269,9 @@ export async function generateStages(opts: GenerateStagesParams): Promise<StageS
         '\nCubra LACUNAS DE VARIEDADE: tipos de tarefa, dificuldades e idiomas ainda sub-representados.',
       timeoutMs,
       reasoningLevel,
+      ctx,
     }).catch((err: unknown) => {
+      if (isControlSignal(err)) throw err;
       console.warn(`[datagen] backfill falhou: ${(err as Error).message}`);
       return [] as StageSpec[];
     });

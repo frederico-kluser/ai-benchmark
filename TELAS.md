@@ -1,4 +1,4 @@
-# Benchmark Arena — Guia das Telas
+# Prompt Builder — Guia das Telas
 
 Documento descritivo da interface: o que cada **tela** mostra, quais **elementos** possui,
 em quais **estados** pode estar e como reage **em tempo real**. Para entender o projeto como
@@ -65,7 +65,7 @@ Toda tela é renderizada dentro de um **Layout** comum (`web/src/main.tsx`):
 
 ```
 ┌───────────────────────────────────────────────────────────────┐
-│  Benchmark Arena        Nova Run   Histórico   Configurações    │  ← topbar fixa
+│  Prompt Builder        Nova Run   Histórico   Configurações    │  ← topbar fixa
 ├───────────────────────────────────────────────────────────────┤
 │                                                                 │
 │                      « conteúdo da tela »                       │  ← <main>
@@ -73,7 +73,7 @@ Toda tela é renderizada dentro de um **Layout** comum (`web/src/main.tsx`):
 └───────────────────────────────────────────────────────────────┘
 ```
 
-- **Topbar:** à esquerda a marca **"Benchmark Arena"** (link para a raiz `/`); à direita a
+- **Topbar:** à esquerda a marca **"Prompt Builder"** (link para a raiz `/`); à direita a
   **navegação** com quatro links: **Nova Run** (`/new`), **Histórico** (`/runs`), **Prompts**
   (`/prompts`) e **Configurações** (`/settings`). Links ficam *muted* e clareiam no *hover*.
   No mobile, os links viram um menu hambúrguer (portal com overlay).

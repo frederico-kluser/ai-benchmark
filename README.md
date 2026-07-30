@@ -1,4 +1,4 @@
-# AI Benchmark — Benchmark Arena
+# AI Benchmark — Prompt Builder
 
 Arena de benchmark **paralelo** de LLMs sobre a [OpenRouter](https://openrouter.ai). Em três
 modos: **comparar** vários modelos no mesmo desafio, **testar** vários prompts em um modelo, ou
@@ -8,6 +8,50 @@ a interface mostra **placar, heatmap, custo e o texto sendo gerado token a token
 
 > **Em uma frase:** "dado um tema, descubra qual modelo (ou qual prompt) responde melhor — e quais
 > respostas são boas o bastante para usar no trabalho de verdade — com evidência, ranking e custo."
+
+## CLI para agentes de programação (`prompt-builder`)
+
+Publicado no npm. Feito para ser dirigido por **Claude Code, Codex, opencode, Cursor, Gemini CLI** —
+sem prompt interativo, `--json` em tudo, e auto-documentação versionada dentro do próprio pacote.
+
+```bash
+# a ferramenta ensina o agente a usá-la (docs embarcadas, casadas com a versão)
+npx prompt-builder-cli docs quickstart
+
+# descobre o modelo do ambiente e QUAIS níveis de raciocínio ele aceita
+npx prompt-builder-cli models show anthropic/claude-opus-5 --json
+
+# valida e estima o custo SEM gastar nada
+npx prompt-builder-cli train --config arena.json --budget 3 --dry-run
+
+# treina com teto de gasto, emitindo um evento JSON por linha
+npx prompt-builder-cli train --config arena.json --budget 3 --output-format ndjson
+
+# instala a skill no repositório (.claude/skills, .agents/skills)
+npx prompt-builder-cli init --agent all
+```
+
+Também expõe um **servidor MCP** no mesmo binário:
+
+```bash
+claude mcp add --transport stdio arena -- npx -y prompt-builder-cli mcp
+```
+
+Três coisas que o CLI garante e a UI não garantia:
+
+- **Custo real.** O gasto sai de `usage.cost` (o valor cobrado), quebrado por papel — juiz,
+  gabarito, duelos e reescritor incluídos. Antes só as respostas dos competidores eram contadas,
+  subcontando o total por um múltiplo.
+- **Orçamento que não corrompe o resultado.** Ao estourar o teto, a run para numa fronteira de
+  fase e entrega o parcial honesto (exit `7`), em vez de virar uma run "concluída" com vereditos
+  inventados por falta de dinheiro.
+- **Think levels do catálogo.** `models show` diz exatamente quais degraus aquele modelo aceita e o
+  que vai no fio para cada nível pedido — é o que permite a um agente treinar contra o próprio
+  modelo sem tomar HTTP 400.
+
+Documentação completa: `npx prompt-builder-cli docs --list`.
+
+---
 
 A documentação das **telas** está em [`TELAS.md`](./TELAS.md). Convenções para **agentes de código**
 (Claude Code, Codex, Cursor…) estão em [`AGENTS.md`](./AGENTS.md) e na biblioteca de skills em
@@ -246,7 +290,7 @@ contra o gabarito**; no listwise, vem do próprio juiz.
 - **React 18** + **React Router 6** — SPA com 5 telas.
 - **Vite 5** — dev server (proxy de `/v1` e `/health`) e build.
 - **TypeScript 5**; **`EventSource`** (SSE) para acompanhar ao vivo.
-- **Cache em IndexedDB** (`web/src/idb.ts`, db `benchmark-arena`) — fallback offline do histórico.
+- **Cache em IndexedDB** (`web/src/idb.ts`, db `prompt-builder`) — fallback offline do histórico.
 - **CSS puro** (`web/src/styles.css`) com **design tokens** e tema **claro/escuro**, sem framework de UI.
 
 **Integração externa**
@@ -350,7 +394,7 @@ Variáveis **opcionais** (veja `.env.example`):
 |---|---|---|
 | `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | Apontar para um proxy/gateway compatível |
 | `OPENROUTER_APP_URL` | `http://localhost:3000` | Header `HTTP-Referer` de atribuição |
-| `OPENROUTER_APP_TITLE` | `Benchmark Arena` | Header `X-Title` de atribuição |
+| `OPENROUTER_APP_TITLE` | `Prompt Builder` | Header `X-Title` de atribuição |
 | `BENCHMARK_PORT` | `3001` | Porta do backend |
 | `OPENROUTER_MAX_CONCURRENCY` | `32` | Teto do limitador global adaptativo de chamadas ao OpenRouter |
 
@@ -471,7 +515,7 @@ Base: `/v1/benchmark`. A key vai no header **`x-openrouter-key`** (quando exigid
 | `GET` | `/runs/:id/events` | — | **Stream SSE** em tempo real |
 | `GET` | `/runs/:id/export.csv` | — | Exporta os resultados em CSV |
 | `GET` | `/sessions` · `/sessions/:id` · `/sessions/:id/events` | — | Sessões de treino + stream |
-| `GET` | `/health` | — | Health check: `{ "status": "ok", "service": "benchmark-arena" }` |
+| `GET` | `/health` | — | Health check: `{ "status": "ok", "service": "prompt-builder" }` |
 
 **Exemplo — iniciar uma run (compare):**
 
