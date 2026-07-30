@@ -9,3 +9,5 @@ web/tsconfig.tsbuildinfo
 
 # tarball gerado por npm pack
 *.tgz
+.vercel
+.env*

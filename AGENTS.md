@@ -88,6 +88,15 @@ do pacote, `npx prompt-builder-cli` falha com "could not determine executable to
   cada uma das N iterações o teto inteiro da sessão. Quem controla é o ledger, via `parentLedger`.
 - **`console.log` no motor vai para o stderr** (`orchestrator.ts`/`trainer.ts`): no CLI o stdout é
   PAYLOAD (NDJSON/JSON) e uma linha de log no meio corrompe o stream de quem consome.
+- **Deploy na Vercel:** projeto `prompt-builder` (renomeado de `ai-benchmark`), produção em
+  <https://ai-benchmark-seven.vercel.app> — o domínio auto-gerado NÃO acompanha o rename do
+  projeto. O `vercel.json` usa `installCommand: "npm install && npm run setup"`; sem o `&& npm run
+  setup` o `web/node_modules` não é instalado (o `postinstall` foi removido de propósito, porque
+  quebrava o `npm i` de quem instala o pacote).
+  ⚠️ **`MOTION_TOKEN` precisa estar nas env vars do projeto na Vercel** (production/preview/
+  development). Ele estava AUSENTE e por isso todo deploy falhava desde 2026-07-26 com
+  `400 Bad Request` em `api.motion.dev` — um erro que não menciona a variável e manda investigar
+  o lugar errado. Configurado em 2026-07-30.
 - **Não rode o backend `src/` em serverless (Vercel):** ele grava runs no filesystem (`storage.ts`), efêmero/isolado no serverless → `GET /v1/benchmark/runs/:id` vira `Run nao encontrada`. Produção = **SPA estática** (`npm run web:build`); o backend é só dev/self-host. Deploy errado se denuncia quando `/health` responde JSON em vez do `index.html`. Ver `knowledge-architecture`.
 
 ## CLI (`src/cli/`, publicado como `prompt-builder`)
