@@ -7,8 +7,12 @@ import { computeMedals } from './medals.js';
 import { judgeScoreFromVerdicts, pickWinner, type RankEntry } from './rank.js';
 import { MIN_HOLDOUT_SCENARIOS, splitHoldout } from './holdout.js';
 import { pairedSignificance, VERDICT_SCORE } from './stats.js';
+import { BudgetLedger, isControlSignal } from './budget.js';
+import { estimateInputFromConfig, estimateRunCost, makeCallEstimator } from './estimate.js';
+import { listModels } from './openrouter.js';
 import type {
   Contestant,
+  RunCtx,
   RunRecord,
   SessionRecord,
   StageSpec,
@@ -21,7 +25,8 @@ function nowIso(): string {
 }
 
 function log(sessionId: string, msg: string): void {
-  console.log(`[train ${sessionId}] ${msg}`);
+  // stderr: ver a nota em orchestrator.ts — stdout e payload.
+  console.error(`[train ${sessionId}] ${msg}`);
 }
 
 /** Campeao corrente do treino (prompt + rotulo + o id que tinha na run em que venceu). */
@@ -154,13 +159,19 @@ export interface StartTrainingResult {
   record: SessionRecord;
 }
 
-export async function startTraining(
-  config: TrainingConfig,
-  apiKey: string,
-): Promise<StartTrainingResult> {
-  const sessionId = randomUUID();
-  const record: SessionRecord = {
-    id: sessionId,
+export interface StartTrainingOpts {
+  /** Sinal de abort (Ctrl-C). */
+  signal?: AbortSignal;
+  /**
+   * Chamado com o id ANTES do laco comecar. E onde um consumidor assina o bus
+   * de eventos sem corrida — `session.started` e emitido dentro do laco.
+   */
+  onSession?: (sessionId: string, record: SessionRecord) => void;
+}
+
+function newSessionRecord(config: TrainingConfig): SessionRecord {
+  return {
+    id: randomUUID(),
     status: 'running',
     config,
     runIds: [],
@@ -168,9 +179,19 @@ export async function startTraining(
     totalCostUsd: 0,
     startedAt: nowIso(),
   };
+}
+
+export async function startTraining(
+  config: TrainingConfig,
+  apiKey: string,
+  opts: StartTrainingOpts = {},
+): Promise<StartTrainingResult> {
+  const record = newSessionRecord(config);
+  const sessionId = record.id;
   // Persiste ANTES de responder ao cliente, para a TrainingView nunca pegar 404.
   await saveSession(record);
-  void trainingLoop(record, apiKey).catch(async (err) => {
+  opts.onSession?.(sessionId, record);
+  void trainingLoop(record, apiKey, opts).catch(async (err) => {
     record.status = 'error';
     record.error = err instanceof Error ? err.message : String(err);
     record.finishedAt = nowIso();
@@ -178,6 +199,23 @@ export async function startTraining(
     emitSessionEvent({ type: 'session.error', sessionId, error: record.error });
   });
   return { sessionId, record };
+}
+
+/**
+ * Roda o treino ate o fim e resolve com o record final — a simetrica de
+ * `runToCompletion` do lado da sessao, que faltava. `trainingLoop` ja tem o
+ * proprio try/catch terminal, entao herda o contrato "nunca rejeita".
+ */
+export async function trainToCompletion(
+  config: TrainingConfig,
+  apiKey: string,
+  opts: StartTrainingOpts = {},
+): Promise<SessionRecord> {
+  const record = newSessionRecord(config);
+  await saveSession(record);
+  opts.onSession?.(record.id, record);
+  await trainingLoop(record, apiKey, opts);
+  return record;
 }
 
 function variationConfigFrom(cfg: TrainingConfig): VariationConfig {
@@ -212,16 +250,50 @@ function variationConfigFrom(cfg: TrainingConfig): VariationConfig {
     manualVariants: cfg.manualVariants,
     // Sem repassar, a temperatura do modelo sob teste sumiria em toda iteracao.
     temperature: cfg.temperature,
+    // Teto por requisicao vale para toda chamada da sessao.
+    maxPricePerMTok: cfg.maxPricePerMTok,
+    // ⚠️ `budgetUsd` NAO entra aqui DE PROPOSITO. Este whitelist normalmente
+    // engole campo novo em silencio (ver AGENTS.md) e a reacao natural e
+    // "corrigir" a ausencia — mas copiar o orcamento daria a CADA uma das N
+    // iteracoes o teto inteiro da sessao, e o gasto total seria N x o teto.
+    // Quem controla o dinheiro e o ledger da sessao, repassado por parentLedger.
   };
 }
 
-async function trainingLoop(record: SessionRecord, apiKey: string): Promise<void> {
+async function trainingLoop(
+  record: SessionRecord,
+  apiKey: string,
+  opts: StartTrainingOpts = {},
+): Promise<void> {
   const cfg = record.config;
   const sessionId = record.id;
   const optimizerModelId = cfg.optimizerModelId ?? cfg.datagenModelId;
   const promptOptimization = cfg.promptOptimization !== false;
   const hasBase = Boolean(cfg.basePrompt && cfg.basePrompt.trim());
   const minGain = cfg.minGain ?? 1;
+
+  // Catalogo quente antes do primeiro gasto (senao o custo sai 0 e a porta de
+  // orcamento acha que tudo e de graca).
+  const catalogo = await listModels(apiKey).catch(() => []);
+
+  // UM ledger raiz para a sessao inteira: o teto e da sessao, nao da iteracao.
+  const ledger = new BudgetLedger({
+    budgetUsd: cfg.budgetUsd,
+    signal: opts.signal,
+    estimateCall: makeCallEstimator(catalogo),
+  });
+  const ctx: RunCtx = { signal: opts.signal, sink: ledger };
+  record.budgetUsd = cfg.budgetUsd;
+
+  const estIter = estimateRunCost(estimateInputFromConfig(cfg), catalogo).perIteration;
+
+  const syncLedger = (): void => {
+    const snap = ledger.snapshot();
+    record.totalCostUsd = snap.spentUsd;
+    record.costByRole = snap.byRole;
+    record.costAccuracy = snap.accuracy;
+    if (snap.upstreamUsd > 0) record.upstreamCostUsd = snap.upstreamUsd;
+  };
 
   await saveSession(record);
   emitSessionEvent({ type: 'session.started', sessionId, record });
@@ -240,6 +312,20 @@ async function trainingLoop(record: SessionRecord, apiKey: string): Promise<void
 
   try {
     for (let i = 0; i < cfg.iterations; i++) {
+      // Porta suave por ITERACAO: uma iteracao inteira e descartavel, e parar
+      // aqui deixa o campeao da anterior intacto. Compara contra `high`, nao
+      // `low` — comecar uma iteracao que provavelmente nao termina e o
+      // desperdicio que este gate existe para evitar.
+      ledger.throwIfCancelled();
+      if (i > 0 && !ledger.canAfford(estIter)) {
+        record.budgetExhausted = true;
+        record.stoppedAtPhase = 'competitors';
+        record.stoppedReason = 'budget';
+        record.stoppedAtIteration = i;
+        log(sessionId, `orcamento esgotado antes da iteracao ${i + 1}; encerrando com o campeao atual`);
+        break;
+      }
+
       // 1) Resolve as variantes desta iteracao.
       let contestants: Contestant[];
       if (i === 0) {
@@ -256,6 +342,8 @@ async function trainingLoop(record: SessionRecord, apiKey: string): Promise<void
           optimizerModelId,
           reasoningLevel: cfg.reasoning?.rewriter,
           timeoutMs: cfg.timeoutMs,
+          ctx,
+          maxPricePerMTok: cfg.maxPricePerMTok,
         });
       } else {
         // Reflection GEPA (deterministico — ver buildLessons): substitui a
@@ -282,6 +370,8 @@ async function trainingLoop(record: SessionRecord, apiKey: string): Promise<void
           analysisHint: hint,
           reasoningLevel: cfg.reasoning?.rewriter,
           timeoutMs: cfg.timeoutMs,
+          ctx,
+          maxPricePerMTok: cfg.maxPricePerMTok,
         });
       }
 
@@ -303,9 +393,23 @@ async function trainingLoop(record: SessionRecord, apiKey: string): Promise<void
         sessionId,
         iteration: i,
         parentRunId: prevRun?.id,
+        parentLedger: ledger,
+        signal: opts.signal,
       });
 
-      record.totalCostUsd += runRec.totalCostUsd;
+      // O ledger e a fonte de verdade do gasto (soma todos os papeis de todas
+      // as runs); somar `runRec.totalCostUsd` aqui contaria duas vezes.
+      syncLedger();
+
+      // A run filha parou por orcamento/cancelamento => a sessao para tambem.
+      if (runRec.status === 'aborted' && runRec.stoppedReason) {
+        record.budgetExhausted = runRec.stoppedReason === 'budget';
+        record.stoppedReason = runRec.stoppedReason;
+        record.stoppedAtPhase = runRec.stoppedAtPhase;
+        record.stoppedAtIteration = i;
+        await saveSession(record);
+        break;
+      }
 
       // 3) Pina o benchmark depois da iteracao 0 (mesmas perguntas em todas),
       //    com split anti-overfit: a fatia de holdout fica FORA da selecao e so
@@ -405,21 +509,57 @@ async function trainingLoop(record: SessionRecord, apiKey: string): Promise<void
     // 6) Gate final: holdout + significancia. NUNCA derruba a sessao — falha
     //    aqui vira warn e o treino termina com o que se tem.
     try {
-      await finalizeHoldout(record, apiKey, champion, championIdInLastRun, holdoutStages, prevRun);
+      // O holdout e uma run extra. Sem orcamento para ela o campeao fica NAO
+      // VALIDADO contra sobreajuste — e isso precisa aparecer no resultado, nao
+      // sumir. Ver `holdoutSkipped`.
+      const estHoldout =
+        holdoutStages.length > 0 ? estIter * (holdoutStages.length / Math.max(1, cfg.stages)) : 0;
+      if (record.stoppedReason || (estHoldout > 0 && !ledger.canAfford(estHoldout))) {
+        record.holdoutSkipped = true;
+        log(
+          sessionId,
+          'holdout pulado (orcamento/cancelamento): campeao NAO validado contra sobreajuste',
+        );
+      } else {
+        await finalizeHoldout(record, apiKey, champion, championIdInLastRun, holdoutStages, prevRun, {
+          ledger,
+          signal: opts.signal,
+        });
+      }
     } catch (err) {
-      console.warn(
-        `[train ${sessionId}] gate de holdout/significancia falhou (sessao segue): ${
-          err instanceof Error ? err.message : String(err)
-        }`,
-      );
+      if (isControlSignal(err)) {
+        record.holdoutSkipped = true;
+        record.stoppedReason =
+          record.stoppedReason ?? (err.benchControl === 'budget' ? 'budget' : 'cancelled');
+        if (err.benchControl === 'budget') record.budgetExhausted = true;
+      } else {
+        console.warn(
+          `[train ${sessionId}] gate de holdout/significancia falhou (sessao segue): ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      }
     }
 
-    record.status = 'finished';
+    syncLedger();
+    record.status = record.stoppedReason ? 'aborted' : 'finished';
     record.finishedAt = nowIso();
     await saveSession(record);
     emitSessionEvent({ type: 'session.finished', sessionId, record });
     log(sessionId, `finished: custo ${record.totalCostUsd}`);
   } catch (err) {
+    syncLedger();
+    if (isControlSignal(err)) {
+      // Orcamento/cancelamento: sessao interrompida COM resultado parcial.
+      record.status = 'aborted';
+      record.stoppedReason = err.benchControl === 'budget' ? 'budget' : 'cancelled';
+      if (err.benchControl === 'budget') record.budgetExhausted = true;
+      record.finishedAt = nowIso();
+      await saveSession(record);
+      emitSessionEvent({ type: 'session.finished', sessionId, record });
+      log(sessionId, `sessao interrompida (${record.stoppedReason})`);
+      return;
+    }
     record.status = 'error';
     record.error = err instanceof Error ? err.message : String(err);
     record.finishedAt = nowIso();
@@ -443,6 +583,7 @@ async function finalizeHoldout(
   championIdInLastRun: string,
   holdoutStages: StageSpec[],
   lastRun: RunRecord | undefined,
+  ctxOpts: { ledger?: BudgetLedger; signal?: AbortSignal } = {},
 ): Promise<void> {
   const cfg = record.config;
   const sessionId = record.id;
@@ -489,9 +630,17 @@ async function finalizeHoldout(
         // a run de holdout aparece como uma iteracao extra (N+1).
         iteration: cfg.iterations,
         parentRunId: lastRun?.id,
+        parentLedger: ctxOpts.ledger,
+        signal: ctxOpts.signal,
       },
     );
-    record.totalCostUsd += holdoutRun.totalCostUsd;
+    if (ctxOpts.ledger) {
+      const snap = ctxOpts.ledger.snapshot();
+      record.totalCostUsd = snap.spentUsd;
+      record.costByRole = snap.byRole;
+    } else {
+      record.totalCostUsd += holdoutRun.totalCostUsd;
+    }
     if (holdoutRun.status !== 'finished') {
       console.warn(
         `[train ${sessionId}] run de holdout terminou com status ${holdoutRun.status}; gate descartado`,

@@ -1,5 +1,6 @@
-import { chatCompletionStream, computeCost, getModel } from './openrouter.js';
-import type { CompetitorResponse, ReasoningLevel, StageSpec } from './types.js';
+import { chatCompletionStream } from './openrouter.js';
+import { isControlSignal } from './budget.js';
+import type { CompetitorResponse, ReasoningLevel, RunCtx, StageSpec } from './types.js';
 
 export interface RunCompetitorParams {
   apiKey: string;
@@ -19,6 +20,10 @@ export interface RunCompetitorParams {
    * prioridade contestant.reasoningLevel ?? config.reasoning.competitor).
    */
   reasoningLevel?: ReasoningLevel;
+  /** Sinal de abort + ledger de custo. */
+  ctx?: RunCtx;
+  /** Teto por requisicao (USD por MILHAO de tokens). */
+  maxPricePerMTok?: { prompt?: number; completion?: number };
   onProgress?: (chars: number, charsPerSec: number, preview: string) => void;
 }
 
@@ -36,10 +41,10 @@ export async function runCompetitor(params: RunCompetitorParams): Promise<Compet
     maxOutputTokens,
     temperature = 0,
     reasoningLevel,
+    ctx,
+    maxPricePerMTok,
     onProgress,
   } = params;
-
-  const model = await getModel(apiKey, modelId).catch(() => undefined);
 
   const effectiveMaxTokens =
     typeof maxOutputTokens === 'number' && maxOutputTokens > 0
@@ -64,6 +69,10 @@ export async function runCompetitor(params: RunCompetitorParams): Promise<Compet
         reasoningLevel,
         maxTokens: effectiveMaxTokens,
         timeoutMs,
+        role: 'competitor',
+        signal: ctx?.signal,
+        sink: ctx?.sink,
+        maxPricePerMTok,
         onDelta: (_delta, fullText) => {
           if (!onProgress) return;
           const elapsedSec = Math.max(0.001, (Date.now() - start) / 1000);
@@ -83,10 +92,16 @@ export async function runCompetitor(params: RunCompetitorParams): Promise<Compet
         latencyMs: res.latencyMs,
         tokensIn: res.tokensIn,
         tokensOut: res.tokensOut,
-        costUsd: computeCost(res.tokensIn, res.tokensOut, model),
+        // Custo EXATO vindo de `usage.cost` (fallback: catalogo). Antes era
+        // sempre derivado do catalogo, ignorando cache e faixas de preco.
+        costUsd: res.cost.usd,
         status: 'ok',
       };
     } catch (err) {
+      // Orcamento/cancelamento sao SINAIS DE CONTROLE: repetir a chamada so
+      // gastaria mais, e devolver status 'error' faria a run parecer completa
+      // com um competidor "que falhou". Sai do laco propagando.
+      if (isControlSignal(err)) throw err;
       lastError = err;
       attempt += 1;
       console.error(`[competitor ${modelId}] tentativa ${attempt} falhou:`, err);

@@ -6,3 +6,6 @@ dist
 web/node_modules
 web/dist
 web/tsconfig.tsbuildinfo
+
+# tarball gerado por npm pack
+*.tgz

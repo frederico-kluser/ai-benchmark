@@ -1,27 +1,81 @@
 {
-  "name": "ai-benchmark",
-  "version": "1.0.0",
-  "private": true,
+  "name": "benchmark-arena",
+  "version": "0.1.0",
+  "description": "Benchmark LLMs and evolve system prompts from the terminal. Built for coding agents: self-documenting, budget-aware, model/think-level aware.",
   "type": "module",
+  "license": "MIT",
+  "author": "Frederico Kluser",
+  "engines": {
+    "node": ">=20.11.0"
+  },
+  "keywords": [
+    "llm",
+    "benchmark",
+    "prompt",
+    "prompt-engineering",
+    "openrouter",
+    "agent",
+    "agents",
+    "cli",
+    "evals",
+    "claude-code"
+  ],
+  "bin": {
+    "benchmark-arena": "dist/cli/index.js",
+    "bmarena": "dist/cli/index.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./types": {
+      "types": "./dist/types.d.ts",
+      "import": "./dist/types.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "!dist/server.*",
+    "!dist/routes.*",
+    "!dist/**/*.tsbuildinfo",
+    "src/data/lgpd-compliance.json",
+    "agent-docs",
+    "skills",
+    "ARENA-CONFIG.md"
+  ],
   "scripts": {
-    "postinstall": "npm run web:install",
+    "prebuild": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "tsc -p tsconfig.json",
+    "build:all": "npm run build && npm run web:build",
+    "prepublishOnly": "npm run build",
+    "setup": "npm --prefix web install",
+    "cli": "tsx src/cli/index.ts",
     "dev": "concurrently -n bench,web -c blue,green \"tsx watch src/server.ts\" \"npm run web:dev\"",
-    "build": "tsc -p tsconfig.json && npm run web:build",
     "start": "node dist/server.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
     "web:dev": "npm --prefix web run dev",
     "web:build": "npm --prefix web run build",
     "web:install": "npm --prefix web install"
   },
   "dependencies": {
-    "dotenv": "^16.4.5",
-    "express": "^4.21.2",
     "zod": "^4.0.0"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",
     "@types/node": "^22.10.1",
     "concurrently": "^9.2.1",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.2",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fredericokluser/ai-benchmark.git"
+  },
+  "homepage": "https://github.com/fredericokluser/ai-benchmark#readme"
 }

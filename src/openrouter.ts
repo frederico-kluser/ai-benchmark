@@ -1,5 +1,14 @@
 import { applyReasoning } from './reasoning.js';
-import type { ModelReasoningMeta, OpenRouterModel, ReasoningLevel } from './types.js';
+import type {
+  CallCost,
+  CostRole,
+  CostSink,
+  ModelReasoningMeta,
+  OpenRouterModel,
+  OpenRouterModelPricing,
+  PricingTier,
+  ReasoningLevel,
+} from './types.js';
 
 // Permite apontar para um gateway compativel com a OpenRouter (proxy
 // corporativo, mock de teste). Default: API publica da OpenRouter.
@@ -21,6 +30,29 @@ const modelsCache = new Map<string, { fetchedAt: number; data: OpenRouterModel[]
 
 function cacheKey(apiKey: string): string {
   return apiKey.slice(-12);
+}
+
+/**
+ * Semeia o cache de catalogo sem ir a rede. Existe porque o CLI e um processo
+ * NOVO a cada invocacao: sem isto o cache nasce frio e `deterministicSampling`
+ * cai na heuristica por nome, `applyReasoning` perde a allowlist de esforco
+ * (HTTP 400 nos 83 modelos que declaram `supported_efforts`) e `computeCost`
+ * devolve 0 — que faria qualquer porta de orcamento achar que tudo e de graca.
+ * Quem persiste em disco e o CLI (src/modelsCache.ts); aqui so ha memoria.
+ */
+export function primeModelsCache(
+  apiKey: string,
+  data: OpenRouterModel[],
+  fetchedAt: number = Date.now(),
+): void {
+  modelsCache.set(cacheKey(apiKey), { fetchedAt, data });
+}
+
+/** Espia o cache em memoria (sem rede). `undefined` = frio. */
+export function peekModelsCache(
+  apiKey: string,
+): { fetchedAt: number; data: OpenRouterModel[] } | undefined {
+  return modelsCache.get(cacheKey(apiKey));
 }
 
 // ---------------------------------------------------------------------------
@@ -126,6 +158,122 @@ function parsePrice(value: unknown): number {
     return Number.isFinite(n) ? n : 0;
   }
   return 0;
+}
+
+/**
+ * Faixas de preco por tamanho de prompt (`pricing.overrides`). O campo existe
+ * no catalogo mas nao esta documentado; sem ele, o custo de runs de contexto
+ * longo sai 3-7x menor que o real.
+ */
+function parsePricingTiers(value: unknown): PricingTier[] | undefined {
+  if (!Array.isArray(value) || value.length === 0) return undefined;
+  const tiers: PricingTier[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== 'object') continue;
+    const t = item as Record<string, unknown>;
+    const min = typeof t.min_prompt_tokens === 'number' ? t.min_prompt_tokens : Number(t.min_prompt_tokens);
+    if (!Number.isFinite(min)) continue;
+    tiers.push({
+      minPromptTokens: min,
+      prompt: parsePrice(t.prompt),
+      completion: parsePrice(t.completion),
+    });
+  }
+  return tiers.length > 0 ? tiers.sort((a, b) => a.minPromptTokens - b.minPromptTokens) : undefined;
+}
+
+/** Preco efetivo do modelo para um prompt deste tamanho (respeita as faixas). */
+export function tierFor(
+  pricing: OpenRouterModelPricing,
+  promptTokens: number,
+): { prompt: number; completion: number } {
+  let melhor = { prompt: pricing.prompt, completion: pricing.completion };
+  let melhorMin = -1;
+  for (const t of pricing.overrides ?? []) {
+    if (promptTokens >= t.minPromptTokens && t.minPromptTokens > melhorMin) {
+      melhor = { prompt: t.prompt, completion: t.completion };
+      melhorMin = t.minPromptTokens;
+    }
+  }
+  return melhor;
+}
+
+// ---------------------------------------------------------------------------
+// Extracao de uso/custo da resposta
+// ---------------------------------------------------------------------------
+
+interface RawUsage {
+  tokensIn: number;
+  tokensOut: number;
+  /** Creditos EFETIVAMENTE cobrados. Fonte primaria de custo. */
+  cost?: number;
+  upstreamCost?: number;
+  cachedTokensIn?: number;
+  reasoningTokens?: number;
+}
+
+/**
+ * Le o bloco `usage` da resposta. O OpenRouter SEMPRE o devolve hoje
+ * (`usage:{include:true}` virou no-op deprecado) e `usage.cost` e o valor
+ * exato cobrado — ja inclui leitura/escrita de cache, tokens de raciocinio e
+ * as faixas de `pricing.overrides`. Derivar do catalogo e so o plano B.
+ */
+function extractUsage(u: unknown): RawUsage {
+  if (!u || typeof u !== 'object') return { tokensIn: 0, tokensOut: 0 };
+  const usage = u as Record<string, unknown>;
+  const promptDetails = (usage.prompt_tokens_details ?? {}) as Record<string, unknown>;
+  const completionDetails = (usage.completion_tokens_details ?? {}) as Record<string, unknown>;
+  const costDetails = (usage.cost_details ?? {}) as Record<string, unknown>;
+  const num = (v: unknown): number | undefined =>
+    typeof v === 'number' && Number.isFinite(v) ? v : undefined;
+  return {
+    tokensIn: num(usage.prompt_tokens) ?? 0,
+    tokensOut: num(usage.completion_tokens) ?? 0,
+    cost: num(usage.cost),
+    upstreamCost: num(costDetails.upstream_inference_cost),
+    cachedTokensIn: num(promptDetails.cached_tokens),
+    reasoningTokens: num(completionDetails.reasoning_tokens),
+  };
+}
+
+/**
+ * Precifica uma chamada. Ordem: valor cobrado > catalogo > desconhecido.
+ * `unknown` NUNCA e o mesmo que "custou zero" — e o que permite avisar o
+ * usuario de que o orcamento esta operando as cegas.
+ */
+function priceCall(apiKey: string, modelId: string, u: RawUsage): CallCost {
+  if (typeof u.cost === 'number' && Number.isFinite(u.cost)) {
+    return { usd: u.cost, source: 'usage', upstreamUsd: u.upstreamCost };
+  }
+  const model = cachedModel(apiKey, modelId);
+  if (model) {
+    return { usd: computeCost(u.tokensIn, u.tokensOut, model), source: 'catalog' };
+  }
+  return { usd: 0, source: 'unknown' };
+}
+
+/** Estimativa grosseira de tokens de prompt — so dimensiona a reserva otimista. */
+function guessPromptTokens(messages: ChatMessage[]): number {
+  let chars = 0;
+  for (const m of messages) chars += m.content.length;
+  return Math.ceil(chars / 4);
+}
+
+/**
+ * Aplica o teto de preco POR REQUISICAO. ⚠️ `provider.max_price` e USD por
+ * MILHAO de tokens; o catalogo e USD por token. O valor entra aqui VERBATIM,
+ * ja na unidade certa — nenhuma conversao acontece neste arquivo.
+ */
+function applyMaxPrice(
+  body: Record<string, unknown>,
+  maxPrice: { prompt?: number; completion?: number } | undefined,
+): void {
+  if (!maxPrice || (maxPrice.prompt === undefined && maxPrice.completion === undefined)) return;
+  const provider = (body.provider ?? {}) as Record<string, unknown>;
+  const cap: Record<string, number> = {};
+  if (maxPrice.prompt !== undefined) cap.prompt = maxPrice.prompt;
+  if (maxPrice.completion !== undefined) cap.completion = maxPrice.completion;
+  body.provider = { ...provider, max_price: cap };
 }
 
 // ---------------------------------------------------------------------------
@@ -320,6 +468,7 @@ export async function listModels(apiKey: string, force = false): Promise<OpenRou
       pricing: {
         prompt: parsePrice(pricing.prompt),
         completion: parsePrice(pricing.completion),
+        overrides: parsePricingTiers(pricing.overrides),
       },
       supportedParameters: Array.isArray(item.supported_parameters)
         ? (item.supported_parameters as unknown[]).map((p) => String(p))
@@ -349,6 +498,10 @@ export interface ChatCompletionResult {
   tokensOut: number;
   latencyMs: number;
   raw: unknown;
+  /** Custo da chamada. Sempre presente; a honestidade fica em `cost.source`. */
+  cost: CallCost;
+  cachedTokensIn?: number;
+  reasoningTokens?: number;
 }
 
 export interface ChatCompletionParams {
@@ -363,6 +516,12 @@ export interface ChatCompletionParams {
   // Nivel de raciocinio (reasoning effort). Ausente = nao envia `reasoning`
   // (comportamento anterior, identico). 'off' desliga explicitamente.
   reasoningLevel?: ReasoningLevel;
+  /** Papel desta chamada no pipeline — granularidade do ledger de gasto. */
+  role?: CostRole;
+  /** Ledger. Ausente = nao contabiliza (compatibilidade com chamadas avulsas). */
+  sink?: CostSink;
+  /** Teto por requisicao (USD por MILHAO de tokens). Ver applyMaxPrice. */
+  maxPricePerMTok?: { prompt?: number; completion?: number };
 }
 
 export async function chatCompletion(params: ChatCompletionParams): Promise<ChatCompletionResult> {
@@ -376,6 +535,9 @@ export async function chatCompletion(params: ChatCompletionParams): Promise<Chat
     signal: externalSignal,
     responseFormatJson,
     reasoningLevel,
+    role = 'competitor',
+    sink,
+    maxPricePerMTok,
   } = params;
 
   const body: Record<string, unknown> = {
@@ -395,22 +557,50 @@ export async function chatCompletion(params: ChatCompletionParams): Promise<Chat
   if (reasoningLevel) {
     applyReasoning(body, reasoningLevel, cachedModel(apiKey, modelId)?.reasoning);
   }
+  applyMaxPrice(body, maxPricePerMTok);
 
-  const { res, startedAt, finish } = await guardedFetch(
-    `${OPENROUTER_BASE}/chat/completions`,
-    { method: 'POST', headers: defaultHeaders(apiKey), body: JSON.stringify(body) },
-    timeoutMs,
-    externalSignal,
-  );
+  // Reserva ANTES do slot do limitador: se o orcamento ja estourou, nem
+  // enfileira. Lanca BudgetExceeded/RunCancelled (sinais de controle).
+  const reservation = sink?.reserve(role, modelId, guessPromptTokens(messages), maxTokens ?? 1024);
+
+  let res: Response;
+  let startedAt: number;
+  let finish: (ok: boolean) => void;
+  try {
+    ({ res, startedAt, finish } = await guardedFetch(
+      `${OPENROUTER_BASE}/chat/completions`,
+      { method: 'POST', headers: defaultHeaders(apiKey), body: JSON.stringify(body) },
+      timeoutMs,
+      externalSignal,
+    ));
+  } catch (err) {
+    reservation?.release();
+    throw err;
+  }
 
   let ok = false;
   try {
     const latencyMs = Date.now() - startedAt;
     const json = (await res.json()) as {
       choices?: { message?: { content?: string } }[];
-      usage?: { prompt_tokens?: number; completion_tokens?: number };
+      usage?: unknown;
       error?: { message?: string; code?: string | number };
     };
+
+    const usage = extractUsage(json.usage);
+    const cost = priceCall(apiKey, modelId, usage);
+    // Contabiliza ANTES do throw in-band: uma resposta 200 com corpo de erro
+    // (provider rejeitou um parametro) JA foi cobrada. Sem isto ela sai de
+    // graca nos livros e cara na fatura.
+    if (reservation) {
+      sink?.note(reservation, {
+        role,
+        modelId,
+        cost,
+        tokensIn: usage.tokensIn,
+        tokensOut: usage.tokensOut,
+      });
+    }
 
     const text = json.choices?.[0]?.message?.content ?? '';
     // OpenRouter as vezes devolve 200 com um corpo de erro (ex.: provider
@@ -418,23 +608,36 @@ export async function chatCompletion(params: ChatCompletionParams): Promise<Chat
     if (!text && json.error) {
       throw new Error(`OpenRouter: ${json.error.message ?? JSON.stringify(json.error)}`);
     }
-    const tokensIn = json.usage?.prompt_tokens ?? 0;
-    const tokensOut = json.usage?.completion_tokens ?? 0;
 
     ok = true;
-    return { text, tokensIn, tokensOut, latencyMs, raw: json };
+    return {
+      text,
+      tokensIn: usage.tokensIn,
+      tokensOut: usage.tokensOut,
+      latencyMs,
+      raw: json,
+      cost,
+      cachedTokensIn: usage.cachedTokensIn,
+      reasoningTokens: usage.reasoningTokens,
+    };
   } finally {
+    if (!ok) reservation?.release();
     finish(ok);
   }
 }
 
+/**
+ * Custo derivado do CATALOGO. E o plano B de `priceCall` (a fonte primaria e
+ * `usage.cost`) e a base do estimador de pre-voo. Respeita `pricing.overrides`.
+ */
 export function computeCost(
   tokensIn: number,
   tokensOut: number,
   model: OpenRouterModel | undefined,
 ): number {
   if (!model) return 0;
-  return tokensIn * model.pricing.prompt + tokensOut * model.pricing.completion;
+  const preco = tierFor(model.pricing, tokensIn);
+  return tokensIn * preco.prompt + tokensOut * preco.completion;
 }
 
 export interface ChatStreamParams extends ChatCompletionParams {
@@ -454,6 +657,9 @@ export async function chatCompletionStream(
     signal: externalSignal,
     responseFormatJson,
     reasoningLevel,
+    role = 'competitor',
+    sink,
+    maxPricePerMTok,
     onDelta,
   } = params;
 
@@ -462,7 +668,6 @@ export async function chatCompletionStream(
     messages,
     ...deterministicSampling(apiKey, modelId, temperature),
     stream: true,
-    usage: { include: true },
   };
   if (typeof maxTokens === 'number' && maxTokens > 0) body.max_tokens = maxTokens;
   if (responseFormatJson) body.response_format = { type: 'json_object' };
@@ -470,19 +675,32 @@ export async function chatCompletionStream(
   if (reasoningLevel) {
     applyReasoning(body, reasoningLevel, cachedModel(apiKey, modelId)?.reasoning);
   }
+  applyMaxPrice(body, maxPricePerMTok);
 
-  const { res, startedAt, finish } = await guardedFetch(
-    `${OPENROUTER_BASE}/chat/completions`,
-    { method: 'POST', headers: defaultHeaders(apiKey), body: JSON.stringify(body) },
-    timeoutMs,
-    externalSignal,
-  );
+  const reservation = sink?.reserve(role, modelId, guessPromptTokens(messages), maxTokens ?? 1024);
+
+  let res: Response;
+  let startedAt: number;
+  let finish: (ok: boolean) => void;
+  try {
+    ({ res, startedAt, finish } = await guardedFetch(
+      `${OPENROUTER_BASE}/chat/completions`,
+      { method: 'POST', headers: defaultHeaders(apiKey), body: JSON.stringify(body) },
+      timeoutMs,
+      externalSignal,
+    ));
+  } catch (err) {
+    reservation?.release();
+    throw err;
+  }
 
   let ok = false;
   let fullText = '';
-  let tokensIn = 0;
-  let tokensOut = 0;
   let lastRaw: unknown = null;
+  // Guardado SEPARADO de `lastRaw`: hoje o ultimo chunk *por acaso* e o de
+  // usage (porque `[DONE]` e ignorado), mas basta um provedor emitir um
+  // keep-alive depois do frame de usage para o custo sumir em silencio.
+  let usageRaw: unknown = null;
   let streamError: string | null = null;
 
   try {
@@ -508,7 +726,7 @@ export async function chatCompletionStream(
         try {
           const chunk = JSON.parse(payload) as {
             choices?: { delta?: { content?: string } }[];
-            usage?: { prompt_tokens?: number; completion_tokens?: number };
+            usage?: unknown;
             error?: { message?: string };
           };
           lastRaw = chunk;
@@ -520,15 +738,24 @@ export async function chatCompletionStream(
             fullText += delta;
             onDelta?.(delta, fullText);
           }
-          if (chunk.usage) {
-            if (typeof chunk.usage.prompt_tokens === 'number') tokensIn = chunk.usage.prompt_tokens;
-            if (typeof chunk.usage.completion_tokens === 'number')
-              tokensOut = chunk.usage.completion_tokens;
-          }
+          if (chunk.usage) usageRaw = chunk.usage;
         } catch {
           // chunk JSON invalido, ignora
         }
       }
+    }
+
+    const usage = extractUsage(usageRaw);
+    const cost = priceCall(apiKey, modelId, usage);
+    // Contabiliza antes do throw in-band — a chamada ja foi cobrada.
+    if (reservation) {
+      sink?.note(reservation, {
+        role,
+        modelId,
+        cost,
+        tokensIn: usage.tokensIn,
+        tokensOut: usage.tokensOut,
+      });
     }
 
     // Resposta vazia + erro in-band (provider rejeitou parametro etc.): falha alto.
@@ -536,8 +763,18 @@ export async function chatCompletionStream(
 
     const latencyMs = Date.now() - startedAt;
     ok = true;
-    return { text: fullText, tokensIn, tokensOut, latencyMs, raw: lastRaw };
+    return {
+      text: fullText,
+      tokensIn: usage.tokensIn,
+      tokensOut: usage.tokensOut,
+      latencyMs,
+      raw: lastRaw,
+      cost,
+      cachedTokensIn: usage.cachedTokensIn,
+      reasoningTokens: usage.reasoningTokens,
+    };
   } finally {
+    if (!ok) reservation?.release();
     finish(ok);
   }
 }

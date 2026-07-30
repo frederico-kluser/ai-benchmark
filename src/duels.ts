@@ -8,6 +8,7 @@
 // de duelos — NUNCA derruba a run.
 
 import { chatCompletion } from './openrouter.js';
+import { isControlSignal } from './budget.js';
 import type {
   CompetitorResponse,
   Contestant,
@@ -15,8 +16,7 @@ import type {
   ReasoningLevel,
   StageDuels,
   StageSpec,
-  Verdict,
-} from './types.js';
+  Verdict, RunCtx } from './types.js';
 
 /** Hash FNV-1a 32-bit do id/conteúdo — seed estável p/ o shuffle cego por etapa. */
 export function seedFromId(id: string): number {
@@ -224,6 +224,9 @@ export interface RunStageDuelsOptions {
   apiKey: string;
   reasoningLevel?: ReasoningLevel;
   timeoutMs?: number;
+  /** Sinal de abort + ledger de custo. */
+  ctx?: RunCtx;
+  maxPricePerMTok?: { prompt?: number; completion?: number };
   /** Vereditos do juiz pointwise (refJudge) — ordenam o bracket. Ausente => score −1. */
   verdictByContestant?: Record<string, Verdict>;
   /** Dispara a CADA par resolvido (progresso durante a fase mais longa da etapa). */
@@ -252,6 +255,8 @@ export async function runStageDuels(opts: RunStageDuelsOptions): Promise<StageDu
     apiKey,
     reasoningLevel,
     timeoutMs,
+    ctx,
+    maxPricePerMTok,
     verdictByContestant,
     onPair,
   } = opts;
@@ -332,9 +337,16 @@ export async function runStageDuels(opts: RunStageDuelsOptions): Promise<StageDu
         timeoutMs,
         responseFormatJson: true,
         reasoningLevel,
+        role: 'duel',
+        signal: ctx?.signal,
+        sink: ctx?.sink,
+        maxPricePerMTok,
       });
       return parseDuelVerdict(result.text);
     } catch (err) {
+      // Sem o rethrow, orcamento estourado viraria empate em TODOS os duelos —
+      // uma final inteira decidida por falta de dinheiro, sem ninguem saber.
+      if (isControlSignal(err)) throw err;
       // Ordem falhou => ESSA ordem vira empate (nunca inventa vencedor).
       return {
         winner: 'tie',

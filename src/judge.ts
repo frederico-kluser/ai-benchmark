@@ -1,10 +1,13 @@
 import { z } from 'zod';
 import { chatCompletion } from './openrouter.js';
+import { isControlSignal } from './budget.js';
 import type {
   CompetitorResponse,
   JudgeResult,
   JudgeVerdict,
   SingleJudgeResult,
+  ReasoningLevel,
+  RunCtx,
   StageSpec,
   Verdict,
 } from './types.js';
@@ -111,6 +114,11 @@ export interface JudgeStageParams {
   timeoutMs?: number;
   /** Passagens listwise POR JUIZ: 2 = duas ordens agregadas (anti-vies de posicao). Default 1. */
   passes?: 1 | 2;
+  /** Sinal de abort + ledger de custo. */
+  ctx?: RunCtx;
+  maxPricePerMTok?: { prompt?: number; completion?: number };
+  /** Esforco de raciocinio do juiz listwise (o pointwise ja tinha o dele). */
+  reasoningLevel?: ReasoningLevel;
 }
 
 interface PassResult {
@@ -129,6 +137,7 @@ async function rankOnePass(
   okResponses: CompetitorResponse[],
   judgeModelId: string,
   timeoutMs: number,
+  extra: { ctx?: RunCtx; maxPricePerMTok?: { prompt?: number; completion?: number }; reasoningLevel?: ReasoningLevel } = {},
 ): Promise<PassResult | null> {
   const shuffled = shuffle(okResponses);
   const blindMap: Record<string, string> = {};
@@ -171,6 +180,11 @@ Em "verdicts", de para CADA rotulo: "acceptable" (bool) e "motivo" (<= 1 frase).
       temperature: 0,
       timeoutMs,
       responseFormatJson: true,
+      reasoningLevel: extra.reasoningLevel,
+      role: 'judge',
+      signal: extra.ctx?.signal,
+      sink: extra.ctx?.sink,
+      maxPricePerMTok: extra.maxPricePerMTok,
     });
     const parsed = judgeSchema.safeParse(JSON.parse(extractJson(result.text)));
     if (parsed.success) {
@@ -186,7 +200,10 @@ Em "verdicts", de para CADA rotulo: "acceptable" (bool) e "motivo" (<= 1 frase).
         (l) => l in letterToContestant,
       );
     }
-  } catch {
+  } catch (err) {
+    // Sem o rethrow, um estouro de orcamento viraria "passagem invalida" e a
+    // etapa sairia sem ranking — resultado incompleto com cara de completo.
+    if (isControlSignal(err)) throw err;
     return null;
   }
 
@@ -264,10 +281,11 @@ async function runOneJudge(
   judgeModelId: string,
   passes: number,
   timeoutMs: number,
+  extra: { ctx?: RunCtx; maxPricePerMTok?: { prompt?: number; completion?: number }; reasoningLevel?: ReasoningLevel } = {},
 ): Promise<SingleJudgeResult | null> {
   const passResults = await Promise.all(
     Array.from({ length: passes }, () =>
-      rankOnePass(apiKey, stage, okResponses, judgeModelId, timeoutMs),
+      rankOnePass(apiKey, stage, okResponses, judgeModelId, timeoutMs, extra),
     ),
   );
   const valid = passResults.filter((p): p is PassResult => p !== null);
@@ -287,7 +305,9 @@ async function runOneJudge(
 }
 
 export async function judgeStage(params: JudgeStageParams): Promise<JudgeResult> {
-  const { apiKey, stage, responses, judgeModelIds, timeoutMs = 90_000 } = params;
+  const { apiKey, stage, responses, judgeModelIds, timeoutMs = 90_000, ctx, maxPricePerMTok, reasoningLevel } =
+    params;
+  const extra = { ctx, maxPricePerMTok, reasoningLevel };
   const passes = params.passes === 2 ? 2 : 1;
   // dedup: um mesmo juiz duas vezes distorceria a maioria e o placar aditivo.
   const judgeIds = [...new Set(judgeModelIds ?? [])];
@@ -323,7 +343,7 @@ export async function judgeStage(params: JudgeStageParams): Promise<JudgeResult>
 
   // Roda TODOS os juizes EM PARALELO — SEM cap local; o limitador global throttla.
   const results = await Promise.all(
-    judgeIds.map((jid) => runOneJudge(apiKey, stage, okResponses, jid, passes, timeoutMs)),
+    judgeIds.map((jid) => runOneJudge(apiKey, stage, okResponses, jid, passes, timeoutMs, extra)),
   );
   const judges = results.filter((j): j is SingleJudgeResult => j !== null);
 

@@ -1,6 +1,7 @@
 import { chatCompletion } from './openrouter.js';
 import type { ChatMessage } from './openrouter.js';
-import type { ReasoningLevel, StageSpec } from './types.js';
+import { isControlSignal } from './budget.js';
+import type { ReasoningLevel, RunCtx, StageSpec } from './types.js';
 
 // Gabaritos (respostas de referência), portados do prompt-arena: UMA chamada
 // temp-0 do modelo de referência por etapa, recebendo o MESMO contexto de
@@ -19,6 +20,9 @@ export interface GenerateReferencesParams {
   modelId: string;
   reasoningLevel?: ReasoningLevel;
   timeoutMs?: number;
+  /** Sinal de abort + ledger de custo. */
+  ctx?: RunCtx;
+  maxPricePerMTok?: { prompt?: number; completion?: number };
   /** Chamado a cada etapa concluída (sucesso ou falha); total = etapas sem gabarito. */
   onProgress?: (done: number, total: number) => void;
 }
@@ -57,7 +61,8 @@ Responda APENAS com a resposta de referência ideal, completa e direta, sem pre�
 export async function generateReferences(
   params: GenerateReferencesParams,
 ): Promise<StageSpec[]> {
-  const { stages, apiKey, modelId, reasoningLevel, timeoutMs, onProgress } = params;
+  const { stages, apiKey, modelId, reasoningLevel, timeoutMs, ctx, maxPricePerMTok, onProgress } =
+    params;
 
   const out = stages.slice();
   const pending = stages
@@ -67,7 +72,7 @@ export async function generateReferences(
   if (total === 0) return out;
 
   let done = 0;
-  await Promise.all(
+  const settled = await Promise.allSettled(
     pending.map(async ({ stage, index }) => {
       try {
         const result = await chatCompletion({
@@ -78,6 +83,10 @@ export async function generateReferences(
           maxTokens: MAX_TOKENS_GABARITO,
           timeoutMs,
           reasoningLevel,
+          role: 'gabarito',
+          signal: ctx?.signal,
+          sink: ctx?.sink,
+          maxPricePerMTok,
         });
         const reference = result.text.trim();
         if (reference) {
@@ -88,6 +97,9 @@ export async function generateReferences(
           );
         }
       } catch (err) {
+        // Orcamento/cancelamento nao sao "falha de gabarito": deixar passar aqui
+        // faria a run seguir SEM referencia e o juiz degradar tudo p/ 'parcial'.
+        if (isControlSignal(err)) throw err;
         // Degradação, nunca crash: sem gabarito o juiz pointwise cai para 'parcial'.
         console.warn(
           `[gabarito] falha ao gerar referência da etapa ${index + 1}: ${(err as Error).message}`,
@@ -98,5 +110,10 @@ export async function generateReferences(
       }
     }),
   );
+  // allSettled em vez de all: com `all`, a primeira rejeicao desenrola o
+  // chamador enquanto as irmas continuam gastando e perdendo o resultado.
+  for (const s of settled) {
+    if (s.status === 'rejected' && isControlSignal(s.reason)) throw s.reason;
+  }
   return out;
 }

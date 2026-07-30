@@ -9,6 +9,50 @@ a interface mostra **placar, heatmap, custo e o texto sendo gerado token a token
 > **Em uma frase:** "dado um tema, descubra qual modelo (ou qual prompt) responde melhor — e quais
 > respostas são boas o bastante para usar no trabalho de verdade — com evidência, ranking e custo."
 
+## CLI para agentes de programação (`benchmark-arena`)
+
+Publicado no npm. Feito para ser dirigido por **Claude Code, Codex, opencode, Cursor, Gemini CLI** —
+sem prompt interativo, `--json` em tudo, e auto-documentação versionada dentro do próprio pacote.
+
+```bash
+# a ferramenta ensina o agente a usá-la (docs embarcadas, casadas com a versão)
+npx benchmark-arena docs quickstart
+
+# descobre o modelo do ambiente e QUAIS níveis de raciocínio ele aceita
+npx benchmark-arena models show anthropic/claude-opus-5 --json
+
+# valida e estima o custo SEM gastar nada
+npx benchmark-arena train --config arena.json --budget 3 --dry-run
+
+# treina com teto de gasto, emitindo um evento JSON por linha
+npx benchmark-arena train --config arena.json --budget 3 --output-format ndjson
+
+# instala a skill no repositório (.claude/skills, .agents/skills)
+npx benchmark-arena init --agent all
+```
+
+Também expõe um **servidor MCP** no mesmo binário:
+
+```bash
+claude mcp add --transport stdio arena -- npx -y benchmark-arena mcp
+```
+
+Três coisas que o CLI garante e a UI não garantia:
+
+- **Custo real.** O gasto sai de `usage.cost` (o valor cobrado), quebrado por papel — juiz,
+  gabarito, duelos e reescritor incluídos. Antes só as respostas dos competidores eram contadas,
+  subcontando o total por um múltiplo.
+- **Orçamento que não corrompe o resultado.** Ao estourar o teto, a run para numa fronteira de
+  fase e entrega o parcial honesto (exit `7`), em vez de virar uma run "concluída" com vereditos
+  inventados por falta de dinheiro.
+- **Think levels do catálogo.** `models show` diz exatamente quais degraus aquele modelo aceita e o
+  que vai no fio para cada nível pedido — é o que permite a um agente treinar contra o próprio
+  modelo sem tomar HTTP 400.
+
+Documentação completa: `npx benchmark-arena docs --list`.
+
+---
+
 A documentação das **telas** está em [`TELAS.md`](./TELAS.md). Convenções para **agentes de código**
 (Claude Code, Codex, Cursor…) estão em [`AGENTS.md`](./AGENTS.md) e na biblioteca de skills em
 [`.agents/skills/`](./.agents/skills/) — veja [Sistema de Knowledge Skills](#sistema-de-knowledge-skills).

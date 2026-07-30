@@ -1,7 +1,110 @@
 export interface OpenRouterModelPricing {
   prompt: number; // USD per token
   completion: number; // USD per token
+  /**
+   * Precificacao POR FAIXA de tamanho de prompt (campo `pricing.overrides`,
+   * vivo no catalogo mas nao documentado). Ignorar isto subestima runs de
+   * contexto longo em 3-7x — e o prompt do juiz pointwise (gabarito + pergunta
+   * + rubrica + candidato) cruza a faixa de 32k rotineiramente.
+   */
+  overrides?: PricingTier[];
 }
+
+export interface PricingTier {
+  minPromptTokens: number;
+  prompt: number; // USD per token
+  completion: number; // USD per token
+}
+
+// ----------------------------------------------------------------------------
+// Contabilidade de custo
+// ----------------------------------------------------------------------------
+
+/** Papel da chamada no pipeline — a granularidade do ledger de gasto. */
+export type CostRole = 'datagen' | 'gabarito' | 'competitor' | 'judge' | 'duel' | 'rewriter';
+
+export const COST_ROLES: readonly CostRole[] = [
+  'datagen',
+  'gabarito',
+  'competitor',
+  'judge',
+  'duel',
+  'rewriter',
+] as const;
+
+/**
+ * De onde veio o numero. `usage` = o OpenRouter cobrou exatamente isso (inclui
+ * cache, tokens de raciocinio e faixas de preco). `catalog` = derivado dos
+ * precos do /models. `unknown` = modelo fora do catalogo, NAO conseguimos
+ * precificar — nunca confundir com "custou zero".
+ */
+export type CostSource = 'usage' | 'catalog' | 'unknown';
+
+export interface CallCost {
+  usd: number;
+  source: CostSource;
+  /** BYOK: cobrado direto pelo provedor upstream, fora dos creditos. */
+  upstreamUsd?: number;
+}
+
+export interface CostEntry {
+  calls: number;
+  usd: number;
+  tokensIn: number;
+  tokensOut: number;
+}
+
+/** Reserva otimista devolvida por `CostSink.reserve`. */
+export interface Reservation {
+  release(): void;
+}
+
+/**
+ * Contrato minimo que `openrouter.ts` conhece do ledger. Declarado aqui (e nao
+ * em budget.ts) para que o cliente HTTP nao dependa do ledger — sem ciclo de
+ * import e sem arrastar nada Node-only para o espelho do browser.
+ */
+export interface CostSink {
+  /** Chamado ANTES do fetch. Lanca BudgetExceeded/RunCancelled se nao couber. */
+  reserve(
+    role: CostRole,
+    modelId: string,
+    promptTokensGuess: number,
+    maxTokens: number,
+  ): Reservation;
+  /** Chamado DEPOIS do fetch, sempre: troca a reserva pelo custo real. */
+  note(
+    reservation: Reservation,
+    entry: {
+      role: CostRole;
+      modelId: string;
+      cost: CallCost;
+      tokensIn: number;
+      tokensOut: number;
+    },
+  ): void;
+}
+
+/**
+ * Contexto de execucao que atravessa o pipeline inteiro. O `signal` precisa
+ * chegar ao `fetch` como VALOR (dai nao usarmos AsyncLocalStorage, que alem
+ * disso nao existe no browser); como ele ja atravessa todos os modulos, o
+ * ledger pega carona e a contabilidade sai de graca em assinaturas.
+ */
+export interface RunCtx {
+  signal?: AbortSignal;
+  sink?: CostSink;
+}
+
+/** Fase do pipeline — usado para dizer ONDE uma run parou. */
+export type RunPhase =
+  | 'variants'
+  | 'datagen'
+  | 'gabarito'
+  | 'competitors'
+  | 'judging'
+  | 'finals'
+  | 'holdout';
 
 export interface OpenRouterModel {
   id: string;
@@ -166,6 +269,21 @@ export interface RunConfigBase {
   finalists?: number;
   /** Liga/desliga a fase de finais (duelos). Default: true quando há gabarito. */
   duels?: boolean;
+  /**
+   * Teto de gasto em USD para a run (ou para a SESSAO inteira, em training).
+   * Ausente = sem limite.
+   *
+   * ⚠️ `variationConfigFrom` (trainer.ts) NAO copia este campo de proposito: se
+   * copiasse, cada uma das N iteracoes receberia o orcamento inteiro da sessao
+   * e o gasto total seria N vezes o teto. O ledger da sessao e quem controla.
+   */
+  budgetUsd?: number;
+  /**
+   * Teto de preco POR REQUISICAO repassado ao OpenRouter (`provider.max_price`).
+   * ⚠️ UNIDADE: USD por MILHAO de tokens — o catalogo (`pricing`) e USD por
+   * token. A conversao mora so em `toPerMTok`/`toPerToken` (estimate.ts).
+   */
+  maxPricePerMTok?: { prompt?: number; completion?: number };
 }
 
 /** Campos comuns aos modos de 1 LLM (variation/training). */
@@ -387,6 +505,12 @@ export interface StageRecord {
   evaluation?: StageEvaluation;
   /** Preenchido quando a etapa falhou (ex.: datagen) e foi pulada sem matar a run. */
   error?: string;
+  /**
+   * Etapa interrompida no meio (orcamento/cancelamento) — NAO entra no placar
+   * nem no julgamento. E o que separa "parou cedo, honesto" de "terminou,
+   * mentindo": sem esta marca, uma etapa cortada viraria veredito 'parcial'.
+   */
+  incomplete?: boolean;
   startedAt: string;
   finishedAt?: string;
 }
@@ -418,7 +542,28 @@ export interface RunRecord {
   }[];
   /** Ids dos finalistas (top-N por judge-score) que disputaram os duelos. */
   finalists?: string[];
+  /**
+   * Custo TOTAL da run — todos os papeis, nao so os competidores. Antes contava
+   * apenas `competitor.ts`, subcontando por um multiplo (juizes, gabarito,
+   * datagen, duelos e o otimizador eram invisiveis). `costByContestant` continua
+   * sendo a fatia dos competidores: gasto de juiz/duelo nao e atribuivel a um
+   * contestant e nao deve ser espalhado neles.
+   */
   totalCostUsd: number;
+  /** Quebra do gasto por papel do pipeline. */
+  costByRole?: Record<CostRole, CostEntry>;
+  /** Quantas chamadas tiveram preco exato, estimado ou desconhecido. */
+  costAccuracy?: { exact: number; estimated: number; unknown: number };
+  /** BYOK: cobrado pelo provedor upstream, fora dos creditos do OpenRouter. */
+  upstreamCostUsd?: number;
+  /** Teto de gasto configurado (ausente = sem limite). */
+  budgetUsd?: number;
+  /** true = a run parou porque o orcamento acabou. */
+  budgetExhausted?: boolean;
+  /** Fase em que a run parou (so quando parou cedo). */
+  stoppedAtPhase?: RunPhase;
+  /** Por que parou cedo. Discrimina o status 'aborted'. */
+  stoppedReason?: 'budget' | 'cancelled';
   startedAt: string;
   finishedAt?: string;
   error?: string;
@@ -474,6 +619,22 @@ export interface SessionRecord {
   } | null;
   /** Iteracao em que o treino convergiu (ganho < minGain), quando parou antes do fim. */
   convergedAtIteration?: number;
+  /** Quebra do gasto por papel, somando todas as runs da sessao. */
+  costByRole?: Record<CostRole, CostEntry>;
+  costAccuracy?: { exact: number; estimated: number; unknown: number };
+  upstreamCostUsd?: number;
+  budgetUsd?: number;
+  budgetExhausted?: boolean;
+  stoppedAtPhase?: RunPhase;
+  stoppedReason?: 'budget' | 'cancelled';
+  /** Iteracao em que o orcamento/cancelamento interrompeu a sessao. */
+  stoppedAtIteration?: number;
+  /**
+   * true = o campeao NAO passou pelo gate de holdout (pulado por orcamento).
+   * Sem holdout o campeao esta nao-validado contra sobreajuste — quem le o
+   * resultado precisa saber disso.
+   */
+  holdoutSkipped?: boolean;
 }
 
 // ----------------------------------------------------------------------------
@@ -539,6 +700,23 @@ export type RunEvent =
     }
   | { type: 'stage.dueled'; runId: string; stageIndex: number; duels: StageDuels }
   | { type: 'duel.progress'; runId: string; done: number; total: number }
+  /** Gasto acumulado (throttled). Hook do CLI para a linha de orcamento. */
+  | {
+      type: 'run.spend';
+      runId: string;
+      spentUsd: number;
+      budgetUsd?: number;
+      byRole: Record<CostRole, CostEntry>;
+    }
+  /** Decisao de uma porta de orcamento numa fronteira de fase. */
+  | {
+      type: 'run.budget';
+      runId: string;
+      phase: RunPhase;
+      projectedUsd: number;
+      remainingUsd: number;
+      decision: 'go' | 'stop';
+    }
   | { type: 'run.finished'; runId: string; record: RunRecord }
   | { type: 'run.error'; runId: string; error: string };
 

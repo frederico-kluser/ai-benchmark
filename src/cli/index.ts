@@ -1,0 +1,175 @@
+#!/usr/bin/env node
+// benchmark-arena — entrypoint do CLI.
+//
+// Escrito para ser dirigido por um AGENTE de programacao: sem prompt
+// interativo, `--json` em tudo, codigos de saida distintos e auto-documentacao
+// versionada dentro do proprio pacote (`docs`).
+
+import { CliError, EXIT, Output } from './output.js';
+import { buildContext, parse } from './context.js';
+import { cmdModels } from './commands/models.js';
+import { cmdRun } from './commands/run.js';
+import { cmdDocs, cmdInit, cmdSkill } from './commands/knowledge.js';
+import { cmdMcp } from './commands/mcp.js';
+import {
+  cmdConfig,
+  cmdDoctor,
+  cmdEstimate,
+  cmdKey,
+  cmdLgpd,
+  cmdRuns,
+  cmdSessions,
+  cmdTechniques,
+} from './commands/misc.js';
+
+const VERSION = '0.1.0';
+
+const HELP = `benchmark-arena ${VERSION} — benchmark de LLMs e evolução de system prompts.
+
+USO
+  benchmark-arena <comando> [opções]
+
+CONHECIMENTO (comece aqui)
+  docs [tópico]            imprime a documentação embarcada nesta versão
+  docs --list              todos os tópicos, com custo aproximado em tokens
+  skill                    imprime o SKILL.md deste pacote
+  init --agent <nome>      instala a skill em .claude/skills, .agents/skills, …
+
+MODELOS
+  models list [filtros]    lista o catálogo do OpenRouter
+  models show <id>         o que aquele modelo aceita (think levels, temperatura)
+  models export -o <arq>   exporta o catálogo com capacidades de ajuste
+
+CUSTO
+  estimate -c <arquivo>    estima o custo antes de gastar
+  key check                valida a key e mostra o saldo
+  key set --stdin          grava a key (leia da entrada padrão, nunca de argv)
+
+RUNS
+  compare --models a,b     compara modelos no mesmo desafio
+  vary    --model <id>     testa variações de prompt num modelo
+  train   --model <id>     treina um prompt ao longo de iterações
+  <cmd> --config <arq>     usa um arena-config@1 (ver: docs config)
+  <cmd> --dry-run          valida e estima SEM chamar nenhuma API
+
+RESULTADOS
+  runs list | show <id> | winner <id> [--prompt-only]
+  sessions list | show <id> | winner <id> [--prompt-only]
+
+OUTROS
+  techniques · lgpd · config validate <arq> · config example · doctor
+  mcp                      servidor MCP por stdio (mesmo binário)
+
+OPÇÕES GLOBAIS
+  --budget <usd|none>      teto de gasto (OBRIGATÓRIO fora de um terminal)
+  --json                   um objeto JSON no stdout
+  --output-format ndjson   um evento JSON por linha (progresso ao vivo)
+  --key <k>                key do OpenRouter (ou \$OPENROUTER_API_KEY)
+  --data-dir <caminho>     onde gravar runs (padrão ~/.benchmark-arena)
+  --refresh-models         ignora o cache de catálogo (24h)
+  --quiet · --verbose · --no-color · --help · --version
+
+PARA AGENTES
+  Toda saída estruturada vai para o STDOUT; progresso e avisos vão para o STDERR.
+  Nunca chute um think level: \`models show <id> --json\` diz exatamente quais
+  níveis o modelo aceita e o que vai no fio para cada um pedido.
+  Comece por: benchmark-arena docs quickstart
+
+CÓDIGOS DE SAÍDA
+  0 ok · 2 uso inválido · 3 config inválida · 4 auth · 5 sem crédito
+  7 parcial (orçamento esgotado) · 8 rede · 130 interrompido
+`;
+
+/**
+ * Dica de plugin para o Claude Code. Hoje ela e DESCARTADA em silencio (so vale
+ * para marketplaces da Anthropic), mas e inofensiva, nao custa token — o Claude
+ * Code remove a linha antes do modelo ver — e passa a funcionar sozinha se o
+ * pacote for listado. Nao construa onboarding em cima dela.
+ */
+function emitClaudeHint(): void {
+  if (process.env.CLAUDECODE === '1' || process.env.CLAUDE_CODE_CHILD_SESSION === '1') {
+    process.stderr.write(
+      '<claude-code-hint v="1" type="plugin" value="benchmark-arena@claude-plugins-official" />\n',
+    );
+  }
+}
+
+async function dispatch(cmd: string | undefined, argv: string[]): Promise<number> {
+  switch (cmd) {
+    case 'docs':
+      return cmdDocs(argv);
+    case 'skill':
+      return cmdSkill(argv);
+    case 'init':
+      return cmdInit(argv);
+    case 'models':
+      return cmdModels(argv);
+    case 'estimate':
+      return cmdEstimate(argv);
+    case 'key':
+      return cmdKey(argv);
+    case 'compare':
+      return cmdRun('compare', argv);
+    case 'vary':
+      return cmdRun('variation', argv);
+    case 'train':
+      return cmdRun('training', argv);
+    case 'runs':
+      return cmdRuns(argv);
+    case 'sessions':
+      return cmdSessions(argv);
+    case 'techniques':
+      return cmdTechniques(argv);
+    case 'lgpd':
+      return cmdLgpd(argv);
+    case 'config':
+      return cmdConfig(argv);
+    case 'doctor':
+      return cmdDoctor(argv);
+    case 'mcp':
+      return cmdMcp(argv);
+    default:
+      throw new CliError(
+        `Comando desconhecido: "${cmd}". Veja \`benchmark-arena --help\`.`,
+        EXIT.USAGE,
+      );
+  }
+}
+
+async function main(): Promise<void> {
+  const argv = process.argv.slice(2);
+  const cmd = argv[0] && !argv[0].startsWith('-') ? argv[0] : undefined;
+  const rest = cmd ? argv.slice(1) : argv;
+
+  // `--version` ANTES do help: sem comando, `!cmd` e verdadeiro e um
+  // `benchmark-arena --version` cairia no help.
+  if (argv.includes('--version')) {
+    process.stdout.write(`${VERSION}\n`);
+    process.exit(EXIT.OK);
+  }
+  if (!cmd || argv.includes('--help') || argv.includes('-h')) {
+    process.stdout.write(HELP);
+    emitClaudeHint();
+    process.exit(EXIT.OK);
+  }
+
+  try {
+    process.exitCode = await dispatch(cmd, rest);
+  } catch (err) {
+    // O formato de saida so e conhecido depois do parse; num erro de parse
+    // caimos no texto simples, que e o que um humano e um agente conseguem ler.
+    let out: Output;
+    try {
+      out = buildContext(parse(rest, {})).out;
+    } catch {
+      out = new Output({ format: 'text' });
+    }
+    const cliErr =
+      err instanceof CliError ? err : new CliError((err as Error).message, EXIT.ERROR);
+    out.fail(cmd ?? '?', cliErr);
+    if (cliErr.code === EXIT.USAGE) emitClaudeHint();
+    process.exitCode = cliErr.code;
+  }
+}
+
+void main();
