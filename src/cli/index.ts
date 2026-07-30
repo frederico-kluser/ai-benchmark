@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// benchmark-arena — entrypoint do CLI.
+// prompt-builder — entrypoint do CLI.
 //
 // Escrito para ser dirigido por um AGENTE de programacao: sem prompt
 // interativo, `--json` em tudo, codigos de saida distintos e auto-documentacao
@@ -24,10 +24,10 @@ import {
 
 const VERSION = '0.1.0';
 
-const HELP = `benchmark-arena ${VERSION} — benchmark de LLMs e evolução de system prompts.
+const HELP = `prompt-builder ${VERSION} — benchmark de LLMs e evolução de system prompts.
 
 USO
-  benchmark-arena <comando> [opções]
+  prompt-builder <comando> [opções]
 
 CONHECIMENTO (comece aqui)
   docs [tópico]            imprime a documentação embarcada nesta versão
@@ -65,7 +65,7 @@ OPÇÕES GLOBAIS
   --json                   um objeto JSON no stdout
   --output-format ndjson   um evento JSON por linha (progresso ao vivo)
   --key <k>                key do OpenRouter (ou \$OPENROUTER_API_KEY)
-  --data-dir <caminho>     onde gravar runs (padrão ~/.benchmark-arena)
+  --data-dir <caminho>     onde gravar runs (padrão ~/.prompt-builder)
   --refresh-models         ignora o cache de catálogo (24h)
   --quiet · --verbose · --no-color · --help · --version
 
@@ -73,7 +73,7 @@ PARA AGENTES
   Toda saída estruturada vai para o STDOUT; progresso e avisos vão para o STDERR.
   Nunca chute um think level: \`models show <id> --json\` diz exatamente quais
   níveis o modelo aceita e o que vai no fio para cada um pedido.
-  Comece por: benchmark-arena docs quickstart
+  Comece por: prompt-builder docs quickstart
 
 CÓDIGOS DE SAÍDA
   0 ok · 2 uso inválido · 3 config inválida · 4 auth · 5 sem crédito
@@ -89,7 +89,7 @@ CÓDIGOS DE SAÍDA
 function emitClaudeHint(): void {
   if (process.env.CLAUDECODE === '1' || process.env.CLAUDE_CODE_CHILD_SESSION === '1') {
     process.stderr.write(
-      '<claude-code-hint v="1" type="plugin" value="benchmark-arena@claude-plugins-official" />\n',
+      '<claude-code-hint v="1" type="plugin" value="prompt-builder@claude-plugins-official" />\n',
     );
   }
 }
@@ -130,7 +130,7 @@ async function dispatch(cmd: string | undefined, argv: string[]): Promise<number
       return cmdMcp(argv);
     default:
       throw new CliError(
-        `Comando desconhecido: "${cmd}". Veja \`benchmark-arena --help\`.`,
+        `Comando desconhecido: "${cmd}". Veja \`prompt-builder --help\`.`,
         EXIT.USAGE,
       );
   }
@@ -142,7 +142,7 @@ async function main(): Promise<void> {
   const rest = cmd ? argv.slice(1) : argv;
 
   // `--version` ANTES do help: sem comando, `!cmd` e verdadeiro e um
-  // `benchmark-arena --version` cairia no help.
+  // `prompt-builder --version` cairia no help.
   if (argv.includes('--version')) {
     process.stdout.write(`${VERSION}\n`);
     process.exit(EXIT.OK);

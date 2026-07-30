@@ -4,7 +4,7 @@ Uma rodada só (sem iterações): gera variantes do prompt base aplicando técni
 de engenharia de prompt, roda todas no **mesmo** modelo e julga.
 
 ```bash
-benchmark-arena vary \
+prompt-builder vary \
   --model openai/gpt-5-mini \
   --judge anthropic/claude-sonnet-5 \
   --theme "Classificação de tickets de suporte" \
@@ -18,7 +18,7 @@ Use `vary` quando quiser **uma medição**; use `train` quando quiser que o prom
 
 ## Técnicas
 
-`benchmark-arena techniques` lista as 19 disponíveis, com quando cada uma ajuda
+`prompt-builder techniques` lista as 19 disponíveis, com quando cada uma ajuda
 e quando atrapalha. Ids: `persona`, `cot`, `fewshot`, `format`, `constraints`,
 `decompose`, `selfcritique`, `specificity`, `concise`, `emphasis`, `positive`,
 `delimiters`, `stepback`, `xml-tags`, `rubric`, `uncertainty`, `length-control`,
@@ -46,5 +46,5 @@ as variantes são exatamente as que você escreveu:
 ## Resultado
 
 ```bash
-benchmark-arena runs winner <runId> --prompt-only > melhor.md
+prompt-builder runs winner <runId> --prompt-only > melhor.md
 ```

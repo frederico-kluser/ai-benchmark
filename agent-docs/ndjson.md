@@ -45,10 +45,10 @@ Para o conteúdo completo use `runs show <id> --json` (lê do disco) ou
 
 ```bash
 # acompanhar só o custo
-benchmark-arena train --config a.json --budget 3 --output-format ndjson \
+prompt-builder train --config a.json --budget 3 --output-format ndjson \
   | jq -r 'select(.type=="budget") | "\(.spentUsd)/\(.budgetUsd)"'
 
 # guardar tudo e ler o resultado no fim
-benchmark-arena train --config a.json --budget 3 --output-format ndjson | tee run.ndjson
+prompt-builder train --config a.json --budget 3 --output-format ndjson | tee run.ndjson
 jq 'select(.type=="result")' run.ndjson
 ```

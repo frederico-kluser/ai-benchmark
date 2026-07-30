@@ -1,7 +1,7 @@
 # `compare` — qual modelo responde melhor
 
 ```bash
-benchmark-arena compare \
+prompt-builder compare \
   --models openai/gpt-5-mini,google/gemini-3-flash,deepseek/deepseek-v4 \
   --judge anthropic/claude-sonnet-5 \
   --datagen openai/gpt-5-mini \
@@ -39,7 +39,7 @@ contra si mesmo:
 ```
 
 Confira antes que os dois níveis existem naquele modelo:
-`benchmark-arena models show openai/gpt-5-mini --json | jq .model.thinkLevels`.
+`prompt-builder models show openai/gpt-5-mini --json | jq .model.thinkLevels`.
 
 ## Julgamento
 
@@ -52,8 +52,8 @@ runs.
 ## Resultado
 
 ```bash
-benchmark-arena runs winner <runId> --json
-benchmark-arena runs show <runId> --json | jq '.data.run.judgeScoreByContestant'
+prompt-builder runs winner <runId> --json
+prompt-builder runs show <runId> --json | jq '.data.run.judgeScoreByContestant'
 ```
 
 Se as finais rodaram, a régua é `standings` (pontos Copeland dos duelos); senão

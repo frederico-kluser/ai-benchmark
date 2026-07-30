@@ -48,5 +48,5 @@ um aviso: **o campeão não está validado contra sobreajuste**.
 
 ## Onde ficam os dados
 
-`~/.benchmark-arena/` — `runs/`, `sessions/`, `cache/` e `key` (modo 0600).
-Mude com `--data-dir` ou `$BENCHMARK_ARENA_HOME`.
+`~/.prompt-builder/` — `runs/`, `sessions/`, `cache/` e `key` (modo 0600).
+Mude com `--data-dir` ou `$PROMPT_BUILDER_HOME`.

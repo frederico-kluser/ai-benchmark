@@ -36,7 +36,7 @@ O que vale medir, porque a olho passa batido:
 - **contraste WCAG real**: `getComputedStyle` devolve `oklch(...)`, que não dá para converter na mão
   — pinte a cor num `<canvas>` 1×1 (empilhando os fundos até um opaco) e leia o RGB de volta.
   Foi assim que as células do heatmap apareceram em 2,78:1 no tema claro.
-- **estado sem dado é enganoso**: semeie o IndexedDB (`benchmark-arena` v2, store `runs` +
+- **estado sem dado é enganoso**: semeie o IndexedDB (`prompt-builder` v2, store `runs` +
   `runSummaries`) com um `RunRecord` sintético terminado para exercitar heatmap, finais e o
   accordion de cenários. Guarde o script no scratchpad, não no repo.
 - A chave fica em `localStorage['openrouter_api_key']` — um valor falso já passa o `KeyGate` sem

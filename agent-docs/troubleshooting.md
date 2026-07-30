@@ -10,7 +10,7 @@ Nada foi gasto.
 O nível pedido não existe naquele modelo. Confira antes:
 
 ```bash
-benchmark-arena models show <id> --json | jq .model.thinkLevels
+prompt-builder models show <id> --json | jq .model.thinkLevels
 ```
 
 `accepted` lista o que pode ser pedido; `fit` mostra o que vai no fio para cada
@@ -19,7 +19,7 @@ obrigatório neles.
 
 ## `OpenRouter sem crédito (HTTP 402)` (código 5)
 
-`benchmark-arena key check` mostra uso, limite e saldo. O pré-voo recusa antes de
+`prompt-builder key check` mostra uso, limite e saldo. O pré-voo recusa antes de
 gastar quando o saldo não cobre nem o piso da estimativa.
 
 ## Todos os vereditos vieram `parcial`
@@ -41,7 +41,7 @@ modelo retirado. Com `--budget` ligado isso vira **erro**, porque um orçamento
 sobre um custo desconhecido não seria orçamento nenhum.
 
 ```bash
-benchmark-arena models list --search <parte-do-nome>
+prompt-builder models list --search <parte-do-nome>
 ```
 
 ## Run travada em `running`
@@ -52,8 +52,8 @@ que lista runs marca as órfãs como `aborted`. Os dados parciais continuam lá.
 ## `Run "..." não encontrada`
 
 Você está apontando para outro diretório de dados. Confira com
-`benchmark-arena doctor` — runs vivem em `~/.benchmark-arena/runs/` por padrão,
-e `--data-dir` / `$BENCHMARK_ARENA_HOME` mudam isso.
+`prompt-builder doctor` — runs vivem em `~/.prompt-builder/runs/` por padrão,
+e `--data-dir` / `$PROMPT_BUILDER_HOME` mudam isso.
 
 ## O comando parece travar no fim
 

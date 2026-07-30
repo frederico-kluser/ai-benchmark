@@ -1,4 +1,4 @@
-# benchmark-arena — começo rápido (para agentes)
+# prompt-builder — começo rápido (para agentes)
 
 Você é um agente de programação. Este CLI mede **qual modelo ou qual prompt
 responde melhor** a um tema, com evidência: ele gera cenários, faz os
@@ -12,22 +12,22 @@ progresso e avisos vão para o **stderr**.
 
 ```bash
 # 1. Key (uma vez). Nunca passe a key como argumento — ela ficaria no histórico.
-echo "$OPENROUTER_API_KEY" | npx benchmark-arena key set --stdin
+echo "$OPENROUTER_API_KEY" | npx prompt-builder-cli key set --stdin
 
 # 2. Descubra o modelo do seu ambiente e quais níveis de raciocínio ele aceita.
-npx benchmark-arena models list --search claude --json | jq '.data[0]'
+npx prompt-builder-cli models list --search claude --json | jq '.data[0]'
 
 # 3. Escreva a configuração (ou gere um exemplo e edite).
-npx benchmark-arena config example --mode train -o arena.json
+npx prompt-builder-cli config example --mode train -o arena.json
 
 # 4. VALIDE E ESTIME sem gastar nada. Sempre faça isto antes.
-npx benchmark-arena train --config arena.json --budget 3 --dry-run
+npx prompt-builder-cli train --config arena.json --budget 3 --dry-run
 
 # 5. Rode. Com --output-format ndjson você acompanha evento a evento.
-npx benchmark-arena train --config arena.json --budget 3 --output-format ndjson
+npx prompt-builder-cli train --config arena.json --budget 3 --output-format ndjson
 
 # 6. Pegue o prompt vencedor, cru, para gravar num arquivo.
-npx benchmark-arena sessions winner <sessionId> --prompt-only > prompt.md
+npx prompt-builder-cli sessions winner <sessionId> --prompt-only > prompt.md
 ```
 
 ## Regras que evitam os erros mais comuns
@@ -57,6 +57,6 @@ npx benchmark-arena sessions winner <sessionId> --prompt-only > prompt.md
 | `vary`    | Qual **variação do meu prompt** funciona melhor neste modelo? |
 | `train`   | Evolua meu prompt ao longo de N iterações, com holdout e significância. |
 
-Detalhes: `benchmark-arena docs overview`, `docs train`, `docs models`,
+Detalhes: `prompt-builder docs overview`, `docs train`, `docs models`,
 `docs budget`, `docs ndjson`, `docs results`, `docs troubleshooting`.
-O contrato do arquivo de configuração: `benchmark-arena docs config`.
+O contrato do arquivo de configuração: `prompt-builder docs config`.

@@ -1,6 +1,6 @@
 // Caminhos do PACOTE (nao do processo). O `tsc` nao copia .json para dist/, e o
 // modulo pode rodar de tres lugares diferentes: `src/` sob tsx (dev), `dist/`
-// sob node (self-host) e `node_modules/benchmark-arena/dist/` (instalado).
+// sob node (self-host) e `node_modules/prompt-builder/dist/` (instalado).
 //
 // A resolucao abaixo funciona nos tres porque `src/paths.ts` e `dist/paths.js`
 // estao ambos a UM nivel da raiz do pacote — entao `../` sempre cai na raiz e

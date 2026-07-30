@@ -45,7 +45,7 @@ export async function cmdKey(argv: string[]): Promise<number> {
     // entra no historico do shell E na transcricao do proprio agente.
     if (parsed.values.stdin !== true) {
       throw new CliError(
-        'Use `benchmark-arena key set --stdin` e mande a key pela entrada padrão — ' +
+        'Use `prompt-builder key set --stdin` e mande a key pela entrada padrão — ' +
           'passar a key como argumento a deixaria no histórico do shell.',
         EXIT.USAGE,
       );
@@ -82,7 +82,7 @@ export async function cmdEstimate(argv: string[]): Promise<number> {
   const { out } = ctx;
   const file = parsed.values.config;
   if (typeof file !== 'string') {
-    throw new CliError('Uso: benchmark-arena estimate --config <arquivo.json>', EXIT.USAGE);
+    throw new CliError('Uso: prompt-builder estimate --config <arquivo.json>', EXIT.USAGE);
   }
 
   const json = JSON.parse(await fs.readFile(file, 'utf-8')) as unknown;
@@ -151,7 +151,7 @@ export async function cmdRuns(argv: string[]): Promise<number> {
   }
 
   const id = parsed.positionals[0];
-  if (!id) throw new CliError(`Uso: benchmark-arena runs ${sub} <id>`, EXIT.USAGE);
+  if (!id) throw new CliError(`Uso: prompt-builder runs ${sub} <id>`, EXIT.USAGE);
   const record = await loadRun(id);
   if (!record) throw new CliError(`Run "${id}" não encontrada em ${getDataDir()}.`, EXIT.USAGE);
 
@@ -228,7 +228,7 @@ export async function cmdSessions(argv: string[]): Promise<number> {
   }
 
   const id = parsed.positionals[0];
-  if (!id) throw new CliError(`Uso: benchmark-arena sessions ${sub} <id>`, EXIT.USAGE);
+  if (!id) throw new CliError(`Uso: prompt-builder sessions ${sub} <id>`, EXIT.USAGE);
   const record = await loadSession(id);
   if (!record) throw new CliError(`Sessão "${id}" não encontrada.`, EXIT.USAGE);
   const campeao = record.bestPromptByIteration.at(-1);
@@ -332,7 +332,7 @@ export async function cmdConfig(argv: string[]): Promise<number> {
   }
 
   const file = parsed.positionals[0];
-  if (!file) throw new CliError('Uso: benchmark-arena config validate <arquivo.json>', EXIT.USAGE);
+  if (!file) throw new CliError('Uso: prompt-builder config validate <arquivo.json>', EXIT.USAGE);
   const json = JSON.parse(await fs.readFile(file, 'utf-8')) as unknown;
   const formato = (json as Record<string, unknown>)?.format;
 

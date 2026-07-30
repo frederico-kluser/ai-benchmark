@@ -5,13 +5,13 @@ import { normalizeRunRecord } from './normalize.js';
 import type { RunMode, RunRecord, SessionRecord } from './types.js';
 
 // Raiz de persistencia. MUTAVEL de proposito: o servidor mantem o default
-// historico (`./data`), enquanto o CLI aponta para `~/.benchmark-arena` — se o
+// historico (`./data`), enquanto o CLI aponta para `~/.prompt-builder` — se o
 // CLI instalado gravasse em `process.cwd()`, sujaria o repositorio do usuario.
 //
 // Os diretorios sao lidos por GETTER, nunca capturados numa const de topo: assim
 // `setDataDir` funciona independentemente da ordem de import dos modulos ESM.
-let baseDir = process.env.BENCHMARK_ARENA_HOME
-  ? path.resolve(process.env.BENCHMARK_ARENA_HOME)
+let baseDir = process.env.PROMPT_BUILDER_HOME
+  ? path.resolve(process.env.PROMPT_BUILDER_HOME)
   : path.resolve(process.cwd(), 'data');
 
 /** Troca a raiz de persistencia. Chame ANTES de qualquer save/load. */

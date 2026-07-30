@@ -1,17 +1,17 @@
 # Modelos e think levels
 
 O catálogo vem do OpenRouter (`GET /models`), é cacheado por 24 h em
-`~/.benchmark-arena/cache/` e funciona **offline** depois da primeira busca.
+`~/.prompt-builder/cache/` e funciona **offline** depois da primeira busca.
 `--refresh-models` força a atualização.
 
 ## Exportar
 
 ```bash
-benchmark-arena models list                      # tabela legível
-benchmark-arena models list --json               # objeto único no stdout
-benchmark-arena models export -o models.json     # grava em arquivo
-benchmark-arena models export --format csv -o m.csv
-benchmark-arena models list --format ids         # só os ids, um por linha
+prompt-builder models list                      # tabela legível
+prompt-builder models list --json               # objeto único no stdout
+prompt-builder models export -o models.json     # grava em arquivo
+prompt-builder models export --format csv -o m.csv
+prompt-builder models list --format ids         # só os ids, um por linha
 ```
 
 ### Filtros
@@ -22,7 +22,7 @@ benchmark-arena models list --format ids         # só os ids, um por linha
 `--max-prompt-price N` / `--max-completion-price N` (**USD por milhão de
 tokens**) · `--free` · `--lgpd-area <área> [--include-ressalvas]` · `--limit N`.
 
-## O formato de export (`benchmark-arena-models@1`)
+## O formato de export (`prompt-builder-models@1`)
 
 ```json
 {
@@ -65,7 +65,7 @@ raciocínio e 83 declaram uma allowlist — em **20 conjuntos distintos**.
   barato**: pedir `max` a um modelo com `["xhigh","high"]` vira `xhigh`.
 
 ```bash
-benchmark-arena models show anthropic/claude-sonnet-5
+prompt-builder models show anthropic/claude-sonnet-5
 ```
 
 ## Escolhendo os papéis

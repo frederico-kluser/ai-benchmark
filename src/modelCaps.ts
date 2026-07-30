@@ -129,8 +129,8 @@ export function thinkLevelsFor(m?: ModelLike): ThinkLevels {
   };
 }
 
-/** Formato de export do catalogo (`benchmark-arena models --json`). */
-export const MODELS_EXPORT_FORMAT = 'benchmark-arena-models@1';
+/** Formato de export do catalogo (`prompt-builder models --json`). */
+export const MODELS_EXPORT_FORMAT = 'prompt-builder-models@1';
 
 export interface ModelExportRow {
   id: string;

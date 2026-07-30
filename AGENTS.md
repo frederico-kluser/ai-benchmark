@@ -1,7 +1,7 @@
 # AGENTS.md — ai-benchmark
 
 Monorepo TypeScript: backend Express + motor + **CLI** (`src/`) + frontend React/Vite (`web/`).
-UI/comentários em PT-BR. O pacote npm publicado é **`benchmark-arena`** (o nome `ai-benchmark`
+UI/comentários em PT-BR. O pacote npm publicado é **`prompt-builder`** (o nome `ai-benchmark`
 está ocupado no registry).
 
 ## Comandos (exatos)
@@ -14,7 +14,7 @@ está ocupado no registry).
 - **Não há** `test` nem `lint` configurados. Verifique por type-check + execução manual.
 - ⚠️ **`npm install` da RAIZ não instala mais o `web/`** — o `postinstall` virou `npm run setup`.
   Ele tinha de sair: o npm roda o `postinstall` de toda dependência instalada, então publicar com
-  ele quebraria `npm i benchmark-arena` para qualquer usuário (o `web/.npmrc` exige `MOTION_TOKEN`).
+  ele quebraria `npm i prompt-builder-cli` para qualquer usuário (o `web/.npmrc` exige `MOTION_TOKEN`).
   Fluxo local: `npm install && npm run setup`.
 - ⚠️ **`npm run setup` (e qualquer comando dentro de `web/`) exige `MOTION_TOKEN` no ambiente.** `web/.npmrc` aponta o escopo `@motionplus`
   para o registry privado da Motion, e `motion-plus` (`@motionplus/core`) é dependência de runtime
@@ -28,7 +28,7 @@ está ocupado no registry).
 - `tsc` não copia `.json` para `dist/` → leia dados estáticos por **`PKG_DATA_DIR` (`src/paths.ts`)**,
   que resolve por `import.meta.url`. **Não use `process.cwd()`**: instalado como pacote npm o cwd é o
   projeto do usuário e a leitura falha com ENOENT. Pelo mesmo motivo, `storage.ts` tem
-  `setDataDir()` — o servidor mantém `./data`, o CLI aponta para `~/.benchmark-arena`.
+  `setDataDir()` — o servidor mantém `./data`, o CLI aponta para `~/.prompt-builder`.
 - Tipos de domínio são **duplicados** em `src/types.ts`, `web/src/engine/types.ts` e `web/src/api.ts` — mantenha sincronizados.
 - Em SSE, feche o `EventSource` em eventos terminais (senão o browser reconecta infinitamente).
 - OpenRouter: `/models` e `/endpoints/zdr` são **públicos**; valide a key por `/key`.
@@ -88,7 +88,7 @@ está ocupado no registry).
   PAYLOAD (NDJSON/JSON) e uma linha de log no meio corrompe o stream de quem consome.
 - **Não rode o backend `src/` em serverless (Vercel):** ele grava runs no filesystem (`storage.ts`), efêmero/isolado no serverless → `GET /v1/benchmark/runs/:id` vira `Run nao encontrada`. Produção = **SPA estática** (`npm run web:build`); o backend é só dev/self-host. Deploy errado se denuncia quando `/health` responde JSON em vez do `index.html`. Ver `knowledge-architecture`.
 
-## CLI (`src/cli/`, publicado como `benchmark-arena`)
+## CLI (`src/cli/`, publicado como `prompt-builder`)
 - Mora em `src/cli/` e compila pelo MESMO `tsconfig.json` → `dist/cli/`. **Não** é uma terceira
   cópia do motor: importa `../orchestrator.js` como qualquer arquivo de `src/`.
 - `bin` aponta para `dist/cli/index.js` — **sem `./` no começo**, senão o npm remove o prefixo e a

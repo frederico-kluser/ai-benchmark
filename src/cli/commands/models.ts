@@ -159,7 +159,7 @@ export async function cmdModels(argv: string[]): Promise<number> {
   // `show <id>` — tudo o que se pode ajustar naquele modelo.
   if (sub === 'show') {
     const id = parsed.positionals[0];
-    if (!id) throw new CliError('Uso: benchmark-arena models show <id>', EXIT.USAGE);
+    if (!id) throw new CliError('Uso: prompt-builder models show <id>', EXIT.USAGE);
     const model = ctx.models.find((m) => m.id === id);
     if (!model) {
       throw new CliError(

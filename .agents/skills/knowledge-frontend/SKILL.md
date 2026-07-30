@@ -48,7 +48,7 @@ Dev em `:5173` com proxy de `/v1` e `/health` → `:3001` (`vite.config.ts`).
   (`parseArenaConfig`, `ARENA_CONFIG_FORMAT`) tem de ser importado no topo **além** de reexportado.
 
 ## Cache local (`web/src/idb.ts`)
-- IndexedDB `benchmark-arena` (**DB_VERSION = 2**), stores `runs`/`sessions`/`runSummaries`/
+- IndexedDB `prompt-builder` (**DB_VERSION = 2**), stores `runs`/`sessions`/`runSummaries`/
   `sessionSummaries`/**`prompts`** (v2; o upgrade cria só as stores que faltam, sem perder dados).
 - Estratégia: servidor é fonte de verdade; IndexedDB é fallback offline. `cacheRun`/`fetchRuns` fazem o merge.
 - `idbDelete` foi adicionado na v2 (mesmo padrão de degradar silenciosamente sem IndexedDB).

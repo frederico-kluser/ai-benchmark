@@ -1,19 +1,19 @@
 ---
-name: benchmark-arena
+name: prompt-builder
 description: Benchmark de LLMs e evolução de system prompts pelo terminal, com controle de orçamento. Use ao comparar modelos, testar variações de um prompt, escolher o nível de raciocínio (think level) de um modelo, estimar o custo de uma chamada de LLM antes de gastar, ou treinar automaticamente um system prompt contra cenários gerados. Use também para listar ou exportar o catálogo de modelos do OpenRouter com os níveis de raciocínio que cada um aceita.
 license: MIT
 metadata:
   version: 0.1.0
-  homepage: https://www.npmjs.com/package/benchmark-arena
+  homepage: https://www.npmjs.com/package/prompt-builder-cli
 ---
 
-# benchmark-arena
+# prompt-builder
 
 CLI que mede **qual modelo ou qual prompt responde melhor**, com evidência: gera
 cenários, faz os participantes responderem, um juiz classifica cada resposta
 contra um gabarito e os melhores duelam entre si.
 
-Não instale nada: `npx benchmark-arena <comando>`.
+Não instale nada: `npx prompt-builder-cli <comando>`.
 
 ## Quando usar
 
@@ -29,22 +29,22 @@ Não instale nada: `npx benchmark-arena <comando>`.
 
 ```bash
 # 1. key (uma vez) — pela entrada padrão, nunca como argumento
-echo "$OPENROUTER_API_KEY" | npx benchmark-arena key set --stdin
+echo "$OPENROUTER_API_KEY" | npx prompt-builder-cli key set --stdin
 
 # 2. ache o modelo e os níveis de raciocínio que ele aceita
-npx benchmark-arena models list --search gpt-5 --json
+npx prompt-builder-cli models list --search gpt-5 --json
 
 # 3. gere e edite a configuração
-npx benchmark-arena config example --mode train -o arena.json
+npx prompt-builder-cli config example --mode train -o arena.json
 
 # 4. valide e estime SEM gastar
-npx benchmark-arena train --config arena.json --budget 3 --dry-run
+npx prompt-builder-cli train --config arena.json --budget 3 --dry-run
 
 # 5. rode
-npx benchmark-arena train --config arena.json --budget 3 --output-format ndjson
+npx prompt-builder-cli train --config arena.json --budget 3 --output-format ndjson
 
 # 6. pegue o prompt vencedor
-npx benchmark-arena sessions winner <sessionId> --prompt-only > prompt.md
+npx prompt-builder-cli sessions winner <sessionId> --prompt-only > prompt.md
 ```
 
 ## Regras (não improvise em cima delas)
@@ -66,8 +66,8 @@ npx benchmark-arena sessions winner <sessionId> --prompt-only > prompt.md
 ## Documentação embarcada (casada com a versão instalada)
 
 ```bash
-npx benchmark-arena docs --list        # tópicos + custo em tokens
-npx benchmark-arena docs quickstart
+npx prompt-builder-cli docs --list        # tópicos + custo em tokens
+npx prompt-builder-cli docs quickstart
 ```
 
 | Leia | Quando |

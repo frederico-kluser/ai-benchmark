@@ -1,10 +1,10 @@
 # Lendo os resultados
 
 ```bash
-benchmark-arena runs list                       # últimas runs
-benchmark-arena runs show <id> --json           # o RunRecord inteiro
-benchmark-arena runs winner <id> --prompt-only  # só o prompt vencedor, cru
-benchmark-arena sessions list | show | winner
+prompt-builder runs list                       # últimas runs
+prompt-builder runs show <id> --json           # o RunRecord inteiro
+prompt-builder runs winner <id> --prompt-only  # só o prompt vencedor, cru
+prompt-builder sessions list | show | winner
 ```
 
 ## Duas réguas, não intercambiáveis

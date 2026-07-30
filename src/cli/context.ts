@@ -80,15 +80,15 @@ export function isAgentContext(): boolean {
 // --- diretorio de dados ------------------------------------------------------
 
 /**
- * Precedencia: `--data-dir` → `$BENCHMARK_ARENA_HOME` → `$XDG_STATE_HOME/...`
- * → `~/.benchmark-arena`. Nunca `./data` (que sujaria o repo do usuario).
+ * Precedencia: `--data-dir` → `$PROMPT_BUILDER_HOME` → `$XDG_STATE_HOME/...`
+ * → `~/.prompt-builder`. Nunca `./data` (que sujaria o repo do usuario).
  */
 export function resolveHome(values: Record<string, unknown>): string {
   const flag = values['data-dir'];
   if (typeof flag === 'string' && flag.trim()) return path.resolve(flag.trim());
-  if (process.env.BENCHMARK_ARENA_HOME) return path.resolve(process.env.BENCHMARK_ARENA_HOME);
-  if (process.env.XDG_STATE_HOME) return path.join(process.env.XDG_STATE_HOME, 'benchmark-arena');
-  return path.join(os.homedir(), '.benchmark-arena');
+  if (process.env.PROMPT_BUILDER_HOME) return path.resolve(process.env.PROMPT_BUILDER_HOME);
+  if (process.env.XDG_STATE_HOME) return path.join(process.env.XDG_STATE_HOME, 'prompt-builder');
+  return path.join(os.homedir(), '.prompt-builder');
 }
 
 // --- key ---------------------------------------------------------------------
@@ -115,7 +115,7 @@ export async function resolveKey(values: Record<string, unknown>): Promise<strin
   const stored = await readStoredKey();
   if (stored) return stored;
   throw new CliError(
-    'Key do OpenRouter ausente. Use `benchmark-arena key set --stdin`, ' +
+    'Key do OpenRouter ausente. Use `prompt-builder key set --stdin`, ' +
       'a variável OPENROUTER_API_KEY, ou a flag --key.',
     EXIT.AUTH,
   );

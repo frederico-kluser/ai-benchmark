@@ -1,7 +1,7 @@
 // Contrato de saida do CLI.
 //
 // Regra 1 — STDOUT E PAYLOAD, STDERR E NARRACAO. Progresso, avisos e barras vao
-// para stderr, sempre. Assim `benchmark-arena models export --json > m.json`
+// para stderr, sempre. Assim `prompt-builder models export --json > m.json`
 // esta sempre correto, sem flag extra.
 //
 // Regra 2 — `--json` imprime UM objeto no stdout, no fim.

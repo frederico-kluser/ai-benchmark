@@ -29,7 +29,7 @@ import { EXIT } from '../output.js';
 import type { RunConfig } from '../../types.js';
 
 const PROTOCOL_VERSION = '2025-06-18';
-const SERVER_INFO = { name: 'benchmark-arena', version: '0.1.0' };
+const SERVER_INFO = { name: 'prompt-builder', version: '0.1.0' };
 
 interface JsonRpcRequest {
   jsonrpc: '2.0';
@@ -201,7 +201,7 @@ const TOOLS: Tool[] = [
   {
     name: 'read_docs',
     description:
-      'Lê a documentação embarcada nesta versão do benchmark-arena. ' +
+      'Lê a documentação embarcada nesta versão do prompt-builder. ' +
       'Sem "topic", devolve a lista de tópicos. Comece por "quickstart".',
     inputSchema: {
       type: 'object',

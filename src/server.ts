@@ -11,7 +11,7 @@ const port = Number(process.env.BENCHMARK_PORT ?? 3001);
 app.use(express.json({ limit: '16mb' }));
 
 app.get('/health', (_req, res) => {
-  res.status(200).json({ status: 'ok', service: 'benchmark-arena' });
+  res.status(200).json({ status: 'ok', service: 'prompt-builder' });
 });
 
 app.use('/v1/benchmark', benchmarkRouter);
@@ -29,7 +29,7 @@ app.get(/^\/(?!v1|health).*/, (_req, res, next) => {
 });
 
 app.listen(port, () => {
-  console.log(`Benchmark Arena listening on http://localhost:${port}`);
+  console.log(`Prompt Builder listening on http://localhost:${port}`);
   void markOrphansAsAborted().catch((err) => {
     console.warn('[bench] markOrphansAsAborted failed:', err);
   });

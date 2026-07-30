@@ -1,4 +1,4 @@
-// API de biblioteca do `benchmark-arena`.
+// API de biblioteca do `prompt-builder`.
 //
 // Tudo aqui roda sem servidor: `runToCompletion` e `trainToCompletion` executam
 // o pipeline inteiro em processo. Quem importa isto assume duas

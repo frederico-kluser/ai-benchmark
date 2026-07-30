@@ -11,7 +11,7 @@ import { PKG_DOCS_DIR, PKG_ROOT, PKG_SKILLS_DIR } from '../../paths.js';
 import { CliError, EXIT } from '../output.js';
 import { buildContext, parse } from '../context.js';
 
-const SKILL_NAME = 'benchmark-arena';
+const SKILL_NAME = 'prompt-builder';
 
 /** Diretorio de skills de cada agente. */
 const AGENT_DIRS: Record<string, string> = {
@@ -56,13 +56,13 @@ export async function cmdDocs(argv: string[]): Promise<number> {
 
   if (parsed.values.list === true || (!topic && parsed.values.all !== true)) {
     if (out.isText) {
-      out.line('Tópicos disponíveis (benchmark-arena docs <tópico>):');
+      out.line('Tópicos disponíveis (prompt-builder docs <tópico>):');
       out.line();
       for (const e of index) {
         out.line(`  ${e.topic.padEnd(16)} ${e.summary}  (~${e.approxTokens} tokens)`);
       }
       out.line();
-      out.line('Comece por: benchmark-arena docs quickstart');
+      out.line('Comece por: prompt-builder docs quickstart');
     }
     out.result(true, 'docs.list', { topics: index });
     return EXIT.OK;
@@ -87,7 +87,7 @@ export async function cmdDocs(argv: string[]): Promise<number> {
     out.raw(await fs.readFile(file, 'utf-8'));
   } catch {
     throw new CliError(
-      `Tópico "${topic}" não existe. Veja \`benchmark-arena docs --list\`.`,
+      `Tópico "${topic}" não existe. Veja \`prompt-builder docs --list\`.`,
       EXIT.USAGE,
     );
   }
@@ -106,16 +106,16 @@ export async function cmdSkill(argv: string[]): Promise<number> {
   return EXIT.OK;
 }
 
-const MARKER_START = '<!-- benchmark-arena:start -->';
-const MARKER_END = '<!-- benchmark-arena:end -->';
+const MARKER_START = '<!-- prompt-builder:start -->';
+const MARKER_END = '<!-- prompt-builder:end -->';
 
 const AGENTS_BLOCK = `${MARKER_START}
-## benchmark-arena
+## prompt-builder
 
 Benchmark de LLMs e evolução de system prompts pelo terminal.
-Comece por \`npx benchmark-arena docs quickstart\`.
+Comece por \`npx prompt-builder-cli docs quickstart\`.
 
-Nunca chute um nível de raciocínio (think level): \`npx benchmark-arena models show <id> --json\`
+Nunca chute um nível de raciocínio (think level): \`npx prompt-builder-cli models show <id> --json\`
 diz exatamente quais níveis aquele modelo aceita e o que vai no fio para cada um.
 Sempre rode \`--dry-run\` antes de uma run cara, e sempre passe \`--budget\`.
 ${MARKER_END}`;

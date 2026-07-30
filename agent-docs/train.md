@@ -1,7 +1,7 @@
 # `train` — evoluir um system prompt
 
 ```bash
-benchmark-arena train \
+prompt-builder train \
   --model openai/gpt-5-mini \
   --judge anthropic/claude-sonnet-5 \
   --datagen openai/gpt-5-mini \
@@ -15,9 +15,9 @@ benchmark-arena train \
 Ou, melhor para um agente, tudo declarado num arquivo:
 
 ```bash
-benchmark-arena config example --mode train -o arena.json
-benchmark-arena train --config arena.json --budget 3 --dry-run
-benchmark-arena train --config arena.json --budget 3 --output-format ndjson
+prompt-builder config example --mode train -o arena.json
+prompt-builder train --config arena.json --budget 3 --dry-run
+prompt-builder train --config arena.json --budget 3 --output-format ndjson
 ```
 
 ## Flags que importam
@@ -26,7 +26,7 @@ benchmark-arena train --config arena.json --budget 3 --output-format ndjson
 |---|---|
 | `--model <id>` | o modelo sob teste (todas as variantes rodam nele) |
 | `--judge <id>` | juiz; repita para um painel. **Não pode ser o `--model`.** |
-| `--techniques a,b,c` | técnicas de reescrita (`benchmark-arena techniques`) |
+| `--techniques a,b,c` | técnicas de reescrita (`prompt-builder techniques`) |
 | `--base-prompt-file` | o prompt de partida; entra como controle |
 | `--iterations N` | teto de iterações (2–10). O laço para antes se convergir. |
 | `--min-gain N` | margem mínima em pontos de judge-score para promover (padrão 1) |
@@ -42,9 +42,9 @@ Uma técnica sem prompt base não basta.
 ## Como ler o resultado
 
 ```bash
-benchmark-arena sessions winner <sessionId>              # legível
-benchmark-arena sessions winner <sessionId> --json       # estruturado
-benchmark-arena sessions winner <sessionId> --prompt-only > prompt.md
+prompt-builder sessions winner <sessionId>              # legível
+prompt-builder sessions winner <sessionId> --json       # estruturado
+prompt-builder sessions winner <sessionId> --prompt-only > prompt.md
 ```
 
 - `holdout` — campeão vs. base nos cenários **reservados**. É a evidência de que

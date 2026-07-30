@@ -21,7 +21,7 @@ function defaultHeaders(apiKey: string): Record<string, string> {
     Authorization: `Bearer ${apiKey}`,
     'Content-Type': 'application/json',
     'HTTP-Referer': process.env.OPENROUTER_APP_URL ?? 'http://localhost:3000',
-    'X-Title': process.env.OPENROUTER_APP_TITLE ?? 'Benchmark Arena',
+    'X-Title': process.env.OPENROUTER_APP_TITLE ?? 'Prompt Builder',
   };
 }
 
